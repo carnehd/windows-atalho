@@ -1,0 +1,1014 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Git Quick</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <nav class="rail">
+      <div class="rail-logo" aria-hidden="true">G</div>
+      <button class="rail-btn mode-tab active" data-mode="git" title="Git" aria-label="Git" type="button">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="4" cy="3.5" r="1.6"/><circle cx="4" cy="12.5" r="1.6"/><circle cx="12" cy="5.5" r="1.6"/><path d="M4 5.1v5.8M12 7.1c0 3-3 3-6.6 4.2"/></svg>
+      </button>
+      <button class="rail-btn mode-tab" data-mode="search" title="Search the microservices" aria-label="Search the microservices" type="button">
+        <!-- Tabler icon "search" (MIT) -->
+        <svg class="tabler" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 10m-7 0a7 7 0 1 0 14 0a7 7 0 1 0 -14 0"/><path d="M21 21l-6 -6"/></svg>
+      </button>
+      <button class="rail-btn mode-tab" data-mode="vault" title="Vault" aria-label="Vault" type="button">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>
+      </button>
+      <button class="rail-btn mode-tab" data-mode="logs" title="Logs" aria-label="Logs" type="button">
+        <!-- Tabler icon "list-search" (MIT) -->
+        <svg class="tabler" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 15m-4 0a4 4 0 1 0 8 0a4 4 0 1 0 -8 0"/><path d="M18.5 18.5l2.5 2.5"/><path d="M4 6h16"/><path d="M4 12h4"/><path d="M4 18h4"/></svg>
+      </button>
+      <button class="rail-btn mode-tab" data-mode="docker" title="Containers" aria-label="Containers" type="button">
+        <!-- Tabler icon "box" (MIT) -->
+        <svg class="tabler" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4.5v9l-8 4.5l-8 -4.5v-9l8 -4.5"/><path d="M12 12l8 -4.5"/><path d="M12 12v9"/><path d="M12 12l-8 -4.5"/></svg>
+      </button>
+      <button class="rail-btn mode-tab" data-mode="clip" title="Clipboard history" aria-label="Clipboard history" type="button">
+        <!-- Tabler icon "files" (MIT) -->
+        <svg class="tabler" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3v4a1 1 0 0 0 1 1h4"/><path d="M18 17h-7a2 2 0 0 1 -2 -2v-10a2 2 0 0 1 2 -2h4l5 5v7a2 2 0 0 1 -2 2z"/><path d="M16 17v2a2 2 0 0 1 -2 2h-7a2 2 0 0 1 -2 -2v-10a2 2 0 0 1 2 -2h2"/></svg>
+      </button>
+      <button class="rail-btn mode-tab" data-mode="todo" title="Tasks" aria-label="Tasks" type="button">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="2.5"/><path d="M5.5 8.2l1.8 1.8 3.2-3.5"/></svg>
+      </button>
+      <button class="rail-btn mode-tab" data-mode="analysis" title="Analysis of the microservices" aria-label="Analysis of the microservices" type="button">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 13.5h11"/><path d="M4.5 11V8.5M7.5 11V4.5M10.5 11V7"/><circle cx="11.6" cy="3.6" r="1.6"/><path d="M12.8 4.8l1.2 1.2"/></svg>
+      </button>
+      <button class="rail-btn mode-tab" data-mode="tools" title="Tools" aria-label="Tools" type="button">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.6 2.4a3.1 3.1 0 0 0-3.3 4.2L2.6 11.3a1.3 1.3 0 0 0 1.9 1.9l4.7-4.7a3.1 3.1 0 0 0 4.2-3.3l-1.9 1.9-1.6-.3-.3-1.6z"/></svg>
+      </button>
+      <button class="rail-btn mode-tab" data-mode="help" title="Command help" aria-label="Command help" type="button">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M6.2 6.3a1.9 1.9 0 0 1 3.7.5c0 1.3-1.9 1.6-1.9 2.8M8 11.6h.01"/></svg>
+      </button>
+      <div class="rail-spacer"></div>
+      <button id="themeBtn" class="rail-btn" title="Toggle light / dark theme" aria-label="Toggle theme" type="button">
+        <svg class="icon-sun" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.6"/><path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M3.6 12.4l1.1-1.1M11.3 4.7l1.1-1.1"/></svg>
+        <svg class="icon-moon" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 9.5A5.5 5.5 0 0 1 6.5 3 5.5 5.5 0 1 0 13 9.5z"/></svg>
+      </button>
+      <button id="settingsBtn" class="rail-btn" title="Settings" aria-label="Settings" type="button">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h6M11.5 4.5h2M2.5 11.5h2M7.5 11.5h6"/><circle cx="10" cy="4.5" r="1.5"/><circle cx="6" cy="11.5" r="1.5"/></svg>
+      </button>
+    </nav>
+    <div class="shell">
+    <header class="topbar">
+      <div class="crumbs">
+        <span id="crumbMode" class="crumb-mode">Git</span>
+        <span id="crumbSep" class="crumb-sep">/</span>
+        <span id="crumbCtx" class="crumb-ctx"></span>
+      </div>
+      <button id="pinBtn" class="pin-btn" type="button" aria-pressed="false" title="Pin: keep the window open when you click outside">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>
+      </button>
+      <div class="topbar-right">
+        <span id="hotkeyBadge" class="hotkey-badge hidden"></span>
+        <button class="close-btn" onclick="window.git.closeWindow()" title="Close">&#x2715;</button>
+      </div>
+    </header>
+    <div class="views">
+
+    <!-- Repo Selector -->
+    <div id="gitView" class="body">
+    <aside class="sidebar">
+      <div class="sidebar-header">Repositories</div>
+      <div class="sidebar-search">
+        <input id="repoSearch" class="input" type="search" placeholder="Search repositories..." autocomplete="off" spellcheck="false" title="Filter by name, folder or branch. Enter opens the first match, Esc clears." />
+      </div>
+      <div class="sidebar-actions">
+        <button id="addRepoBtn" class="btn btn-sm btn-icon menu-btn" type="button" title="Add a folder, clone a repository or make a group" aria-haspopup="menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>Add<svg class="menu-caret" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button>
+        <button id="syncReposBtn" class="btn btn-sm btn-icon menu-btn" type="button" title="Look for new repositories, pull or fetch several, the microservices folder" aria-haspopup="menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v14"/><path d="M4 14l3 3l3 -3"/><path d="M17 21v-14"/><path d="M14 10l3 -3l3 3"/></svg><span id="syncReposLabel">Sync</span><svg class="menu-caret" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button>
+      </div>
+      <div id="repoList" class="repo-list"></div>
+      <!-- A pull of several repositories: how far it got; a click on the bar lists each one -->
+      <div id="pullDock" class="pull-dock hidden">
+        <div id="pullDockList" class="pull-dock-list hidden" aria-label="Each repository of the pull"></div>
+        <button id="pullDockBar" class="pull-dock-bar" type="button" aria-expanded="false" aria-controls="pullDockList" title="Show each repository">
+          <span class="pull-dock-line">
+            <span id="pullDockTitle" class="pull-dock-title" aria-live="polite"></span>
+            <svg class="pull-dock-caret" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 9.5L8 6l3.5 3.5"/></svg>
+          </span>
+          <span id="pullDockNow" class="pull-dock-now"></span>
+          <span id="pullDockTrack" class="pull-dock-track" role="progressbar" aria-label="Repositories pulled" aria-valuemin="0"></span>
+        </button>
+        <div class="pull-dock-actions">
+          <button id="pullDockStop" class="btn btn-sm" type="button" title="Let the repository being pulled end, and leave the rest">Stop</button>
+          <button id="pullDockResults" class="btn btn-sm btn-primary hidden" type="button">View results</button>
+          <button id="pullDockClose" class="btn btn-sm hidden" type="button">Close</button>
+        </div>
+      </div>
+    </aside>
+    <div class="content">
+
+    <div id="ideBanner" class="ide-banner hidden">
+      <span id="ideBannerText"></span>
+      <button id="ideBannerAdd" class="btn btn-primary btn-sm" type="button">Add</button>
+      <button id="ideBannerClose" class="icon-btn-plain" type="button" title="Dismiss" aria-label="Dismiss">&#x2715;</button>
+    </div>
+
+    <!-- Main Content -->
+    <div id="mainContent" class="main-content hidden">
+      <!-- Branch Info -->
+      <div class="branch-bar">
+        <div class="branch-info">
+          <div class="view-switch" role="group" aria-label="Show Git or Maven">
+            <button id="viewGitBtn" class="view-switch-btn active" type="button" data-view="git" aria-pressed="true" title="Git: changes, branches and history"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M7 6m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M17 6m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M7 8l0 8"/><path d="M9 18h6a2 2 0 0 0 2 -2v-5"/><path d="M14 14l3 -3l3 3"/></svg>Git</button>
+            <button id="viewMavenBtn" class="view-switch-btn" type="button" data-view="maven" aria-pressed="false" title="Maven: build, start and debug"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 14c.83 .642 2.077 1.017 3.5 1c1.423 .017 2.67 -.358 3.5 -1c.83 -.642 2.077 -1.017 3.5 -1c1.423 -.017 2.67 .358 3.5 1"/><path d="M8 3a2.4 2.4 0 0 0 -1 2a2.4 2.4 0 0 0 1 2"/><path d="M12 3a2.4 2.4 0 0 0 -1 2a2.4 2.4 0 0 0 1 2"/><path d="M3 10h14v5a6 6 0 0 1 -6 6h-2a6 6 0 0 1 -6 -6v-5z"/><path d="M16.746 16.726a3 3 0 1 0 .252 -5.555"/></svg>Maven</button>
+          </div>
+          <svg class="branch-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="4" cy="3.5" r="1.6"/><circle cx="4" cy="12.5" r="1.6"/><circle cx="12" cy="5.5" r="1.6"/><path d="M4 5.1v5.8M12 7.1c0 3-3 3-6.6 4.2"/></svg>
+          <button id="branchSwitchBtn" class="branch-switch" type="button" title="Switch to another branch" aria-haspopup="true" aria-expanded="false">
+            <span id="currentBranch" class="branch-name">main</span>
+            <svg class="branch-caret" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+          </button>
+        </div>
+        <button id="initRepoBtn" class="btn btn-sm btn-icon folder-only" type="button" title="Make this folder a Git repository"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>Initialize Git</button>
+      </div>
+
+      <!-- Where the branch stands next to origin, and the next step -->
+      <div id="gitStatusLine" class="git-status-line">
+        <div id="gslText" class="gsl-text" aria-live="polite"></div>
+        <div class="gsl-actions split-btn">
+          <button id="syncMainBtn" class="btn btn-sm btn-icon split-main" type="button"><span id="syncMainIcon" class="split-icon" aria-hidden="true"></span><span id="syncMainLabel">Fetch</span></button>
+          <button id="syncMoreBtn" class="btn btn-sm split-more" type="button" title="Fetch, pull, push or stash" aria-label="Fetch, pull, push or stash" aria-haspopup="menu"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button>
+        </div>
+      </div>
+
+      <!-- Tabs -->
+      <div class="tabs">
+        <button class="tab active" data-tab="changes">Changes</button>
+        <button id="pushTab" class="tab" data-tab="push" title="Commits and files not yet on origin, and the branch they go to">Push</button>
+        <button id="stashTab" class="tab" data-tab="stash">Stash</button>
+        <button id="ignoredTab" class="tab" data-tab="ignored" title="Files kept out of commits in folders Git ignores">Ignored</button>
+        <button class="tab" data-tab="log">Log</button>
+      </div>
+
+      <!-- Changes Tab -->
+      <div id="tab-changes" class="tab-content active">
+        <div class="changes-split">
+          <div class="changes-main">
+            <div id="opBanner" class="op-banner hidden" role="status">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 9v4"/><path d="M10.363 3.591l-8.106 13.534a1.914 1.914 0 0 0 1.636 2.871h16.214a1.914 1.914 0 0 0 1.636 -2.87l-8.106 -13.536a1.914 1.914 0 0 0 -3.274 0z"/><path d="M12 16h.01"/></svg>
+              <span id="opText" class="op-text"></span>
+              <button id="opAbortBtn" class="btn btn-sm btn-danger" type="button"></button>
+            </div>
+            <div class="file-list-header">
+              <label class="select-all" title="Select or clear all files for the commit">
+                <input id="selectAllFiles" type="checkbox" />
+                <span id="changesCount">0 changes</span>
+              </label>
+              <div class="file-list-actions">
+                <button id="parkBtn" class="btn btn-sm btn-icon" type="button" title="Move the selected files to a folder that Git ignores in this repository, so they are left out of commits" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M19 19h-14a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 1.172 -1.821m3.828 -.179h1l3 3h7a2 2 0 0 1 2 2v8"/></svg>Move to ignored folder...</button>
+                <button id="revertBtn" class="btn btn-sm btn-danger btn-icon" type="button" title="Throw away the changes in the selected files and go back to the last commit" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14l-4 -4l4 -4"/><path d="M5 10h11a4 4 0 1 1 0 8h-1"/></svg><span class="btn-label">Revert...</span></button>
+              </div>
+            </div>
+            <div id="fileList" class="file-list"></div>
+            <div class="commit-area">
+              <input id="commitMsg" class="commit-input" type="text" placeholder="Commit message..." spellcheck="true" title="Commit message (Ctrl+Enter commits)" />
+              <div class="action-row">
+                <button id="commitBtn" class="btn btn-primary btn-icon" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 12a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"/><path d="M12 3v6"/><path d="M12 15v6"/></svg><span class="btn-label">Commit</span></button>
+                <button id="commitMoreBtn" class="btn commit-more" type="button" title="Amend or undo the last commit" aria-label="More commit actions" aria-haspopup="true"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Diff of a file: one in Changes, or one a commit in the Log changed. A popup over the page -->
+      <div id="diffModal" class="settings-overlay hidden">
+      <section id="diffPanel" class="settings-card diff-panel diff-modal-card hidden" role="dialog" aria-modal="true" aria-label="Changes in the selected file">
+        <div class="diff-toolbar">
+          <span id="diffStatus" class="file-status"></span>
+          <span id="diffPath" class="diff-path"></span>
+          <span id="diffStats" class="diff-stats"></span>
+          <div id="diffLayout" class="seg" role="group" aria-label="Diff layout">
+            <button class="seg-btn" type="button" data-layout="split" aria-pressed="true" title="Before and after side by side">Split</button>
+            <button class="seg-btn" type="button" data-layout="unified" aria-pressed="false" title="One column, removed lines above the added ones">Unified</button>
+          </div>
+          <div class="diff-nav">
+            <button id="diffPrevBtn" class="icon-action" type="button" title="Previous change (K)" aria-label="Previous change"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 9.5L8 6l3.5 3.5"/></svg></button>
+            <button id="diffNextBtn" class="icon-action" type="button" title="Next change (J)" aria-label="Next change"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5L8 10l3.5-3.5"/></svg></button>
+            <span id="diffPos" class="diff-pos"></span>
+          </div>
+          <button id="diffCloseBtn" class="icon-action" type="button" title="Close the diff (Esc)" aria-label="Close the diff"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+        </div>
+        <div id="diffNote" class="diff-note hidden"></div>
+        <div id="diffCols" class="diff-cols">
+          <div><span id="diffLeftLabel"><strong>Before</strong> · last commit (HEAD)</span><button id="diffUseLeftBtn" class="btn btn-sm diff-use-file" type="button" title="Put this version from the last commit in your working copy (your changes in this file are lost)">Use this file</button></div>
+          <div><span id="diffRightLabel"><strong>After</strong> · your working copy</span></div>
+        </div>
+        <div id="diffBody" class="diff-body"></div>
+      </section>
+      </div>
+
+      <!-- Push Tab -->
+      <div id="tab-push" class="tab-content">
+        <div class="push-target-area">
+          <label class="push-target-label" for="pushTarget">Push to</label>
+          <span class="push-target-prefix">origin/</span>
+          <input id="pushTarget" class="input push-target-input" list="pushTargetOptions" maxlength="200" placeholder="branch name" autocomplete="off" spellcheck="false" title="Remote branch that receives the push. Pick an existing one or type a new name; it is remembered for this repository. Empty = the usual branch." />
+          <datalist id="pushTargetOptions"></datalist>
+          <button id="pushNowBtn" class="btn btn-primary" type="button" disabled>Push</button>
+        </div>
+        <div id="pushSummary" class="push-summary"></div>
+        <div id="pushList" class="push-list"></div>
+      </div>
+
+      <!-- Ignored Tab: files kept out of commits in folders Git ignores -->
+      <div id="tab-ignored" class="tab-content">
+        <div class="ign-split">
+          <aside class="ign-side" aria-label="Files kept out of commits">
+            <div id="ignoredList" class="ign-list"></div>
+          </aside>
+          <section class="ign-view" aria-label="Your copy compared with the project">
+            <div id="ignoredHint" class="list-note">Click a file to compare your copy with the file in the project.</div>
+            <div id="ignoredPanel" class="ign-panel hidden">
+              <div class="diff-toolbar">
+                <span id="ignoredPath" class="diff-path"></span>
+                <span id="ignoredStats" class="diff-stats" title="+ lines only in your copy, − lines only in the project"></span>
+                <div id="ignoredLayout" class="seg" role="group" aria-label="Diff layout">
+                  <button class="seg-btn" type="button" data-layout="split" aria-pressed="true" title="The project and your copy side by side">Split</button>
+                  <button class="seg-btn" type="button" data-layout="unified" aria-pressed="false" title="One column">Unified</button>
+                </div>
+                <button id="ignoredRestoreBtn" class="btn btn-sm" type="button" title="Move this copy back to its place in the project, where it counts as a change again">Put back in the project</button>
+              </div>
+              <div id="ignoredNote" class="diff-note hidden"></div>
+              <div id="ignoredCols" class="diff-cols">
+                <div><span><strong>In the project</strong> · now</span><button id="ignoredUseLeftBtn" class="btn btn-sm diff-use-file" type="button" title="Make your copy the same as the file in the project">Use this file</button></div>
+                <div><span><strong>Your copy</strong> · <span id="ignoredColFolder"></span></span><button id="ignoredUseRightBtn" class="btn btn-sm diff-use-file" type="button" title="Make the file in the project the same as your copy">Use this file</button></div>
+              </div>
+              <div id="ignoredBody" class="diff-body"></div>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <!-- Stash Tab -->
+      <div id="tab-stash" class="tab-content">
+        <div class="stash-toolbar">
+          <span class="stash-toolbar-text">Changes put aside without a commit</span>
+          <button id="stashOpenBtn" class="btn btn-primary btn-sm">Stash changes...</button>
+        </div>
+        <div id="stashList" class="stash-list"></div>
+      </div>
+
+      <!-- Log Tab: Base <- Compare, as on GitHub. Base alone is its history; with Compare too, the commits Compare has that
+           Base has not, and in Files what they changed together -->
+      <div id="tab-log" class="tab-content">
+        <div class="cmp-bar log-refs-bar">
+          <span class="cmp-side-label">Base</span>
+          <button id="logBaseBtn" class="cmp-pick" type="button" aria-haspopup="menu" aria-expanded="false" title="Whose history: your branch, another branch (yours or on origin), a tag or a commit"><span class="cmp-pick-icon" aria-hidden="true"></span><span class="cmp-pick-text"></span><svg class="cmp-caret" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button>
+          <svg class="cmp-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l14 0"/><path d="M5 12l6 6"/><path d="M5 12l6 -6"/></svg>
+          <span class="cmp-side-label">Compare</span>
+          <button id="logCompareBtn" class="cmp-pick" type="button" aria-haspopup="menu" aria-expanded="false" title="A branch, a tag or a commit: see the commits it has that Base has not, and what they changed"><span class="cmp-pick-icon" aria-hidden="true"></span><span class="cmp-pick-text"></span><svg class="cmp-caret" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button>
+          <button id="logClearBtn" class="btn btn-sm btn-icon cmp-swap hidden" type="button" title="Stop comparing: back to the history of Base" aria-label="Stop comparing"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6l-12 12"/><path d="M6 6l12 12"/></svg></button>
+          <button id="logSwapBtn" class="btn btn-sm btn-icon cmp-swap hidden" type="button" title="Swap Base and Compare" aria-label="Swap Base and Compare"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10h14l-4 -4"/><path d="M17 14h-14l4 4"/></svg></button>
+        </div>
+        <div class="log-toolbar">
+          <div id="logViewSeg" class="seg hidden" role="group" aria-label="What to show">
+            <button class="seg-btn" type="button" data-view="commits" aria-pressed="true" title="The commits Compare has that Base has not">Commits <span id="logCommitsCount" class="cmp-count"></span></button>
+            <button class="seg-btn" type="button" data-view="files" aria-pressed="false" title="The files those commits changed, all together">Files <span id="logFilesCount" class="cmp-count"></span></button>
+          </div>
+          <div class="log-search-box">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0"/><path d="M21 21l-6 -6"/></svg>
+            <input id="logSearch" class="input" type="search" placeholder="Search commits: message, author or hash" spellcheck="false" aria-label="Search commits" />
+          </div>
+          <span id="logCount" class="log-count"></span>
+        </div>
+        <div id="logList" class="log-list"></div>
+      </div>
+
+      <!-- Maven Tab -->
+      <div id="tab-maven" class="tab-content">
+        <div id="mvnFolderRow" class="mvn-folder-row hidden">
+          <label class="mvn-folder-label" for="mvnFolder">Runs in</label>
+          <select id="mvnFolder" class="input mvn-folder" title="The folder of the microservice where the Maven commands run (where its pom.xml is), saved for this repository"></select>
+          <span id="mvnFolderNote" class="mvn-folder-note"></span>
+        </div>
+        <div id="mvnNoPom" class="list-note hidden">No pom.xml in the root of this repository.</div>
+        <div id="mvnPanel" class="mvn-panel">
+          <div id="mvnCmdline" class="mvn-cmdline">
+            <div class="mvn-words">
+              <span class="mvn-prefix" aria-hidden="true">mvn</span>
+              <span class="mvn-goal">
+                <select id="mvnCommand" class="mvn-goal-select" aria-label="Maven command">
+                  <option value="clean-install">clean install</option>
+                  <option value="install-skip-tests">clean install -DskipTests</option>
+                  <option value="test">test</option>
+                  <option value="start">Start</option>
+                  <option value="debug">Debug :5005</option>
+                  <option value="spotless-apply">spotless:apply</option>
+                  <option value="spotless-check">spotless:check</option>
+                  <option value="custom">Custom command...</option>
+                  <optgroup id="mvnMacroGroup" label="Macros">
+                    <option value="new-macro">New macro...</option>
+                  </optgroup>
+                </select>
+                <svg class="mvn-goal-caret" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+              </span>
+              <input id="mvnCustom" class="mvn-custom-input hidden" maxlength="400" placeholder="goals, e.g. clean verify" autocomplete="off" aria-label="Maven goals" />
+              <span id="mvnMacroInfo" class="mvn-macro-info hidden"></span>
+              <button id="mvnMacroEditBtn" class="mvn-add-option hidden" type="button" title="Change the steps of this macro">Edit</button>
+              <span id="mvnTags" class="mvn-tags"></span>
+              <button id="mvnOptionsBtn" class="mvn-add-option" type="button" aria-haspopup="true" aria-expanded="false" title="Add flags and pom.xml profiles">+ option</button>
+            </div>
+            <button id="mvnRunBtn" class="btn btn-primary btn-sm mvn-run" type="button"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg>Run</button>
+          </div>
+          <div class="mvn-ports" title="Used by Start and Debug, saved for this repository">
+            <span class="mvn-ports-title">Start / Debug:</span>
+            <label class="mvn-port-label" for="mvnDebugPort">debug port</label>
+            <input id="mvnDebugPort" class="mvn-port" type="text" inputmode="numeric" maxlength="5" placeholder="5005" autocomplete="off" title="Port the debugger connects to (Remote JVM Debug in IntelliJ)" />
+            <label class="mvn-port-label" for="mvnServerPort">app port</label>
+            <input id="mvnServerPort" class="mvn-port" type="text" inputmode="numeric" maxlength="5" placeholder="project" autocomplete="off" title="Port the microservice listens on (server.port). Empty keeps the project's own setting." />
+            <label class="mvn-external" title="Opens a separate window (PowerShell on Windows, Terminal on Mac) instead of showing the output here">
+              <input id="mvnExternal" type="checkbox" /> Separate window
+            </label>
+          </div>
+          <div class="mvn-status-row">
+            <span id="mvnStatus" class="mvn-status">Idle</span>
+            <span id="mvnWrapper" class="mvn-wrapper hidden">using mvnw</span>
+            <button id="mvnStopBtn" class="btn btn-sm btn-danger hidden" type="button">Stop</button>
+            <button id="mvnClearBtn" class="btn btn-sm" type="button">Clear</button>
+          </div>
+          <div class="mvn-output-row">
+            <div id="mvnModules" class="mvn-modules hidden" role="group" aria-label="Modules of the build">
+              <div class="mvn-mod-head"><span>Modules</span><span id="mvnModCount" class="mvn-mod-count"></span></div>
+              <ol id="mvnModList" class="mvn-mod-list"></ol>
+              <button id="mvnModFold" class="mvn-mod-fold" type="button" aria-expanded="true" aria-controls="mvnModList" title="Show only the bars" aria-label="Show only the bars">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 7l-5 5l5 5"/><path d="M17 7l-5 5l5 5"/></svg>
+              </button>
+            </div>
+            <pre id="mvnOutput" class="mvn-output"></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- Another repository loading: over the tab on show until its part comes -->
+      <div id="repoLoading" class="repo-loading" role="status" aria-live="polite">
+        <div class="spinner"></div>
+        <span>Loading <strong id="repoLoadingName"></strong>...</span>
+      </div>
+    </div>
+
+    <!-- Empty State -->
+    <div id="emptyState" class="empty-state">
+      <p>No repositories added yet.</p>
+      <p>Use <strong>+ Add</strong> or <strong>Scan folder</strong> on the left.</p>
+    </div>
+    </div>
+    </div>
+
+    <!-- Vault -->
+    <div id="vaultView" class="body hidden">
+      <div class="content">
+        <div id="vaultWarning" class="vault-warning hidden"></div>
+        <div id="vaultEmpty" class="empty-state">
+          <p>No environments yet.</p>
+          <p>Add one (for example <strong>dev</strong> or <strong>stir</strong>) to store its users, passwords, links, endpoints and notes.</p>
+          <p><button id="addEnvBtn" class="btn btn-primary btn-sm" type="button">+ Environment</button></p>
+        </div>
+        <div id="vaultMain" class="main-content hidden">
+          <div class="vault-head">
+            <div class="vault-head-title">
+              <span class="vault-env-title">Variables</span>
+            </div>
+            <div class="vault-head-actions">
+              <button id="vaultNewBtn" class="btn btn-sm vault-new-btn" type="button" aria-haspopup="true" aria-expanded="false">
+                + New
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+              </button>
+              <button id="vaultEnvsBtn" class="btn btn-sm" type="button" aria-haspopup="menu" title="Rename, add or delete environments">Environments
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="vd-bar">
+            <div id="vaultEnvChips" class="vd-chips" role="group" aria-label="Environment shown"></div>
+            <div class="vd-search vault-search-box">
+              <input id="vaultSearch" class="input vault-search" type="search" placeholder="Search..." autocomplete="off" spellcheck="false" aria-label="Search in every environment" />
+              <kbd class="vault-search-key" title="Press / to search">/</kbd>
+            </div>
+          </div>
+          <div id="vaultItems" class="vault-split vd-split"></div>
+          <div id="qaCredential" class="vault-quick hidden">
+            <span class="type-pill type-credential">New</span>
+            <input id="qaCredTitle" class="input vault-quick-input" maxlength="120" placeholder="Label" />
+            <input id="qaCredUser" class="input vault-quick-input mono" maxlength="200" placeholder="Username" autocomplete="off" />
+            <input id="qaCredPass" class="input vault-quick-input mono" type="password" maxlength="500" placeholder="Password" autocomplete="new-password" />
+            <button id="qaCredAdd" class="btn btn-primary btn-sm vault-quick-add" type="button">Add</button>
+          </div>
+          <div id="qaLink" class="vault-quick hidden">
+            <span class="type-pill type-link">New</span>
+            <input id="qaLinkTitle" class="input vault-quick-input" maxlength="120" placeholder="Title (optional)" />
+            <input id="qaLinkUrl" class="input vault-quick-input mono span-2" maxlength="1000" placeholder="URL - copy a link and it appears here" autocomplete="off" />
+            <button id="qaLinkAdd" class="btn btn-primary btn-sm vault-quick-add" type="button">Add</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tasks -->
+    <div id="todoView" class="body hidden">
+      <div class="content">
+        <div class="task-add">
+          <input id="taskTitle" class="input task-add-title" maxlength="200" placeholder="Add a task..." autocomplete="off" />
+          <input id="taskDesc" class="input task-add-desc" maxlength="2000" placeholder="Description (optional)" autocomplete="off" />
+          <button id="taskAddBtn" class="btn btn-primary" type="button">Add</button>
+        </div>
+        <div id="taskList" class="task-list"></div>
+      </div>
+    </div>
+
+    <!-- Containers (Docker) -->
+    <div id="dockerView" class="body hidden">
+      <div class="content">
+        <div class="dk-toolbar">
+          <div class="log-search-box dk-search-box">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0"/><path d="M21 21l-6 -6"/></svg>
+            <input id="dkSearch" class="input" type="search" placeholder="Search: name, image or port" spellcheck="false" aria-label="Search containers" />
+          </div>
+          <div id="dkFilters" class="tabs vault-tabs dk-filters">
+            <button class="tab active" data-filter="all" type="button">All <span class="tab-count"></span></button>
+            <button class="tab" data-filter="running" type="button">Running <span class="tab-count"></span></button>
+            <button class="tab" data-filter="stopped" type="button">Stopped <span class="tab-count"></span></button>
+          </div>
+          <button id="dkRefreshBtn" class="icon-action" type="button" title="Refresh the list" aria-label="Refresh the list"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg></button>
+          <button id="dkNewBtn" class="btn btn-sm btn-primary btn-icon" type="button" title="Create and start a container from an image"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>New container</button>
+        </div>
+        <div id="dkNotice" class="op-banner dk-notice hidden" role="status">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 9v4"/><path d="M10.363 3.591l-8.106 13.534a1.914 1.914 0 0 0 1.636 2.871h16.214a1.914 1.914 0 0 0 1.636 -2.87l-8.106 -13.536a1.914 1.914 0 0 0 -3.274 0z"/><path d="M12 16h.01"/></svg>
+          <span id="dkNoticeText" class="op-text"></span>
+          <button id="dkStartDesktopBtn" class="btn btn-sm hidden" type="button">Start Docker Desktop</button>
+        </div>
+        <div id="dkList" class="dk-list" role="table" aria-label="Containers"></div>
+        <section id="dkLogs" class="dk-logs hidden" aria-label="Container logs">
+          <div class="dk-logs-head">
+            <span id="dkLogsTitle" class="dk-logs-title"></span>
+            <span id="dkLogsState" class="dk-logs-state"></span>
+            <div class="log-search-box dk-logs-filter">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0"/><path d="M21 21l-6 -6"/></svg>
+              <input id="dkLogsFilter" class="input" type="search" placeholder="Filter lines" spellcheck="false" aria-label="Filter the log lines" />
+            </div>
+            <button id="dkLogsClear" class="btn btn-sm" type="button">Clear</button>
+            <button id="dkLogsClose" class="icon-action" type="button" title="Close the logs" aria-label="Close the logs"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+          </div>
+          <div id="dkLogTags" class="dk-log-tags hidden"></div>
+          <pre id="dkLogsOutput" class="mvn-output dk-logs-output"></pre>
+        </section>
+        <!-- The commands the page runs, and a line to run your own -->
+        <section id="dkTerm" class="help-term dk-term" aria-label="Commands">
+          <div class="help-term-head">
+            <button id="dkTermToggle" class="icon-action help-term-toggle" type="button" title="Hide the commands" aria-label="Hide the commands" aria-expanded="true"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button>
+            <span class="help-term-title">Commands</span>
+            <span id="dkTermState" class="help-term-state"></span>
+            <button id="dkTermStop" class="btn btn-sm btn-danger hidden" type="button" title="Stop the command (Ctrl+C)">Stop</button>
+            <button id="dkTermClear" class="btn btn-sm" type="button">Clear</button>
+          </div>
+          <div class="help-term-box">
+            <pre id="dkTermOutput" class="help-term-output"></pre>
+            <div class="help-term-line">
+              <span id="dkTermPrompt" class="help-term-prompt" aria-hidden="true">docker ❯</span>
+              <input id="dkTermInput" class="help-term-input" type="text" spellcheck="false" autocomplete="off" aria-label="Command to run" placeholder="ps -a, images, pull redis:7... and Enter" />
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- Analysis: looks across the microservices of the list -->
+    <div id="analysisView" class="body hidden">
+      <aside class="sidebar">
+        <div class="sidebar-header">Analysis</div>
+        <div id="analysisList" class="repo-list" role="listbox" aria-label="Analyses"></div>
+      </aside>
+      <div class="content">
+        <div id="analysisPanel" class="tool-panel"></div>
+      </div>
+    </div>
+
+    <!-- Search: text in the files of every microservice, or their file names -->
+    <div id="searchView" class="body hidden">
+      <div class="content">
+        <div id="searchPanel" class="tool-panel search-page"></div>
+      </div>
+    </div>
+
+    <!-- Tools: small converters and generators, and the ports in use -->
+    <div id="toolsView" class="body hidden">
+      <aside class="sidebar">
+        <div class="sidebar-header">Tools</div>
+        <div class="sidebar-search">
+          <input id="toolsSearch" class="input" type="search" placeholder="Search tools..." autocomplete="off" spellcheck="false" aria-label="Search tools" />
+        </div>
+        <div id="toolsList" class="repo-list" role="listbox" aria-label="Tools"></div>
+      </aside>
+      <div class="content">
+        <div id="toolPanel" class="tool-panel"></div>
+      </div>
+    </div>
+
+    <!-- Clipboard history -->
+    <div id="clipView" class="body hidden">
+      <div class="content">
+        <div class="clip-toolbar">
+          <input id="clipSearch" class="input clip-search" placeholder="Search copied text..." />
+          <span id="clipCount" class="clip-count"></span>
+          <button id="clipPauseBtn" class="btn btn-sm" type="button">Pause</button>
+          <button id="clipClearBtn" class="btn btn-sm btn-danger" type="button">Clear all</button>
+        </div>
+        <div id="clipPaused" class="clip-paused hidden">Recording is paused. New copies are not saved.</div>
+        <div class="clip-table-wrap">
+          <table class="clip-table">
+            <thead>
+              <tr><th class="clip-col-format"></th><th>Text</th><th class="clip-col-actions"></th></tr>
+            </thead>
+            <tbody id="clipRows"></tbody>
+          </table>
+          <div id="clipEmpty" class="list-note hidden"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Logs -->
+    <div id="logsView" class="body hidden">
+      <div class="content">
+        <div class="logs-toolbar">
+          <input id="logsQuery" class="input logs-query" spellcheck="false" placeholder='Search logs, e.g. level:error payments -timeout "exact phrase"' aria-label="Search logs" />
+          <button id="logsSearchBtn" class="btn btn-primary btn-sm" type="button">Search</button>
+          <button id="logsClearBtn" class="btn btn-sm" type="button" title="Clear the search and show all logs" disabled>Clear</button>
+          <select id="logsOrigin" class="input logs-origin-select hidden" aria-label="Where the logs come from"></select>
+          <select id="logsEnv" class="input logs-env hidden" aria-label="Environment" title="Environment: the searches for each one are in logs-config.json"></select>
+          <select id="logsRange" class="input logs-range" aria-label="Time range">
+            <option value="15m">Last 15 minutes</option>
+            <option value="1h" selected>Last hour</option>
+            <option value="6h">Last 6 hours</option>
+            <option value="24h">Last 24 hours</option>
+            <option value="7d">Last 7 days</option>
+            <option value="custom">Custom range</option>
+          </select>
+          <button id="logsErrorsBtn" class="btn btn-sm logs-errors-btn" type="button" title="Group the errors by kind and show only one kind">Error types</button>
+        </div>
+        <div id="logsCustom" class="logs-custom hidden">
+          <label class="logs-custom-label">From <input id="logsFrom" class="input" type="datetime-local" step="1" /></label>
+          <label class="logs-custom-label">To <input id="logsTo" class="input" type="datetime-local" step="1" /></label>
+        </div>
+        <div id="logsTabs" class="logs-tabs" role="tablist" aria-label="Log groups"></div>
+        <div class="logs-status">
+          <span id="logsErrorChip" class="logs-chip hidden"></span>
+          <span id="logsSummary" class="logs-summary"></span>
+          <span id="logsSource" class="logs-source"></span>
+          <button id="logsGrafanaBtn" class="btn btn-sm" type="button">Log in to Grafana</button>
+          <button id="logsLiveBtn" class="btn btn-sm hidden" type="button" title="Keep adding new test logs every few seconds, so the watches find new logs">Live test logs: off</button>
+          <button id="logsGenerateBtn" class="btn btn-sm hidden" type="button" title="Write a new set of test logs for the last 7 days (replaces the current test logs)">Generate test logs</button>
+          <button id="logsConfigBtn" class="btn btn-sm" type="button" title="Open logs-config.json: source, address, credentials and field names">Config</button>
+        </div>
+        <div class="logs-table-wrap">
+          <table class="logs-table">
+            <thead>
+              <tr id="logsHeadRow"></tr>
+            </thead>
+            <tbody id="logsRows"></tbody>
+          </table>
+          <div id="logsEmpty" class="list-note hidden"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Command help -->
+    <div id="helpView" class="body hidden">
+      <aside class="sidebar">
+        <div class="sidebar-header">Topics</div>
+        <div id="helpCategories" class="repo-list"></div>
+      </aside>
+      <div class="content">
+        <div class="clip-toolbar">
+          <input id="helpSearch" class="input clip-search" placeholder="Search all commands, e.g. logs, port, skip tests..." />
+          <span class="clip-count">Click a command to copy it, or the arrow on its left to put it in the terminal below. Replace the parts in &lt;angle brackets&gt;.</span>
+        </div>
+        <div id="helpList" class="help-list"></div>
+        <section id="helpTerm" class="help-term" aria-label="Terminal">
+          <div class="help-term-head">
+            <button id="helpTermToggle" class="icon-action help-term-toggle" type="button" title="Hide the terminal" aria-label="Hide the terminal" aria-expanded="true"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button>
+            <span class="help-term-title">Terminal</span>
+            <label class="help-term-in" for="helpTermCwd">in</label>
+            <select id="helpTermCwd" class="input help-term-cwd" title="The folder the commands run in"></select>
+            <span id="helpTermState" class="help-term-state"></span>
+            <button id="helpTermStop" class="btn btn-sm btn-danger hidden" type="button" title="Stop the command (Ctrl+C)">Stop</button>
+            <button id="helpTermExternal" class="btn btn-sm" type="button" title="Run the command in a terminal window of its own: for commands that ask questions or need a keyboard (rebase -i, exec -it...)">Open in a terminal window</button>
+            <button id="helpTermClear" class="btn btn-sm" type="button">Clear</button>
+          </div>
+          <div class="help-term-box">
+            <pre id="helpTermOutput" class="help-term-output"></pre>
+            <div class="help-term-line">
+              <span class="help-term-prompt" aria-hidden="true">❯</span>
+              <input id="helpTermInput" class="help-term-input" type="text" spellcheck="false" autocomplete="off" aria-label="Command to run" placeholder="Type a command and press Enter, or use the arrow next to a command above" />
+              <button id="helpTermSave" class="icon-action help-term-save" type="button" title="Save this command in My commands" aria-label="Save this command in My commands"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 2.5h7v11L8 10.6l-3.5 2.9z"/></svg></button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    </div>
+    </div>
+
+    <!-- Pop-out card window -->
+    <div id="cardWindow" class="card-window-root">
+      <div id="cardWindowBody"></div>
+    </div>
+
+    <!-- Formatted clipboard text -->
+    <div id="logsTraceModal" class="settings-overlay hidden">
+      <div class="settings-card logs-trace-card" role="dialog" aria-modal="true" aria-labelledby="logsTraceTitle">
+        <div class="logs-trace-head">
+          <h3 id="logsTraceTitle">Trace</h3>
+          <code id="logsTraceId" class="logs-trace-id"></code>
+          <button id="logsTraceCopy" class="btn btn-sm" type="button" title="Copy the trace id">Copy id</button>
+          <span class="logs-trace-space"></span>
+          <button id="logsTraceList" class="btn btn-sm" type="button" title="Close and show these logs in the list">Show in the list</button>
+          <button id="logsTraceClose" class="close-btn" type="button" title="Close (Esc)" aria-label="Close">&#x2715;</button>
+        </div>
+        <div id="logsTraceSummary" class="logs-trace-summary"></div>
+        <div id="logsTraceBody" class="logs-trace-body"></div>
+      </div>
+    </div>
+
+    <!-- Logs: a JSON value formatted, or a request as curl -->
+    <div id="logsPopup" class="settings-overlay hidden">
+      <div class="settings-card logs-popup-card" role="dialog" aria-modal="true" aria-labelledby="logsPopupTitle">
+        <div class="logs-trace-head">
+          <h3 id="logsPopupTitle"></h3>
+          <span class="logs-trace-space"></span>
+          <button id="logsPopupClose" class="close-btn" type="button" title="Close (Esc)" aria-label="Close">&#x2715;</button>
+        </div>
+        <div id="logsPopupBody" class="logs-popup-body"></div>
+      </div>
+    </div>
+
+    <div id="clipFormatModal" class="settings-overlay hidden">
+      <div class="settings-card clip-format-card">
+        <h3 id="clipFormatTitle">Formatted</h3>
+        <pre id="clipFormatted" class="clip-formatted"></pre>
+        <div class="action-row settings-actions">
+          <button id="clipFormatClose" class="btn" type="button">Close</button>
+          <button id="clipFormatCopy" class="btn btn-primary" type="button">Copy</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Task dialog -->
+    <div id="todoModal" class="settings-overlay hidden">
+      <div class="settings-card vault-dialog">
+        <h3>Edit task</h3>
+        <label class="settings-label" for="todoEditTitle">Title</label>
+        <input id="todoEditTitle" class="input form-input" maxlength="200" />
+        <label class="settings-label form-gap" for="todoEditDesc">Description</label>
+        <textarea id="todoEditDesc" class="input form-input" rows="6" maxlength="2000" placeholder="Details, links, next steps..."></textarea>
+        <div class="action-row settings-actions task-dialog-actions">
+          <button id="todoDeleteBtn" class="btn btn-danger task-dialog-delete" type="button">Delete</button>
+          <button id="todoCancelBtn" class="btn" type="button">Cancel</button>
+          <button id="todoSaveBtn" class="btn btn-primary" type="button">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Vault dialogs -->
+    <div id="itemModal" class="settings-overlay hidden">
+      <div class="settings-card vault-dialog">
+        <h3 id="itemModalTitle"></h3>
+        <div id="itemForm"></div>
+        <div class="action-row settings-actions">
+          <button id="itemCancelBtn" class="btn" type="button">Cancel</button>
+          <button id="itemSaveBtn" class="btn btn-primary" type="button">Save</button>
+        </div>
+      </div>
+    </div>
+    <div id="envModal" class="settings-overlay hidden">
+      <div class="settings-card vault-dialog">
+        <h3 id="envModalTitle"></h3>
+        <label class="settings-label" for="envName">Name</label>
+        <input id="envName" class="input form-input" maxlength="60" placeholder="e.g. dev, stir, prod" />
+        <label class="settings-label form-gap" for="envBaseUrl">Base URL (optional)</label>
+        <input id="envBaseUrl" class="input form-input" maxlength="300" placeholder="https://dev.example.com" />
+        <p class="settings-hint">Shown next to the environment name.</p>
+        <div class="action-row settings-actions">
+          <button id="envDeleteBtn" class="btn btn-danger hidden" type="button">Delete</button>
+          <span class="vd-dialog-spacer"></span>
+          <button id="envCancelBtn" class="btn" type="button">Cancel</button>
+          <button id="envSaveBtn" class="btn btn-primary" type="button">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Move to a folder Git ignores -->
+    <div id="parkModal" class="settings-overlay hidden">
+      <div class="settings-card park-card" role="dialog" aria-modal="true" aria-labelledby="parkTitle">
+        <h3 id="parkTitle">Move to an ignored folder</h3>
+        <p class="settings-hint park-intro">The files move into this folder and stop counting as changes. Git ignores the folder in this repository only: it is added to <code>.git/info/exclude</code>, so there is nothing new to commit. A file that is in the last commit goes back to that version where it was.</p>
+        <label class="settings-label" for="parkFolder">Folder in the repository</label>
+        <input id="parkFolder" class="input park-folder" maxlength="120" autocomplete="off" spellcheck="false" placeholder="local-changes" />
+        <label class="settings-label form-gap">Files</label>
+        <div id="parkFiles" class="park-files"></div>
+        <p id="parkHint" class="settings-hint hidden"></p>
+        <div class="action-row settings-actions park-actions">
+          <button id="parkCancelBtn" class="btn" type="button">Cancel</button>
+          <button id="parkConfirmBtn" class="btn btn-primary" type="button">Move</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Amend the last commit -->
+    <div id="amendModal" class="settings-overlay hidden">
+      <div class="settings-card" role="dialog" aria-modal="true" aria-labelledby="amendTitle">
+        <h3 id="amendTitle">Amend the last commit</h3>
+        <p id="amendMeta" class="settings-hint"></p>
+        <label class="settings-label" for="amendMsg">Message</label>
+        <input id="amendMsg" class="input dialog-input dialog-text" type="text" maxlength="500" spellcheck="true" />
+        <label id="amendFilesRow" class="dialog-check"><input id="amendFiles" type="checkbox" /><span id="amendFilesText"></span></label>
+        <p id="amendError" class="branch-create-error hidden"></p>
+        <div class="action-row settings-actions">
+          <button id="amendCancelBtn" class="btn" type="button">Cancel</button>
+          <button id="amendConfirmBtn" class="btn btn-primary" type="button">Amend</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Create a tag on a commit -->
+    <div id="tagModal" class="settings-overlay hidden">
+      <div class="settings-card" role="dialog" aria-modal="true" aria-labelledby="tagTitle">
+        <h3 id="tagTitle">Create a tag</h3>
+        <p id="tagMeta" class="settings-hint"></p>
+        <label class="settings-label" for="tagName">Name</label>
+        <input id="tagName" class="input dialog-input" type="text" maxlength="100" spellcheck="false" placeholder="v1.0.0" />
+        <label class="dialog-check"><input id="tagPush" type="checkbox" checked /><span>Push it to origin now</span></label>
+        <p id="tagError" class="branch-create-error hidden"></p>
+        <div class="action-row settings-actions">
+          <button id="tagCancelBtn" class="btn" type="button">Cancel</button>
+          <button id="tagConfirmBtn" class="btn btn-primary" type="button">Create tag</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pull several repositories: choose them -->
+    <div id="pullManyModal" class="settings-overlay hidden">
+      <div class="settings-card pull-many-card" role="dialog" aria-modal="true" aria-labelledby="pullManyTitle">
+        <h3 id="pullManyTitle">Pull repositories</h3>
+        <p class="settings-hint pm-intro">Each one is fetched, then moved forward to its branch on origin when that needs no merge. One that fails is skipped and the next one goes on.</p>
+        <div class="pm-toolbar">
+          <label class="pm-all"><input id="pmAll" type="checkbox" /><span id="pmCount"></span></label>
+          <input id="pmFilter" class="input pm-filter" type="search" placeholder="Filter..." autocomplete="off" spellcheck="false" aria-label="Filter the repositories" />
+        </div>
+        <div id="pmList" class="pm-list" role="group" aria-label="Repositories to pull"></div>
+        <div class="action-row settings-actions">
+          <button id="pmCancel" class="btn" type="button">Cancel</button>
+          <button id="pmPull" class="btn btn-primary" type="button">Pull</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pull several repositories: what happened to each -->
+    <div id="pullResultsModal" class="settings-overlay hidden">
+      <div class="settings-card pull-results-card" role="dialog" aria-modal="true" aria-labelledby="pullResultsTitle">
+        <div class="pr-head">
+          <h3 id="pullResultsTitle">Pull results</h3>
+          <div id="prSummary" class="pr-summary"></div>
+        </div>
+        <div id="prList" class="pr-list"></div>
+        <div class="action-row settings-actions">
+          <button id="prRetry" class="btn hidden" type="button">Pull the failed again</button>
+          <button id="prClose" class="btn btn-primary" type="button">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Clone a repository -->
+    <div id="cloneModal" class="settings-overlay hidden">
+      <div class="settings-card clone-card" role="dialog" aria-modal="true" aria-labelledby="cloneTitle">
+        <h3 id="cloneTitle">Clone a repository</h3>
+        <label class="settings-label" for="cloneUrl">Address</label>
+        <input id="cloneUrl" class="input dialog-input" type="text" spellcheck="false" placeholder="https://github.com/owner/repo.git" />
+        <label class="settings-label">Into the folder</label>
+        <div class="clone-parent-row">
+          <span id="cloneParent" class="clone-parent"></span>
+          <button id="cloneParentBtn" class="btn btn-sm" type="button">Choose...</button>
+        </div>
+        <label class="settings-label" for="cloneName">Folder name</label>
+        <input id="cloneName" class="input dialog-input" type="text" spellcheck="false" />
+        <p id="cloneWhere" class="settings-hint"></p>
+        <p id="cloneError" class="branch-create-error hidden"></p>
+        <div class="action-row settings-actions">
+          <button id="cloneCancelBtn" class="btn" type="button">Cancel</button>
+          <button id="cloneConfirmBtn" class="btn btn-primary" type="button">Clone</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Details of a container -->
+    <div id="dkDetailModal" class="settings-overlay hidden">
+      <section class="settings-card dk-detail-card" role="dialog" aria-modal="true" aria-labelledby="dkDetailName">
+        <div class="dk-detail-head">
+          <span id="dkDetailDot" class="dk-dot"></span>
+          <div class="dk-detail-title">
+            <h3 id="dkDetailName"></h3>
+            <span id="dkDetailSub" class="dk-detail-sub"></span>
+          </div>
+          <div id="dkDetailActions" class="dk-detail-actions"></div>
+          <button id="dkDetailClose" class="icon-action" type="button" title="Close (Esc)" aria-label="Close"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+        </div>
+        <div id="dkDetailTabs" class="tabs vault-tabs dk-detail-tabs">
+          <button class="tab active" data-tab="overview" type="button">Overview</button>
+          <button class="tab" data-tab="env" type="button">Environment <span class="tab-count"></span></button>
+          <button class="tab" data-tab="network" type="button">Network</button>
+          <button class="tab" data-tab="volumes" type="button">Volumes <span class="tab-count"></span></button>
+          <button class="tab" data-tab="labels" type="button">Labels <span class="tab-count"></span></button>
+          <button class="tab" data-tab="inspect" type="button">Inspect</button>
+        </div>
+        <div id="dkDetailBody" class="dk-detail-body"></div>
+      </section>
+    </div>
+
+    <!-- New container -->
+    <div id="dkNewModal" class="settings-overlay hidden">
+      <div class="settings-card dk-new-card" role="dialog" aria-modal="true" aria-labelledby="dkNewTitle">
+        <h3 id="dkNewTitle">New container</h3>
+        <label class="settings-label">Start from</label>
+        <div id="dkTemplates" class="dk-templates"></div>
+        <div class="dk-two">
+          <div>
+            <label class="settings-label" for="dkImage">Image</label>
+            <input id="dkImage" class="input dialog-input" list="dkImageList" spellcheck="false" placeholder="postgres:16" autocomplete="off" />
+            <datalist id="dkImageList"></datalist>
+          </div>
+          <div>
+            <label class="settings-label" for="dkName">Name</label>
+            <input id="dkName" class="input dialog-input" spellcheck="false" placeholder="my-postgres" autocomplete="off" />
+          </div>
+        </div>
+        <div class="dk-rows-head"><label class="settings-label">Ports: this PC → container</label><button id="dkAddPort" class="btn btn-sm" type="button">+ Port</button></div>
+        <div id="dkPorts" class="dk-rows"></div>
+        <div class="dk-rows-head"><label class="settings-label">Environment variables</label><button id="dkAddEnv" class="btn btn-sm" type="button">+ Variable</button></div>
+        <div id="dkEnv" class="dk-rows"></div>
+        <div class="dk-rows-head"><label class="settings-label">Volumes: folder or volume name → path in the container</label><button id="dkAddVolume" class="btn btn-sm" type="button">+ Volume</button></div>
+        <div id="dkVolumes" class="dk-rows"></div>
+        <div class="dk-two">
+          <div>
+            <label class="settings-label" for="dkRestart">Restart</label>
+            <select id="dkRestart" class="input dialog-input">
+              <option value="no">Never</option>
+              <option value="unless-stopped">Unless stopped</option>
+              <option value="always">Always</option>
+              <option value="on-failure">When it fails</option>
+            </select>
+          </div>
+          <div>
+            <label class="settings-label" for="dkCommand">Command (optional)</label>
+            <input id="dkCommand" class="input dialog-input" spellcheck="false" placeholder="e.g. start-dev" autocomplete="off" />
+          </div>
+        </div>
+        <pre id="dkPreview" class="dk-preview"></pre>
+        <p id="dkNewError" class="branch-create-error hidden"></p>
+        <div class="action-row settings-actions">
+          <button id="dkNewCancel" class="btn" type="button">Cancel</button>
+          <button id="dkNewCreate" class="btn btn-primary" type="button">Create and start</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stash dialog -->
+    <div id="stashModal" class="settings-overlay hidden">
+      <div class="settings-card stash-card">
+        <h3>Stash changes</h3>
+        <label class="settings-label" for="stashName">Name (optional)</label>
+        <input id="stashName" class="input stash-name" maxlength="120" placeholder="e.g. login form half done" />
+        <div class="stash-files-header">
+          <label class="settings-label">Files</label>
+          <button id="stashToggleAll" class="btn btn-sm" type="button">None</button>
+        </div>
+        <div id="stashFiles" class="stash-files"></div>
+        <p id="stashHint" class="settings-hint"></p>
+        <div class="action-row settings-actions">
+          <button id="stashCancelBtn" class="btn">Cancel</button>
+          <button id="stashConfirmBtn" class="btn btn-primary">Stash</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings -->
+    <div id="settingsPanel" class="settings-overlay hidden">
+      <div class="settings-card settings-wide">
+        <h3>Settings</h3>
+        <label class="settings-label">Theme</label>
+        <div class="theme-switch">
+          <button class="btn theme-opt" data-theme-value="light" type="button">Light</button>
+          <button class="btn theme-opt" data-theme-value="dark" type="button">Dark</button>
+        </div>
+        <label class="settings-label">Text size</label>
+        <div id="textSizeSwitch" class="theme-switch text-size-switch" role="group" aria-label="Text size">
+          <button class="btn theme-opt" data-zoom="0.9" type="button">Smaller</button>
+          <button class="btn theme-opt" data-zoom="1" type="button">Normal</button>
+          <button class="btn theme-opt" data-zoom="1.1" type="button">Larger</button>
+          <button class="btn theme-opt" data-zoom="1.25" type="button">Largest</button>
+        </div>
+        <p class="settings-hint">The text and everything around it, in every window of the app.</p>
+        <label class="settings-label" for="ticketPrefix">Ticket prefix</label>
+        <input id="ticketPrefix" class="input form-input ticket-prefix-input" maxlength="30" placeholder="ABC-" autocomplete="off" spellcheck="false" />
+        <p class="settings-hint">A Jira key such as ABC-: written at the start of a new commit message and after feature/ (or fix/...) in a new branch name. Empty: none.</p>
+        <label class="settings-label">Window size</label>
+        <div class="window-size-row">
+          <span id="windowSizeNow" class="window-size-now"></span>
+          <button id="windowSizeReset" class="btn btn-sm" type="button">Default size</button>
+        </div>
+        <p class="settings-hint">Drag an edge or a corner of the window to change its size; it is kept for the next time. A double-click on an edge goes back to the default size.</p>
+        <label class="settings-label">Global shortcuts</label>
+        <div id="hotkeyRows" class="hotkey-rows"></div>
+        <p class="settings-hint">Click a field, then press the combination (e.g. Ctrl+Alt+G). Needs at least one modifier, unless it is an F key. Esc cancels, &#x2715; removes the shortcut. Each shortcut opens its own page; pressing it again there hides the window.</p>
+        <div class="action-row settings-actions">
+          <button id="hotkeyResetBtn" class="btn">Default</button>
+          <button id="settingsCancelBtn" class="btn">Cancel</button>
+          <button id="hotkeySaveBtn" class="btn btn-primary" disabled>Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast -->
+    <!-- Manage groups: a column per group, microservices dragged between them -->
+    <div id="groupsBoard" class="settings-overlay groups-overlay hidden">
+      <div class="settings-card groups-card" role="dialog" aria-modal="true" aria-labelledby="groupsTitle">
+        <div class="groups-head">
+          <h3 id="groupsTitle">Groups</h3>
+          <input id="groupsFilter" class="input groups-filter" type="search" placeholder="Filter microservices..." autocomplete="off" spellcheck="false" aria-label="Filter the microservices" />
+          <span id="groupsPicked" class="groups-picked hidden">
+            <span id="groupsPickedCount"></span>
+            <select id="groupsMoveTo" class="input groups-move-to" aria-label="Move the picked microservices to"></select>
+            <button id="groupsPickedClear" class="btn btn-sm" type="button">Clear</button>
+          </span>
+          <span class="groups-head-end">
+            <button id="groupsNew" class="btn btn-sm" type="button">+ New group</button>
+            <button id="groupsClose" class="btn btn-sm btn-primary" type="button">Done</button>
+          </span>
+        </div>
+        <p class="groups-hint" id="groupsHint">Drag microservices from one group to another. Ctrl+click picks several, Shift+click a run of them.</p>
+        <div id="groupsCols" class="groups-cols"></div>
+      </div>
+    </div>
+
+    <!-- Maven macro: several commands saved under a name, run one after the other -->
+    <div id="mvnMacroModal" class="settings-overlay hidden">
+      <div class="settings-card mvn-macro-card" role="dialog" aria-modal="true" aria-labelledby="mvnMacroTitle">
+        <h3 id="mvnMacroTitle">New macro</h3>
+        <label class="settings-label" for="mvnMacroName">Name</label>
+        <input id="mvnMacroName" class="input" maxlength="60" placeholder="Rebuild and restart" autocomplete="off" spellcheck="false" />
+        <div class="settings-label mvn-macro-steps-label">Steps, in this order</div>
+        <ol id="mvnMacroSteps" class="mvn-macro-steps"></ol>
+        <select id="mvnMacroAdd" class="input mvn-macro-add" aria-label="Add a step"></select>
+        <p class="settings-hint">For every microservice, in its folder. It stops at the first step that fails. Stop ends what is running in the microservice, so the app can start again; a step that starts the app keeps running, so it goes last.</p>
+        <div id="mvnMacroError" class="tool-error" role="alert"></div>
+        <div class="action-row settings-actions mvn-macro-actions">
+          <button id="mvnMacroDelete" class="btn btn-danger hidden" type="button">Delete</button>
+          <span class="mvn-macro-spacer"></span>
+          <button id="mvnMacroCancel" class="btn" type="button">Cancel</button>
+          <button id="mvnMacroSave" class="btn btn-primary" type="button">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick search: Ctrl+P (Cmd+P) from any page -->
+    <div id="quickSearch" class="settings-overlay qs-overlay hidden">
+      <div class="settings-card qs-card" role="dialog" aria-modal="true" aria-label="Quick search">
+        <label class="qs-bar">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 10m-7 0a7 7 0 1 0 14 0a7 7 0 1 0 -14 0"/><path d="M21 21l-6 -6"/></svg>
+          <input id="qsInput" type="search" placeholder="File name, or # and a text to search" autocomplete="off" spellcheck="false" aria-label="File name, or # and a text" aria-controls="qsList" />
+          <span id="qsCount" class="qs-count"></span>
+        </label>
+        <div id="qsList" class="qs-list" role="listbox" aria-label="Results"></div>
+        <div id="qsHint" class="qs-foot"></div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <!-- Loading -->
+    <div id="loading" class="loading hidden">
+      <div class="spinner"></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+  <script src="vault.js"></script>
+  <script src="todo.js"></script>
+  <script src="maven.js"></script>
+  <script src="clipboard.js"></script>
+  <script src="logs.js"></script>
+  <script src="containers.js"></script>
+  <script src="logs-trace.js"></script>
+  <script src="help.js"></script>
+  <script src="pull-many.js"></script>
+  <script src="tools.js"></script>
+  <script src="analysis.js"></script>
+  <script src="search.js"></script>
+  <script src="groups-board.js"></script>
+  <script src="compare.js"></script>
+</body>
+</html>

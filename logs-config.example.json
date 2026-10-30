@@ -1,0 +1,55 @@
+{
+  "_help": [
+    "Exemplo da configuracao da pagina Logs do Git Quick, para a Grafana com OpenShift e GCP.",
+    "Copia este ficheiro para data\\logs-config.json (a pasta data fica ao lado do GitQuick.exe).",
+    "Preenche grafana.url (ex.: \"http://grafana.empresa.pt\"), grafana.orgId e grafana.datasourceUid com os valores do config.json do log-explorer.",
+    "Enquanto faltarem, o botao \"Log in to Grafana\" diz o que falta.",
+    "Depois, na pagina Logs, carrega em Search e em \"Log in to Grafana\" (janela do Keycloak ou cookie grafana_session).",
+    "Deixa grafana.token e grafana.cookie vazios: a app preenche o cookie se entrares com ele.",
+    "Os campos json.* sao o JSON que o logger da aplicacao escreve na mensagem (json.traceId, json.severity, json.descricao...).",
+    "defaultColumns: as colunas extra mostradas ate escolheres as tuas com + Column.",
+    "curlBaseUrl: o endereco que o botao curl poe antes de um pedido que so tem o caminho, com {env} e {service} (ex.: \"http://api.{env}.empresa.pt/{service}\").",
+    "Este ficheiro passa a ter as tuas credenciais: nao o partilhes."
+  ],
+  "source": "grafana",
+  "maxResults": 200,
+  "timeoutMs": 15000,
+  "watchIntervalSeconds": 30,
+  "watchNotifications": true,
+
+  "grafana": {
+    "url": "",
+    "orgId": 1,
+    "datasourceUid": "",
+    "index": "openshift*",
+    "browserLogin": true,
+    "token": "",
+    "cookie": ""
+  },
+
+  "fields": {
+    "time": "@timestamp",
+    "message": "message",
+    "level": "level",
+    "service": "kubernetes.pod_name"
+  },
+  "defaultColumns": ["json.traceId", "json.spanId", "json.traceparent"],
+  "curlBaseUrl": "",
+
+  "gcp": {
+    "label": "GCP",
+    "index": "app*,backoffice*,portal*,undefined*",
+    "fields": { "level": "severity", "service": "service" },
+    "environmentField": "environment"
+  },
+
+  "environments": {
+    "keycloak": "kubernetes.namespace_name:\"iam-nprod-keycloak\" AND NOT kubernetes.pod_name:*tooling*",
+    "keycloak DEV": "kubernetes.namespace_name:\"iam-nprod-keycloak\" AND (message:\"realmName DEV\" OR message:\"deployment.environment dev\" OR message:\"audit-events-dev\")",
+    "keycloak SIT": "kubernetes.namespace_name:\"iam-nprod-keycloak\" AND (message:\"realmName SIT\" OR message:\"deployment.environment sit\" OR message:\"audit-events-sit\")",
+    "keycloak UAT": "kubernetes.namespace_name:\"iam-nprod-keycloak\" AND (message:\"realmName UAT\" OR message:\"deployment.environment uat\" OR message:\"audit-events-uat\")",
+    "keycloak PREPRD": "(kubernetes.namespace_name:\"iam-nprod-keycloak\" AND (message:\"realmName PREPRD\" OR message:\"deployment.environment preprod\" OR message:\"deployment.environment preprd\" OR message:\"audit-events-preprd\")) OR kubernetes.pod_name:iam-nprod-keycloak-preprd*",
+    "tooling": "kubernetes.pod_name:*tooling*"
+  },
+  "defaultEnvironment": "keycloak DEV"
+}

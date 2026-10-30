@@ -1,0 +1,6 @@
+﻿Name;Username;Password;Role;Email;Team;Phone
+Test admin;admin.test;Example-Pass-01;admin;admin@example.com;Platform;+351 900 000 001
+Test reader;reader.test;Example-Pass-02;reader;reader@example.com;Support;+351 900 000 002
+Test writer;writer.test;Example-Pass-03;writer;writer@example.com;Platform;
+Batch job;svc.batch;Example-Pass-04;service;;Integrations;
+"QA user; no email";qa.test;Example-Pass-05;tester;;Quality;+351 900 000 005

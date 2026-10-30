@@ -1,0 +1,70 @@
+GIT QUICK - instalar noutro PC
+==============================
+
+1. Descarrega o GitQuick.exe da pagina de Releases:
+     https://github.com/carnehd/windows-atalho/releases/latest
+   e poe-no numa pasta, por exemplo C:\Tools\GitQuick.
+   Para levar os teus dados, copia tambem a pasta data para ao lado do exe.
+2. Duplo clique em GitQuick.exe. A app fica na bandeja do Windows (junto ao relogio).
+   - Ctrl+Shift+G abre a app; Alt+3 o Vault; Alt+2 as Tarefas (muda em Definicoes).
+   - Na primeira vez o Windows pode avisar (SmartScreen): "Mais informacoes" > "Executar mesmo assim".
+
+Requisitos no outro PC
+- Git (para o modo Git)
+- Java e Maven (so para o separador Maven)
+
+Pasta data
+- Os teus dados: vault.json (Vault), git-quick-todos.json (tarefas),
+  clipboard-history.json (historico do clipboard), git-quick-settings.json (tema, atalhos, repos).
+- ATENCAO: vault.json tem as passwords em texto legivel. Nao envies por email nem partilhas abertas.
+- logs-config.json (pagina Logs): origem dos logs e credenciais. Criado na primeira vez que abres a pagina.
+    O GitQuick.zip da Release traz um exemplo para a Grafana, logs-config.example.json (tambem na raiz do
+    repositorio): copia-o para data\logs-config.json e preenche grafana.url, orgId e datasourceUid.
+    "source": "local" usa os logs de teste (botao Generate test logs, ficam em data\logs).
+    "source": "elasticsearch" usa elasticsearch.url, index e username/password ou apiKey.
+    "source": "grafana" usa grafana.url, datasourceUid e index. Para entrar, o botao "Log in to Grafana"
+      (na linha do Config) tem duas formas:
+      "Log in through a window" (como o log-explorer): abre o login do Keycloak e liga o "browserLogin";
+        a sessao fica em data\grafana-session.json e renova-se sozinha enquanto o Keycloak deixar;
+      "Or with a cookie": cola o valor do cookie grafana_session copiado do browser (fica em "cookie").
+      Se faltar alguma coisa no ficheiro, o botao diz o que falta.
+      Em alternativa, "token": um token de service account da Grafana (sem login).
+    "fields" diz como se chamam os campos de hora, mensagem, nivel e servico nos teus logs.
+    Os logs do Keycloak trazem um JSON na mensagem (o logger da aplicacao): a app le-o como campos json.*
+      (json.traceId, json.severity, json.descricao...), que servem para colunas e pesquisas
+      (ex.: json.severity:ERROR). A coluna Message mostra o json.descricao e o nivel e o json.severity.
+    Os eventos do Keycloak (type=LOGIN_ERROR, realmId=..., error=...) dao os campos kc.* (kc.type, kc.error...).
+    No detalhe de um log aparecem todos os campos que ele traz (json.*, kc.* e os restantes, como hostname ou
+      kubernetes.*): clique num valor filtra por ele, Alt+clique exclui, e o botao ao lado mostra o campo como coluna.
+    Na tabela, uma coluna que so tem um JSON (corpoPedido, corpoResposta, headers...) mostra { }: clique abre-o formatado.
+    Nos pedidos REST, o botao curl do detalhe da o comando para PowerShell e Bash (a app nao corre nada).
+      "curlBaseUrl" e o endereco posto antes de um pedido que so tem o caminho, com {env} e {service}
+      (ex.: "http://api.{env}.empresa.pt/{service}"); vazio, o comando fica com <host> para preencher.
+    "defaultColumns" sao as colunas extra mostradas ate escolheres as tuas com + Column
+      (por omissao json.traceId, json.spanId e json.traceparent).
+    "watchIntervalSeconds" (30) e de quanto em quanto tempo as vigias procuram logs novos.
+    "watchNotifications" (true) mostra uma notificacao do Windows quando uma vigia encontra logs novos.
+    "environments" da um nome a uma pesquisa por ambiente, como no config.json do log-explorer
+      (ex.: "keycloak DEV": "kubernetes.namespace_name:\"iam-nprod-keycloak\" AND message:\"realmName DEV\"").
+    "defaultEnvironment" e o ambiente escolhido ao abrir ("" para todos).
+    "gcp" sao os logs GCP, a segunda origem (OpenShift, GCP ou as duas, no seletor da pagina Logs):
+      "index" o indice deles (ex.: "app*,backoffice*,portal*"), "localFile" os logs de teste,
+      "fields" os campos de nivel e servico, "environmentField" o campo de ambiente (keycloak DEV = dev).
+      Tambem le a parte "sources": { "gcp": ... } do config.json do log-explorer.
+  As vigias ficam em git-quick-settings.json e correm enquanto a app estiver aberta, mesmo na bandeja.
+  Tambem tem credenciais em texto legivel: o mesmo cuidado que com o vault.json.
+- grafana-session.json: a tua sessao da Grafana e do Keycloak (login pela janela). Nao a partilhes.
+- Os repos da lista que nao existam no outro PC aparecem como "unavailable"; remove-os ou adiciona os novos.
+- A pasta data tem de ficar ao lado do GitQuick.exe.
+
+Pasta codigo (so se quiseres alterar a app)
+- Requer Node.js 16 ou mais recente.
+- Dentro da pasta codigo:
+    npm install       (instala as dependencias, uma vez)
+    npm start         (corre a app a partir do codigo; usa uma pasta data dentro de codigo)
+    npm run dist      (gera um novo GitQuick.exe em codigo\dist)
+- Publicar uma versao nova (exemplo para a 1.4.0), a partir da raiz do repositorio:
+    powershell Compress-Archive -Force -Path codigo\dist\GitQuick.exe,logs-config.example.json -DestinationPath codigo\dist\GitQuick.zip
+    gh release create v1.4.0 codigo\dist\GitQuick.exe codigo\dist\GitQuick.zip --title "Git Quick 1.4.0" --notes "O que mudou"
+  O exe nao e guardado no Git: fica na Release, sozinho e dentro de um zip (para redes que bloqueiam .exe),
+  junto com o logs-config.example.json.

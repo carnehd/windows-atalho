@@ -1,0 +1,47 @@
+{
+  "name": "git-quick",
+  "productName": "Git Quick",
+  "version": "1.5.4",
+  "description": "Quick Git operations popup for Windows",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "dist": "electron-builder --win portable"
+  },
+  "keywords": [
+    "git",
+    "electron",
+    "popup"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "js-yaml": "^4.3.2",
+    "simple-git": "^4.0.2"
+  },
+  "devDependencies": {
+    "electron": "^28.3.3",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.local.gitquick",
+    "productName": "Git Quick",
+    "electronVersion": "28.3.3",
+    "electronDist": "node_modules/electron/dist",
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "portable",
+      "signAndEditExecutable": false
+    },
+    "portable": {
+      "artifactName": "GitQuick.exe"
+    }
+  }
+}
