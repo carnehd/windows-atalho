@@ -2,6 +2,11 @@ function setupBruno() {
   window.bruno.onResult(onBrunoResult);
   window.bruno.onOutput(onBrunoOutput);
   window.bruno.onDone(onBrunoDone);
+  window.bruno.onCliProgress((p) => {
+    if (!bru.cliInstall) return;
+    Object.assign(bru.cliInstall, p);
+    renderBrunoInstallProgress();
+  });
   $('#bruSendBtn').addEventListener('click', bruSend);
   $('#bruEnv').addEventListener('change', (e) => {
     bru.env = e.target.value;

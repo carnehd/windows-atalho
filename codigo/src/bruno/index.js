@@ -9,7 +9,7 @@ const path = require('path');
 const { ipcMain, shell: electronShell } = require('electron');
 const shell = require('../shell');
 const { findCollections, readTree, readEnvironments, readDotEnv, requestDetail, slash } = require('./collection');
-const { findCli, runnerFile } = require('./cli');
+const { findCli, installCli, useCliHome, runnerFile } = require('./cli');
 const files = require('./files');
 
 const MARK = '\u001eGQ-BRUNO ';
@@ -31,8 +31,10 @@ async function dotEnvInGit(root) {
   return (await gitOk(root, ['rev-parse', '--is-inside-work-tree'])) ? 'open' : null;
 }
 
-// savedDir: the app's own folder of requests saved from here (Save in Git Quick)
-function registerBruno({ isKnownRepo, getWindow, savedDir }) {
+// savedDir: the app's own folder of requests saved from here (Save in Git Quick); cliHome: where Install puts the Bruno
+// CLI
+function registerBruno({ isKnownRepo, getWindow, savedDir, cliHome }) {
+  useCliHome(cliHome);
   const send = (channel, data) => {
     const win = getWindow();
     if (win && !win.isDestroyed()) win.webContents.send(channel, data);
@@ -144,6 +146,13 @@ function registerBruno({ isKnownRepo, getWindow, savedDir }) {
 
   ipcMain.handle('bruno-cli', guard(async (again) => findCli(Boolean(again))));
 
+  // Install: the Bruno CLI into the data folder, how far it got sent as it goes (bruno-cli-progress)
+  ipcMain.handle('bruno-cli-install', guard(async () => {
+    if (runs.size) throw new Error('A run is still going. Stop it first.');
+    await installCli((p) => send('bruno-cli-progress', p));
+    return { success: true, cli: await findCli(true) };
+  }));
+
   ipcMain.handle('bruno-clear-vars', guard(async (repo, dir) => {
     varsByCollection.delete(keyOf(collectionOf(repo, dir)));
     return { success: true };
@@ -155,7 +164,7 @@ function registerBruno({ isKnownRepo, getWindow, savedDir }) {
     const where = target ? path.resolve(root, String(target)) : root;
     if (!inside(root, where) || !fs.existsSync(where)) throw new Error('That request is not there any more');
     const cli = await findCli();
-    if (!cli.ok) throw new Error(`${cli.reason} Install it with: ${cli.hint}`);
+    if (!cli.ok) throw new Error(`${cli.reason} Install it from the note above the requests, or with: ${cli.hint}`);
     if (runs.size) throw new Error('A run is still going. Stop it first.');
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'git-quick-bruno-'));
     const varsFile = path.join(tmp, 'vars.json');
@@ -169,7 +178,8 @@ function registerBruno({ isKnownRepo, getWindow, savedDir }) {
     const shellEnv = await shell.loginShellEnv();
     const child = spawn(cli.node, args, {
       cwd: root,
-      env: { ...shellEnv, FORCE_COLOR: '0', NO_COLOR: '1' },
+      // the one Git Quick installed: run by the app itself, as Node
+      env: { ...shellEnv, FORCE_COLOR: '0', NO_COLOR: '1', ...(cli.electronNode ? { ELECTRON_RUN_AS_NODE: '1' } : {}) },
       detached: !shell.IS_WIN,
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],

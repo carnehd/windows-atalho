@@ -1,4 +1,5 @@
-// Run by Git Quick with the computer's Node, not inside the app: `node bruno-runner.js <cli folder> <vars file> run ...`.
+// Run by Git Quick with the computer's Node (or its own, as Node), not inside the app:
+// `node bruno-runner.js <cli folder> <vars file> run ...`.
 // It starts the Bruno CLI as `bru` would, with two things added around each request it sends:
 //  - the variables the scripts set (bru.setVar) are there from the start, as the last run left them, and saved after
 //    each request, so a request sent alone can use what an earlier one kept (the id of what it created);
@@ -7,6 +8,14 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+
+// Run by the app itself as Node (ELECTRON_RUN_AS_NODE: the Bruno CLI Git Quick installed), whose Node is 18: what the
+// CLI takes from a newer one (crypto on globalThis), and its arguments read as Node's (yargs takes them for a packed
+// Electron app's otherwise, one fewer).
+if (process.versions.electron) {
+  if (!globalThis.crypto) globalThis.crypto = require('crypto').webcrypto;
+  process.defaultApp = true;
+}
 
 const MARK = '\u001eGQ-BRUNO ';
 // A variable a script set to undefined (res.body.id of a list): JSON would leave it out, so it is kept as this mark, for

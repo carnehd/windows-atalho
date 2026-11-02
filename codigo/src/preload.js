@@ -201,6 +201,8 @@ contextBridge.exposeInMainWorld('bruno', {
   saveEnv: (repo, dir, env) => ipcRenderer.invoke('bruno-save-env', repo, dir, env),
   deleteEnv: (repo, dir, name) => ipcRenderer.invoke('bruno-delete-env', repo, dir, name),
   cli: (again) => ipcRenderer.invoke('bruno-cli', again),
+  installCli: () => ipcRenderer.invoke('bruno-cli-install'),
+  onCliProgress: (cb) => ipcRenderer.on('bruno-cli-progress', (_, data) => cb(data)),
   run: (repo, dir, request) => ipcRenderer.invoke('bruno-run', repo, dir, request),
   stop: (id) => ipcRenderer.invoke('bruno-stop', id),
   clearVars: (repo, dir) => ipcRenderer.invoke('bruno-clear-vars', repo, dir),

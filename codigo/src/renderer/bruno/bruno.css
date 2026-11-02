@@ -15,8 +15,43 @@
   background: color-mix(in srgb, var(--orange) 8%, var(--bg));
   font-size: var(--fs-small);
 }
+.bru-note-text {
+  flex: 1 0 100%;
+}
 .bru-note-text strong {
   font-weight: 600;
+}
+/* Install: the button, how far the download got, what it is */
+.bru-note-install {
+  flex: 1 0 100%;
+  gap: 10px;
+}
+.bru-note-what {
+  color: var(--text-dim);
+}
+.bru-note-track {
+  position: relative;
+  flex: 0 0 140px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.bru-note-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.15s;
+}
+.bru-note-track.busy .bru-note-fill {
+  animation: bru-note-busy 1.2s ease-in-out infinite;
+}
+@keyframes bru-note-busy {
+  50% {
+    opacity: 0.45;
+  }
 }
 .bru-note-row {
   display: flex;

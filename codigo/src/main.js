@@ -532,7 +532,7 @@ app.whenReady().then(() => {
   registerSearch({ listRepos: listNamedRepos, isKnownRepo, openPath, revealPath });
   terminal = registerTerminal({ isKnownRepo, getWindow: () => mainWindow });
   registerIdeOpen({ isKnownRepo });
-  bruno = registerBruno({ isKnownRepo, getWindow: () => mainWindow, savedDir: path.join(DATA_DIR, 'saved-requests') });
+  bruno = registerBruno({ isKnownRepo, getWindow: () => mainWindow, savedDir: path.join(DATA_DIR, 'saved-requests'), cliHome: path.join(DATA_DIR, 'bruno-cli') });
   registerDb({ dataDir: DATA_DIR });
   maven = registerMaven({
     isKnownRepo,

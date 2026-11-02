@@ -17,7 +17,7 @@ let lang = null;
 async function findLang() {
   if (lang) return lang;
   const cli = await findCli();
-  if (!cli.ok) throw new Error(`${cli.reason} Changing the requests needs it too: ${cli.hint}`);
+  if (!cli.ok) throw new Error(`${cli.reason} Changing the requests needs it too: ${cli.install ? 'Install it from the note above the requests.' : cli.hint}`);
   let mod;
   try {
     mod = require(require.resolve('@usebruno/lang', { paths: [cli.dir] }));

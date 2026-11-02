@@ -19,7 +19,7 @@ async function bruRun(target, label) {
     if (!(await bruSaveAll())) return;
   }
   if (bru.cli && !bru.cli.ok) {
-    toast(`${bru.cli.reason} ${bru.cli.hint}`, 'error');
+    toast(`${bru.cli.reason} ${bru.cli.install ? 'Install it from the note above the requests.' : bru.cli.hint}`, 'error');
     return;
   }
   const isRequest = target && target.endsWith('.bru');

@@ -95,6 +95,7 @@ async function showBrunoView() {
   else await reloadBrunoTree();
 }
 
+// No Bruno CLI: Install (Git Quick puts it in its data folder, no Node.js or npm needed), or npm in a terminal.
 function renderBrunoNote() {
   const note = $('#bruNote');
   const cli = bru.cli;
@@ -103,7 +104,28 @@ function renderBrunoNote() {
   if (!cli || cli.ok) return;
   note.innerHTML = '';
   const text = bruEl('div', 'bru-note-text');
-  text.append(bruEl('strong', '', cli.reason), bruEl('span', '', ' Git Quick sends the requests with it. In a terminal:'));
+  text.append(bruEl('strong', '', cli.reason), bruEl('span', '', ' Git Quick sends the requests with it.'));
+  note.appendChild(text);
+  if (cli.install) {
+    const mb = (n) => Math.max(1, Math.round(n / 1048576));
+    const row = bruEl('div', 'bru-note-row bru-note-install');
+    const install = bruEl('button', 'btn btn-sm btn-primary', bru.cliInstall ? 'Installing...' : 'Install the Bruno CLI');
+    install.type = 'button';
+    install.id = 'bruCliInstall';
+    install.disabled = Boolean(bru.cliInstall);
+    install.addEventListener('click', installBrunoCli);
+    const what = bruEl('span', 'bru-note-what', `Bruno CLI ${cli.install.version}, ${mb(cli.install.size)} MB, downloaded once into the data folder: no Node.js or npm needed.`);
+    what.id = 'bruCliWhat';
+    const track = bruEl('span', 'bru-note-track');
+    track.id = 'bruCliTrack';
+    track.setAttribute('role', 'progressbar');
+    track.setAttribute('aria-label', 'Bruno CLI download');
+    track.classList.toggle('hidden', !bru.cliInstall);
+    track.appendChild(bruEl('span', 'bru-note-fill'));
+    row.append(install, track, what);
+    note.appendChild(row);
+    renderBrunoInstallProgress();
+  }
   const cmd = bruEl('code', 'bru-note-cmd', cli.hint);
   const copy = bruEl('button', 'btn btn-sm', 'Copy');
   copy.type = 'button';
@@ -114,11 +136,49 @@ function renderBrunoNote() {
     bru.cli = await window.bruno.cli(true);
     renderBrunoNote();
     renderBrunoBar();
+    if (bru.cli.ok) await loadBrunoDetail();
     toast(bru.cli.ok ? `Bruno CLI ${bru.cli.version} found` : 'Still not there', bru.cli.ok ? 'success' : 'error');
   });
   const row = bruEl('div', 'bru-note-row');
-  row.append(cmd, copy, again);
-  note.append(text, row);
+  row.append(bruEl('span', '', cli.install ? 'Or in a terminal:' : 'In a terminal:'), cmd, copy, again);
+  note.appendChild(row);
+}
+
+// How far Install got: the bytes downloaded, then the unpacking.
+function renderBrunoInstallProgress() {
+  const p = bru.cliInstall;
+  const what = $('#bruCliWhat');
+  const track = $('#bruCliTrack');
+  if (!p || !what || !track) return;
+  const mb = (n) => (n / 1048576).toFixed(n < 10485760 ? 1 : 0);
+  const share = p.phase === 'unpack' ? 1 : p.total ? Math.min(1, p.got / p.total) : 0;
+  what.textContent = p.phase === 'unpack' ? 'Unpacking into the data folder...' : `Downloading ${mb(p.got || 0)} of ${mb(p.total || 0)} MB...`;
+  track.classList.toggle('busy', p.phase === 'unpack');
+  track.setAttribute('aria-valuenow', String(Math.round(share * 100)));
+  track.firstChild.style.width = `${Math.round(share * 100)}%`;
+}
+
+async function installBrunoCli() {
+  if (bru.cliInstall || !bru.cli || !bru.cli.install) return;
+  bru.cliInstall = { phase: 'download', got: 0, total: bru.cli.install.size };
+  renderBrunoNote();
+  let r;
+  try {
+    r = await window.bruno.installCli();
+  } catch (e) {
+    r = { error: e.message };
+  }
+  bru.cliInstall = null;
+  if (r.error || !r.cli || !r.cli.ok) {
+    renderBrunoNote();
+    toast(r.error || 'It was installed but is not found', 'error', { title: "Couldn't install the Bruno CLI" });
+    return;
+  }
+  bru.cli = r.cli;
+  renderBrunoNote();
+  renderBruno();
+  await loadBrunoDetail(); // its editor too: it reads and writes the files with the CLI's parts
+  toast(`Bruno CLI ${r.cli.version} installed: requests can be sent and changed now`, 'success');
 }
 
 function renderBruno() {

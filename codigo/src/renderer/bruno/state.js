@@ -27,7 +27,8 @@ const bru = {
   detail: null, // the chosen request as its file says
   editShown: null, // which request and tab the editor shows (drawn again only when that changes)
   run: null, // { id, dir, target, label, env, startedAt, queued: Set, pass, fail }
-  cli: null,
+  cli: null, // the Bruno CLI found: { ok, version, from } or { ok: false, reason, hint, install: { version, size } }
+  cliInstall: null, // Install going on: { phase: 'download' | 'unpack', got, total }
 };
 // per collection: the last results, the log, the chosen request, the closed folders, the tabs, and the drafts of the
 // requests changed here (editor.js)
