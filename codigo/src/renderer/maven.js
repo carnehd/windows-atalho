@@ -841,6 +841,7 @@ function applyMvnInfo(info) {
   mvnProfiles = info.profiles || [];
   renderMvnFolder(info);
   renderMvnValuesBtn(info);
+  renderMvnEnvBtn(info);
   renderMvnPreview();
   if (info.ports) renderMvnPorts(info);
   $('#mvnNoPom').classList.toggle('hidden', info.hasPom);
@@ -897,7 +898,9 @@ async function runMaven(request) {
     return;
   }
   if (r.external) {
-    toast(`Opened ${r.command} in a ${window.git.platform === 'win32' ? 'PowerShell' : 'Terminal'} window${r.valuesLeft ? ', with the files\' own values: those chosen in Values go to a run here only' : ''}`, r.valuesLeft ? 'info' : 'success', { plain: true });
+    // what a run here gives the application and a separate window does not
+    const left = [r.valuesLeft && 'the values chosen in Values', r.envLeft && 'the profiles and variables of Env'].filter(Boolean);
+    toast(`Opened ${r.command} in a ${window.git.platform === 'win32' ? 'PowerShell' : 'Terminal'} window${left.length ? `, without ${left.join(' nor ')}: they go to a run here only` : ''}`, left.length ? 'info' : 'success', { plain: true });
     return;
   }
   mvnRun = { id: r.id, written: r.written, command: r.command, running: true, startedAt: r.startedAt, exitCode: null };
@@ -1589,6 +1592,7 @@ function afterGitStep(repo) {
 function setupMaven() {
   if (CARD_ID) return;
   setupMvnValues();
+  setupMvnEnv();
   const select = $('#mvnCommand');
   let saved = null;
   try {

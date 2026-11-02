@@ -28,6 +28,7 @@ const { registerContainers } = require('./containers');
 const { registerTerminal } = require('./terminal');
 const { registerIdeOpen } = require('./ide-open');
 const { registerBruno } = require('./bruno');
+const { registerUpdates } = require('./updater');
 const { registerDb } = require('./db');
 const { stepBack } = require('./shell');
 const { registerSignInWindows } = require('./sign-in-window');
@@ -534,6 +535,7 @@ app.whenReady().then(() => {
   registerIdeOpen({ isKnownRepo });
   bruno = registerBruno({ isKnownRepo, getWindow: () => mainWindow, savedDir: path.join(DATA_DIR, 'saved-requests'), cliHome: path.join(DATA_DIR, 'bruno-cli') });
   registerDb({ dataDir: DATA_DIR });
+  registerUpdates({ getWindow: () => mainWindow });
   maven = registerMaven({
     isKnownRepo,
     getWindow: () => mainWindow,
@@ -550,6 +552,14 @@ app.whenReady().then(() => {
     // macros are for every repository
     loadMacros: () => store.get('mavenMacros', []),
     saveMacros: (list) => store.set('mavenMacros', list),
+    // the profiles and environment variables of Start and Debug (in data/, like the rest)
+    loadRunEnv: (repoPath) => store.get('mavenRunEnv', {})[pathKey(String(repoPath))],
+    saveRunEnv: (repoPath, value) => {
+      const all = { ...store.get('mavenRunEnv', {}) };
+      if (value) all[pathKey(String(repoPath))] = value;
+      else delete all[pathKey(String(repoPath))];
+      store.set('mavenRunEnv', all);
+    },
   });
 
   logWatches = registerLogWatches({
@@ -752,13 +762,14 @@ function setupIPC() {
     return error ? { error } : { success: true };
   });
 
-  // Out of the list, and what the app kept for them (name, favorite, group, push target, Maven ports and folder). Their
+  // Out of the list, and what the app kept for them (name, favorite, group, push target, Maven ports, folder and
+  // environment). Their
   // folders stay as they are.
   const forgetRepos = (paths) => {
     const keys = new Set(paths.map((p) => pathKey(String(p))));
     store.set('repos', getRepoList().filter((r) => !keys.has(pathKey(r))));
     store.set('repoFavorites', store.get('repoFavorites', []).filter((k) => !keys.has(k)));
-    for (const name of ['repoNames', 'pushTargets', 'mavenPorts', 'mavenDirs']) {
+    for (const name of ['repoNames', 'pushTargets', 'mavenPorts', 'mavenDirs', 'mavenRunEnv']) {
       const kept = { ...store.get(name, {}) };
       for (const key of keys) delete kept[key];
       store.set(name, kept);

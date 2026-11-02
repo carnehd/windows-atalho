@@ -1,7 +1,7 @@
 {
   "name": "git-quick",
   "productName": "Git Quick",
-  "version": "1.6.2",
+  "version": "1.6.3",
   "description": "Quick Git operations popup for Windows",
   "main": "src/main.js",
   "scripts": {
@@ -42,7 +42,7 @@
       "signAndEditExecutable": false
     },
     "portable": {
-      "artifactName": "GitQuick.exe"
+      "artifactName": "GitQuick-${version}.exe"
     }
   }
 }

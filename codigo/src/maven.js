@@ -7,6 +7,7 @@ const shell = require('./shell');
 const { SKIP } = require('./analysis');
 const GitService = require('./git-service');
 const envValues = require('./env-values');
+const runEnv = require('./run-env');
 
 const { IS_WIN, psQuote } = shell;
 // The Maven wrapper a project may carry: mvnw.cmd on Windows, the mvnw shell script elsewhere.
@@ -271,7 +272,7 @@ const mavenArgv = (dir, args, wrapper = findWrapper(dir)) => {
 };
 const terminalScript = (dir, args) => shell.terminalScript(dir, mavenArgv(dir, args));
 
-function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, saveDir, loadMacros, saveMacros }) {
+function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, saveDir, loadMacros, saveMacros, loadRunEnv, saveRunEnv }) {
   const portsFor = (repoPath) => {
     try {
       return parsePorts(loadPorts(repoPath) || {});
@@ -294,6 +295,14 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
     if (!inside || inside.startsWith('..') || path.isAbsolute(inside) || !fs.existsSync(path.join(dir, 'pom.xml'))) return { dir: repoPath, rel: '', lost: rel };
     return { dir, rel: relOf(repoPath, dir) };
   }
+  // The profiles and environment variables Start and Debug give the application (run-env.js), saved for the repository.
+  const runEnvFor = (repoPath) => {
+    try {
+      return runEnv.cleanRunEnv((loadRunEnv && loadRunEnv(repoPath)) || {});
+    } catch {
+      return { ...runEnv.EMPTY };
+    }
+  };
   const macroList = () => {
     const list = loadMacros ? loadMacros() : [];
     return Array.isArray(list) ? list : [];
@@ -516,6 +525,7 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
       profiles: pomProfiles(dir),
       // the environments with an application-<env> file: Start and Debug can take their values (the Values button)
       valueEnvs: envValues.listEnvs(dir),
+      runEnv: runEnvFor(repoPath),
       ports,
       ...presetView(ports),
       run: run && {
@@ -560,6 +570,24 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
     }
   });
 
+  // The profiles and environment variables of Start and Debug, saved for the repository: used the next time one starts.
+  ipcMain.handle('mvn-set-run-env', (_, repoPath, input) => {
+    try {
+      if (!isKnownRepo(repoPath)) throw new Error('Unknown repository');
+      const clean = runEnv.cleanRunEnv(input);
+      saveRunEnv(repoPath, runEnv.hasRunEnv(clean) ? clean : null);
+      return { runEnv: clean };
+    } catch (e) {
+      return { error: e.message };
+    }
+  });
+
+  // The run configurations IntelliJ keeps for the repository that carry profiles or variables, to take them from.
+  ipcMain.handle('mvn-intellij-configs', (_, repoPath) => {
+    if (!isKnownRepo(repoPath)) return { error: 'Unknown repository' };
+    return { configs: runEnv.readIntellijConfigs(repoPath, chosenDir(repoPath).dir) };
+  });
+
   // The folder of the repository the commands run in (where its pom.xml is); '' is the root.
   ipcMain.handle('mvn-set-dir', (_, repoPath, rel) => {
     try {
@@ -584,9 +612,12 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
     try {
       const args = resolveArgs(repoPath, request);
       const { dir, rel } = chosenDir(repoPath);
-      // the values chosen per environment go to the application only: a build or the tests run with the files
-      const values = SERVER_GOALS.test(args.join(' ')) ? envValues.cleanValues(request.values) : null;
-      const env = envValues.withValues(IS_WIN || request.external ? null : await shell.loginShellEnv(), values);
+      // the values chosen per environment, the profiles and the variables go to the application only: a build or the
+      // tests run with the files and the user's own environment
+      const starts = SERVER_GOALS.test(args.join(' '));
+      const values = starts ? envValues.cleanValues(request.values) : null;
+      const appEnv = starts ? runEnvFor(repoPath) : null;
+      const env = envValues.withValues(runEnv.withRunEnv(IS_WIN || request.external ? null : await shell.loginShellEnv(), appEnv), values);
       const k = key(repoPath);
       const current = runs.get(k);
       if (current && current.active) throw new Error('A command is already running in this repository. Stop it first.');
@@ -595,10 +626,10 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
       if (request.external) {
         shell.openInTerminal(dir, mavenArgv(dir, args, findWrapper(dir, repoPath)), 'maven');
         shell.stepBack();
-        return { success: true, external: true, command, valuesLeft: Boolean(values) };
+        return { success: true, external: true, command, valuesLeft: Boolean(values), envLeft: runEnv.hasRunEnv(appEnv) };
       }
 
-      const run = newRun(repoPath, command, `> ${command}${rel ? `   (in ${rel}/)` : ''}\n${valuesLine(values, request.valuesNote)}`);
+      const run = newRun(repoPath, command, `> ${command}${rel ? `   (in ${rel}/)` : ''}\n${valuesLine(values, request.valuesNote)}${runEnv.runEnvLines(appEnv)}`);
       runs.set(k, run);
       announce();
       runStep(run, dir, args, env).then((code) => finishRun(run, code));
@@ -655,6 +686,7 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
       });
       const env = IS_WIN ? null : await shell.loginShellEnv();
       const values = envValues.cleanValues(valuesRequest && valuesRequest.values);
+      const appEnv = runEnvFor(repoPath);
       const run = newRun(repoPath, macro.name, `> macro ${macro.name}: ${plan.length} step${plan.length === 1 ? '' : 's'}${rel ? `   (in ${rel}/)` : ''}\n`, {
         // marks: when each step began, and how long it took once it ended (for the list of steps by the output)
         macro: { id: macro.id, name: macro.name, step: 0, total: plan.length, steps: plan.map((p) => p.label), marks: [] },
@@ -687,10 +719,11 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
           }
           if (p.git) code = await runGitStep(run, p.git, i, ctx);
           else {
-            // the step that starts the application gets the values chosen per environment; the others, the files
-            const starts = values && SERVER_GOALS.test(p.args.join(' '));
-            if (starts) write(run, valuesLine(values, valuesRequest.valuesNote));
-            code = await runStep(run, dir, p.args, starts ? envValues.withValues(env, values) : env);
+            // the step that starts the application gets the values chosen per environment, the profiles and the
+            // variables; the others, the files
+            const starts = SERVER_GOALS.test(p.args.join(' '));
+            if (starts) write(run, valuesLine(values, valuesRequest.valuesNote) + runEnv.runEnvLines(appEnv));
+            code = await runStep(run, dir, p.args, starts ? envValues.withValues(runEnv.withRunEnv(env, appEnv), values) : env);
             write(run, `[exit code ${code}]\n`);
           }
           ended();

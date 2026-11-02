@@ -179,6 +179,8 @@ contextBridge.exposeInMainWorld('maven', {
   clear: (repo) => ipcRenderer.invoke('mvn-clear', repo),
   setPorts: (repo, ports) => ipcRenderer.invoke('mvn-set-ports', repo, ports),
   setDir: (repo, rel) => ipcRenderer.invoke('mvn-set-dir', repo, rel),
+  setRunEnv: (repo, value) => ipcRenderer.invoke('mvn-set-run-env', repo, value),
+  intellijConfigs: (repo) => ipcRenderer.invoke('mvn-intellij-configs', repo),
   macros: () => ipcRenderer.invoke('mvn-macros'),
   saveMacro: (macro) => ipcRenderer.invoke('mvn-macro-save', macro),
   deleteMacro: (id) => ipcRenderer.invoke('mvn-macro-delete', id),
@@ -189,6 +191,16 @@ contextBridge.exposeInMainWorld('maven', {
   onExit: (cb) => ipcRenderer.on('mvn-exit', (_, data) => cb(data)),
   running: () => ipcRenderer.invoke('mvn-running'),
   onRunning: (cb) => ipcRenderer.on('mvn-running', (_, list) => cb(list)),
+});
+
+// the updates of the app: the latest release on GitHub into the folder of the exe (updater.js)
+contextBridge.exposeInMainWorld('updates', {
+  info: () => ipcRenderer.invoke('update-info'),
+  check: () => ipcRenderer.invoke('update-check'),
+  download: () => ipcRenderer.invoke('update-download'),
+  open: (version) => ipcRenderer.invoke('update-open', version),
+  reveal: (version) => ipcRenderer.invoke('update-reveal', version),
+  onProgress: (cb) => ipcRenderer.on('update-progress', (_, p) => cb(p)),
 });
 
 contextBridge.exposeInMainWorld('bruno', {

@@ -4688,6 +4688,79 @@ body.card-window .vault-card {
 .mv-gap {
   flex: 1;
 }
+/* Env: the profiles and environment variables of Start and Debug (mvn-env.js) */
+.me-card {
+  width: min(640px, 94vw);
+  max-width: none;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+}
+.me-profiles-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.me-profiles {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.me-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.me-chip {
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  cursor: pointer;
+}
+.me-chip:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.me-chip.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.me-hint,
+.me-note {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+.me-note {
+  margin-bottom: 6px;
+}
+.me-note.error {
+  color: var(--red);
+}
+.me-vars-head {
+  display: flex;
+  align-items: center;
+  margin-top: 14px;
+}
+.me-vars-head .settings-label {
+  margin: 0;
+}
+.me-vars {
+  min-height: 180px;
+  height: 240px;
+  margin-top: 6px;
+  resize: vertical;
+  line-height: 1.5;
+  white-space: pre;
+  overflow: auto;
+}
 .mvn-ports-btn {
   flex: none;
   width: 30px;
@@ -6348,6 +6421,81 @@ body.card-window .vault-card {
 }
 
 /* Settings: shortcut rows */
+/* Version and updates, at the top of Settings (updates.js) */
+.update-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.update-version {
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+}
+.update-box {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+.update-text {
+  margin: 0;
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.update-text.error {
+  color: var(--red);
+}
+.update-track {
+  height: 6px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--bg-hover);
+}
+.update-fill {
+  width: 0;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.15s;
+}
+.update-track.busy .update-fill {
+  width: 30% !important;
+  animation: update-busy 1.2s ease-in-out infinite;
+}
+@keyframes update-busy {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+.update-notes {
+  margin-top: 8px;
+  font-size: var(--fs-small);
+}
+.update-notes summary {
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.update-notes pre {
+  max-height: 160px;
+  margin: 6px 0 0;
+  overflow: auto;
+  font-family: inherit;
+  white-space: pre-wrap;
+}
+.update-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.update-actions:not(:empty) {
+  margin-top: 10px;
+}
 .settings-wide {
   width: 460px;
   max-height: calc(100vh - 60px);
