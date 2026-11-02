@@ -1,0 +1,438 @@
+/* -- Database: the connection on top, the schemas and tables on the left, the rows on the right (db/db.js) -- */
+.db-page {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  height: 100%;
+  padding: 12px 16px;
+}
+.db-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.db-conn {
+  max-width: 260px;
+  height: 30px;
+}
+.db-icon-btn {
+  width: 30px;
+  height: 30px;
+  justify-content: center;
+  padding: 0;
+}
+.db-icon-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.db-status {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.db-status.bad {
+  display: block;
+  color: var(--red);
+}
+/* always in sight: nothing here changes data */
+.db-ro {
+  flex: none;
+  padding: 2px 9px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.db-empty {
+  margin: 40px auto;
+  max-width: 420px;
+  text-align: center;
+  color: var(--text-muted);
+}
+.db-main {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(200px, 26%) minmax(0, 1fr);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.db-side {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 6px;
+  border-right: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+.db-filter {
+  flex: none;
+  height: 28px;
+}
+.db-tree {
+  min-height: 0;
+  overflow-y: auto;
+}
+.db-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 27px;
+  padding: 2px 8px;
+  border-radius: 5px;
+  font-size: var(--fs-body);
+  cursor: pointer;
+  user-select: none;
+}
+.db-row:hover {
+  background: var(--bg-hover);
+}
+.db-row:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: -2px;
+}
+.db-schema {
+  font-weight: 600;
+}
+.db-caret {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  transition: transform 0.12s;
+}
+.db-schema.open .db-caret {
+  transform: rotate(90deg);
+}
+.db-table {
+  padding-left: 26px;
+}
+.db-table.selected {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.db-table.locked {
+  color: var(--text-dim);
+}
+.db-kind {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.db-name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.db-count {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: var(--fs-caption);
+  font-weight: 400;
+}
+.db-detail {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 6px 12px 0;
+}
+.db-tabs {
+  flex: none;
+}
+.db-pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0 12px;
+}
+.db-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+.db-title {
+  font-family: var(--font-mono);
+  font-size: var(--fs-body);
+}
+.db-dim,
+.db-note {
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+.db-note {
+  padding: 4px 2px;
+}
+.db-pager {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.db-pager .btn {
+  min-width: 28px;
+  justify-content: center;
+}
+.db-range {
+  min-width: 70px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+}
+.db-sorted {
+  margin-left: auto;
+}
+.db-error {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+  color: var(--red);
+  font-size: var(--fs-small);
+  white-space: pre-wrap;
+}
+/* the rows: the header stays on top, a value in one line (all of it in the tooltip) */
+.db-grid-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.db-grid {
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+}
+.db-grid th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+.db-grid td {
+  max-width: 320px;
+  padding: 3px 10px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.db-grid tbody tr:hover td {
+  background: var(--bg-hover);
+}
+.db-grid .db-rownum {
+  position: sticky;
+  left: 0;
+  color: var(--text-dim);
+  background: var(--bg-surface);
+  text-align: right;
+}
+.db-grid th.db-rownum {
+  z-index: 2;
+}
+.db-col {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+}
+button.db-col {
+  cursor: pointer;
+}
+button.db-col:hover .db-col-name {
+  text-decoration: underline;
+}
+.db-col-type {
+  display: block;
+  color: var(--text-dim);
+  font-size: var(--fs-caption);
+  font-weight: 400;
+}
+.db-pk {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-size: 10px;
+}
+.db-arrow {
+  color: var(--accent);
+}
+.db-null {
+  color: var(--text-dim);
+  font-style: italic;
+}
+.db-cut {
+  color: var(--orange);
+}
+.db-sql {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.db-sql-text {
+  width: 100%;
+  min-height: 90px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+}
+.db-sql-text:focus {
+  border-color: var(--accent);
+}
+.db-sql-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.db-sql-out {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.db-spin {
+  display: inline-block;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border: 2px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+/* the connections dialog */
+.db-conn-card {
+  width: min(760px, 92vw);
+  max-width: none;
+}
+.db-conn-layout {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 16px;
+}
+.db-conn-side {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.db-conn-form {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.db-conn-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+.db-conn-pair .db-conn-port {
+  max-width: 120px;
+}
+.db-conn-pair:has(.db-conn-port) {
+  grid-template-columns: minmax(0, 1fr) 120px;
+}
+.db-conn-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -6px 0 10px;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+.db-conn-hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+.db-conn-test {
+  min-height: 20px;
+  margin-top: 8px;
+  font-size: var(--fs-small);
+}
+.db-conn-test.ok {
+  color: var(--green);
+}
+.db-conn-test.bad {
+  color: var(--red);
+}
+/* Fields or Link (db-link.js): the link, and a line with what it gives */
+.db-conn-mode {
+  align-self: flex-start;
+  margin-bottom: 12px;
+}
+.db-conn-link {
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+}
+.db-link-info {
+  min-height: 18px;
+  margin: -6px 0 10px;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+  overflow-wrap: anywhere;
+}
+.db-link-info.typing {
+  color: var(--text-dim);
+}
+.db-link-info.bad {
+  color: var(--red);
+}
+.db-link-miss {
+  color: var(--orange);
+}
+.db-link-unused {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-dim);
+}

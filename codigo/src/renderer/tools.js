@@ -2,7 +2,7 @@
 // hashes, the YAML / .properties conversion and the ports in use ask the main process (see src/tools.js).
 // Relies on helpers from app.js ($, $$, toast, updateCrumb, CARD_ID).
 const TOOLS = [
-  { id: 'jwt', title: 'JWT decoder', sub: 'Header, claims, expiry', words: 'token keycloak bearer oauth oidc claims roles', build: buildJwtTool },
+  { id: 'jwt', title: 'JWT', sub: 'Decode a token, or make one', words: 'token decoder keycloak bearer oauth oidc claims roles encoder encode sign create hs256 rs256', build: buildJwtTool },
   { id: 'time', title: 'Timestamps', sub: 'Epoch to date and back', words: 'epoch unix date time millis seconds iso utc', build: buildTimeTool },
   { id: 'config', title: 'YAML · properties · JSON', sub: 'Spring config formats', words: 'yml yaml properties json spring application convert', build: buildConfigTool },
   { id: 'springenv', title: 'Spring ↔ env vars', sub: 'Properties as environment variables', words: 'spring environment variables env docker compose kubernetes relaxed binding properties yaml', build: buildSpringEnvTool },
@@ -10,6 +10,7 @@ const TOOLS = [
   { id: 'escape', title: 'Escape strings', sub: 'Java and JSON string literals', words: 'escape unescape string literal java json quotes text block newline unicode', build: buildEscapeTool },
   { id: 'json', title: 'JSON', sub: 'Format, check, query, Java', words: 'json format minify validate pretty jsonpath java record pojo lombok class', build: buildJsonTool },
   { id: 'jsondiff', title: 'Compare JSON', sub: 'What changed, field by field', words: 'json diff compare difference response fields keys', build: buildJsonDiffTool },
+  { id: 'apidiff', title: 'Compare APIs', sub: 'OpenAPI, Swagger: what breaks', words: 'swagger openapi api diff compare breaking changes endpoints contract spec yaml json rest', build: buildApiDiffTool },
   { id: 'cron', title: 'Spring cron', sub: 'What it means, next runs', words: 'cron schedule scheduled quartz', build: buildCronTool },
   { id: 'case', title: 'Name cases', sub: 'camelCase, snake_case...', words: 'case camel snake kebab constant pascal title naming', build: buildCaseTool },
   { id: 'ids', title: 'UUID · passwords', sub: 'Random ids and secrets', words: 'uuid guid password secret random generate key', build: buildIdsTool },
@@ -175,19 +176,104 @@ function base64ToUtf8(text) {
   return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
 }
 
-// -- JWT --
+// -- JWT: Decode (read a token) or Encode (make and sign one), one at a time; the choice is kept on this PC --
+// Each part in a card as token sites draw them: a bar with its title and buttons, the field, a line saying whether it
+// is right. Nothing is sent anywhere; the secret or key used to sign is not kept.
+const JWT_MODE_KEY = 'jwtMode';
+const JWT_ENC_ALGS = ['HS256', 'HS384', 'HS512', 'RS256', 'RS384', 'RS512', 'ES256', 'ES384', 'ES512', 'none'];
+const CARD_ICONS = {
+  card: '<path d="M5 7l5 5l-5 5"/><path d="M12 19l7 0"/>',
+  clear: '<path d="M20 6a1 1 0 0 1 1 1v10a1 1 0 0 1 -1 1h-11l-5 -5a1.5 1.5 0 0 1 0 -2l5 -5z"/><path d="M12 10l4 4m0 -4l-4 4"/>',
+  ok: '<path d="M5 12l5 5l10 -10"/>',
+  bad: '<path d="M18 6l-12 12"/><path d="M6 6l12 12"/>',
+};
+const cardSvg = (name) => `<svg viewBox="0 0 24 24" aria-hidden="true">${CARD_ICONS[name]}</svg>`;
+
+function toolCard(title, cls = '') {
+  const card = tEl('div', `tool-card${cls ? ` ${cls}` : ''}`);
+  const bar = tEl('div', 'tool-card-bar');
+  const name = tEl('span', 'tool-card-title');
+  name.innerHTML = cardSvg('card');
+  name.append(title);
+  const tools = tEl('div', 'tool-card-tools');
+  bar.append(name, tools);
+  const body = tEl('div', 'tool-card-body');
+  const status = tEl('div', 'tool-card-status');
+  card.append(bar, body, status);
+  Object.assign(card, { tools, body, heading: name });
+  // ok: a green line with a tick; bad: red with a cross; note: grey; '' hides it
+  card.setStatus = (text, kind = 'ok') => {
+    status.className = `tool-card-status${text ? ` ${kind}` : ''}`;
+    status.innerHTML = text && kind !== 'note' ? cardSvg(kind) : '';
+    if (text) status.append(text);
+  };
+  return card;
+}
+
+function toolCardClear(label, onClick) {
+  const b = tEl('button', 'icon-btn-plain tool-card-clear');
+  b.type = 'button';
+  b.title = label;
+  b.setAttribute('aria-label', label);
+  b.innerHTML = cardSvg('clear');
+  b.addEventListener('click', onClick);
+  return b;
+}
+
+// "in 1 h" / "expired 2 h ago", from a payload's exp
+function jwtExpiry(payload) {
+  if (!payload || typeof payload.exp !== 'number') return '';
+  const ms = payload.exp * 1000;
+  return ms < Date.now() ? `expired ${relTime(ms)}` : `expires ${relTime(ms)}`;
+}
+
 function buildJwtTool() {
-  const box = tEl('div', 'tool');
+  const box = tEl('div', 'tool jwt-tool');
+  let mode = 'decode';
+  try {
+    if (localStorage.getItem(JWT_MODE_KEY) === 'encode') mode = 'encode';
+  } catch {
+    // decode
+  }
+  const decodePane = tEl('div', 'tool-sub jwt-dec');
+  const encodePane = tEl('div', 'tool-sub jwt-enc');
+  const setMode = (m) => {
+    mode = m;
+    decodePane.classList.toggle('hidden', m !== 'decode');
+    encodePane.classList.toggle('hidden', m !== 'encode');
+    seg.setValue(m);
+    try {
+      localStorage.setItem(JWT_MODE_KEY, m);
+    } catch {
+      // for this session
+    }
+  };
+  const seg = toolSegment([['decode', 'Decode'], ['encode', 'Encode']], mode, (m) => setMode(m), 'Decode or encode a token');
+  seg.classList.add('jwt-mode');
+  box.append(toolHead('JWT', 'Decode a token to read it, or encode one and sign it. Here in the app: nothing is sent anywhere.'), seg, decodePane, encodePane);
+
+  // -- Decode --
   const input = toolArea('Paste a token: eyJhbGciOi... (a "Bearer " in front is fine)', 4);
-  const out = tEl('div', 'tool-result');
-  box.append(toolHead('JWT decoder', 'Reads the token here in the app: nothing is sent anywhere. The signature is not checked (that needs the key).'), input, out);
+  input.setAttribute('aria-label', 'Token to decode');
+  const tokenCard = toolCard('Encoded token');
+  tokenCard.tools.appendChild(toolCardClear('Clear the token', () => {
+    input.value = '';
+    render();
+    input.focus();
+  }));
+  tokenCard.body.appendChild(input);
+  const out = tEl('div', 'tool-result jwt-result');
+  decodePane.append(tokenCard, out);
   const render = () => {
     out.textContent = '';
     const raw = input.value.trim().replace(/^Bearer\s+/i, '').replace(/^"|"$/g, '');
-    if (!raw) return;
+    if (!raw) {
+      tokenCard.setStatus('Paste a token to read its header and payload; the signature is not checked (that needs the key)', 'note');
+      return;
+    }
     const parts = raw.split('.');
     if (parts.length < 2 || parts.length > 3) {
-      out.appendChild(toolNote('A JWT has three parts separated by dots: header.payload.signature'));
+      tokenCard.setStatus('A JWT has three parts separated by dots: header.payload.signature', 'bad');
       return;
     }
     let header;
@@ -196,9 +282,10 @@ function buildJwtTool() {
       header = JSON.parse(base64ToUtf8(parts[0]));
       payload = JSON.parse(base64ToUtf8(parts[1]));
     } catch {
-      out.appendChild(toolNote('This is not a JWT: its first two parts are not Base64 JSON'));
+      tokenCard.setStatus('This is not a JWT: its first two parts are not Base64 JSON', 'bad');
       return;
     }
+    tokenCard.setStatus(`Valid token${header.alg ? `, ${header.alg}` : ''}${parts[2] ? '' : ', not signed'}`);
     const f = toolFields();
     const time = (sec) => {
       if (typeof sec !== 'number') return null;
@@ -235,18 +322,191 @@ function buildJwtTool() {
     add('Groups', payload.groups);
     add('Scope', payload.scope);
     add('Signature', parts[2] ? 'Present, not checked here' : 'None (an unsigned token)');
-    out.appendChild(f);
-    for (const [title, value] of [['Header', header], ['Payload', payload]]) {
+    const claims = toolCard('Claims');
+    claims.body.appendChild(f);
+    out.appendChild(claims);
+    const two = tEl('div', 'tool-two');
+    for (const [title, value] of [['Header · algorithm and token type', header], ['Payload · data', payload]]) {
       const json = JSON.stringify(value, null, 2);
-      const sec = tEl('div', 'tool-section');
-      const h = tEl('div', 'tool-section-head');
-      h.append(tEl('h3', '', title), copyButton(json, title));
-      sec.append(h, tEl('pre', 'tool-out', json));
-      out.appendChild(sec);
+      const card = toolCard(title, 'tool-section');
+      card.tools.appendChild(copyButton(json, title.split(' ·')[0]));
+      card.body.appendChild(tEl('pre', 'tool-out', json));
+      two.appendChild(card);
     }
+    out.appendChild(two);
   };
   input.addEventListener('input', render);
-  return { el: box, focus: input };
+  render();
+
+  // -- Encode --
+  buildJwtEncoder(encodePane, (token) => {
+    setMode('decode');
+    input.value = token;
+    render();
+    input.focus();
+  });
+
+  setMode(mode);
+  return { el: box, get focus() { return mode === 'decode' ? input : encodePane.querySelector('[aria-label="Payload (JSON)"]'); } };
+}
+
+function buildJwtEncoder(pane, decode) {
+  const nowSec = () => Math.floor(Date.now() / 1000);
+  const pretty = (o) => JSON.stringify(o, null, 2);
+
+  // the header, with the algorithm in its bar
+  const alg = tEl('select', 'input jwt-alg');
+  alg.setAttribute('aria-label', 'Algorithm');
+  for (const a of JWT_ENC_ALGS) alg.appendChild(new Option(a === 'none' ? 'none (unsigned)' : a, a));
+  const header = toolArea('{ "alg": "HS256", "typ": "JWT" }', 7);
+  header.value = pretty({ alg: 'HS256', typ: 'JWT' });
+  header.setAttribute('aria-label', 'Header (JSON)');
+  const headCard = toolCard('Header');
+  headCard.tools.append(alg, toolCardClear('Back to the usual header', () => {
+    header.value = pretty({ alg: alg.value, typ: 'JWT' });
+    sign();
+  }));
+  headCard.body.appendChild(header);
+
+  // the payload, with Expires in: iat now and exp that far on
+  const payload = toolArea('{ "sub": "...", "exp": 1730124600 }', 7);
+  payload.setAttribute('aria-label', 'Payload (JSON)');
+  const t = nowSec();
+  payload.value = pretty({ sub: '1234567890', name: 'Test User', iat: t, exp: t + 3600 });
+  const payCard = toolCard('Payload · data');
+  payCard.tools.appendChild(toolCardClear('Empty the payload', () => {
+    payload.value = '{}';
+    sign();
+  }));
+  payCard.body.appendChild(payload);
+  const expiry = tEl('div', 'jwt-expiry');
+  expiry.appendChild(tEl('span', 'jwt-label', 'Expires in'));
+  for (const [label, secs] of [['15 min', 900], ['1 h', 3600], ['1 day', 86400], ['30 days', 2592000]]) {
+    expiry.appendChild(toolButton(label, () => {
+      let p;
+      try {
+        p = JSON.parse(payload.value || '{}');
+      } catch {
+        return; // the payload's line says it is not JSON
+      }
+      const n = nowSec();
+      payload.value = pretty({ ...p, iat: n, exp: n + secs });
+      sign();
+    }, 'jwt-exp-btn'));
+  }
+  payCard.insertBefore(expiry, payCard.lastChild);
+
+  // the signature: the secret (HS), the private key (RS, ES), or nothing (none)
+  const secret = toolInput('The shared secret');
+  secret.type = 'password';
+  secret.setAttribute('aria-label', 'Secret');
+  const show = toolButton('Show', () => {
+    secret.type = secret.type === 'password' ? 'text' : 'password';
+    show.textContent = secret.type === 'password' ? 'Show' : 'Hide';
+  });
+  const b64 = tEl('label', 'jwt-check');
+  const b64Box = tEl('input');
+  b64Box.type = 'checkbox';
+  b64.append(b64Box, ' Base64');
+  b64.title = 'The secret is written in Base64 (its bytes are what signs)';
+  const secretRow = tEl('div', 'tool-row');
+  secretRow.append(secret, show, b64);
+  const key = toolArea('-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----', 5);
+  key.setAttribute('aria-label', 'Private key (PEM)');
+  const sigCard = toolCard('Signature');
+  sigCard.tools.appendChild(toolCardClear('Clear the secret and the key', () => {
+    secret.value = '';
+    key.value = '';
+    sign();
+  }));
+  sigCard.body.append(secretRow, key);
+
+  // the token, made from the three
+  const tokenCard = toolCard('Encoded token', 'jwt-out');
+  const tokenOut = tEl('pre', 'tool-out jwt-token');
+  let token = '';
+  tokenCard.tools.append(copyButton(() => token, 'Token'), toolButton('Decode it', () => token && decode(token), 'jwt-decode-btn'));
+  tokenCard.body.appendChild(tokenOut);
+
+  const two = tEl('div', 'tool-two');
+  two.append(headCard, payCard);
+  pane.append(two, sigCard, tokenCard);
+
+  const kind = () => (alg.value.startsWith('HS') ? 'secret' : alg.value === 'none' ? 'none' : 'key');
+  const showKeyFields = () => {
+    secretRow.classList.toggle('hidden', kind() !== 'secret');
+    key.classList.toggle('hidden', kind() !== 'key');
+    sigCard.heading.lastChild.textContent = kind() === 'secret' ? 'Signature · secret' : kind() === 'key' ? 'Signature · private key (PEM)' : 'Signature';
+  };
+  const noToken = () => {
+    token = '';
+    tokenOut.textContent = '';
+    tokenOut.appendChild(tEl('span', 'jwt-token-empty', 'The token shows here when the header, the payload and the signature are right'));
+  };
+  let seq = 0;
+  const sign = async () => {
+    let h;
+    let p;
+    try {
+      h = JSON.parse(header.value);
+      headCard.setStatus(`Valid header${h && h.alg ? `, ${h.alg}` : ''}`);
+    } catch (e) {
+      headCard.setStatus(`Header is not valid JSON: ${e.message}`, 'bad');
+    }
+    try {
+      p = JSON.parse(payload.value);
+      const when = jwtExpiry(p);
+      payCard.setStatus(`Valid payload${when ? `, ${when}` : ''}`);
+    } catch (e) {
+      payCard.setStatus(`Payload is not valid JSON: ${e.message}`, 'bad');
+    }
+    if (h === undefined || p === undefined) {
+      sigCard.setStatus('');
+      noToken();
+      return;
+    }
+    const mine = ++seq;
+    const r = await window.tools.signJwt(h, p, kind() === 'secret' ? secret.value : kind() === 'key' ? key.value : '', b64Box.checked);
+    if (mine !== seq) return;
+    if (r.error) {
+      sigCard.setStatus(r.error, 'bad');
+      noToken();
+      return;
+    }
+    sigCard.setStatus(h.alg === 'none' ? 'Not signed: alg none, anyone can change it' : `Signed with ${h.alg}`, h.alg === 'none' ? 'note' : 'ok');
+    token = r.token;
+    const [a, b, c] = token.split('.');
+    tokenOut.textContent = '';
+    tokenOut.append(tEl('span', 'jwt-h', a), tEl('span', 'jwt-dot', '.'), tEl('span', 'jwt-p', b), tEl('span', 'jwt-dot', '.'), tEl('span', 'jwt-s', c));
+  };
+  const signSoon = debounce(sign, 150);
+  // the algorithm chosen goes into the header; one typed in the header picks it
+  alg.addEventListener('change', () => {
+    showKeyFields();
+    try {
+      header.value = pretty({ ...JSON.parse(header.value), alg: alg.value });
+    } catch {
+      // the header's line says it is not JSON
+    }
+    sign();
+  });
+  header.addEventListener('input', () => {
+    try {
+      const a = JSON.parse(header.value).alg;
+      if (JWT_ENC_ALGS.includes(a) && a !== alg.value) {
+        alg.value = a;
+        showKeyFields();
+      }
+    } catch {
+      // said by sign
+    }
+    signSoon();
+  });
+  for (const el of [payload, secret, key]) el.addEventListener('input', signSoon);
+  b64Box.addEventListener('change', sign);
+  showKeyFields();
+  noToken();
+  sign();
 }
 
 // -- Timestamps --
@@ -1065,7 +1325,7 @@ function buildPortsTool() {
       cmd.title = row.command || '';
       const end = toolButton('End', async () => {
         const what = `${row.program || 'the program'} (PID ${row.pid}), listening on ${row.port}`;
-        if (!(await window.git.confirm(`End ${what}? It stops at once and anything it did not save is lost.`))) return;
+        if (!(await askConfirm(`End ${what}? It stops at once and anything it did not save is lost.`))) return;
         end.disabled = true;
         const res = await window.tools.endProcess(row.pid);
         if (res.error) toast(res.error, 'error', { title: 'It could not be ended' });
@@ -1254,6 +1514,269 @@ function openInCompare(a, b, what) {
   setMode('tools');
   showTool('compare');
   builtTools.get('compare').fill(a, b, what);
+}
+
+// -- Compare APIs: two OpenAPI or Swagger specs (pasted, opened from a file or got from an address), compared by the
+// main process (src/api-diff.js): the endpoints added, removed and changed, the models changed with the endpoints that
+// use them, and which changes break a client written for the old spec. Breaking ones first and marked; a filter for them.
+const API_CHEVRON = '<svg class="api-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6l-6 6"/></svg>';
+
+function apiChip(text, cls) {
+  return tEl('span', `api-chip ${cls}`, text);
+}
+
+function buildApiDiffTool() {
+  const box = tEl('div', 'tool api-tool');
+  let seq = 0;
+  let result = null;
+  let filter = 'all';
+  const makeSide = (title, placeholder) => {
+    const side = { title, source: '' };
+    side.area = toolArea(placeholder, 9);
+    side.area.setAttribute('aria-label', `${title} spec`);
+    side.card = toolCard(title);
+    const urlRow = tEl('div', 'tool-row api-url hidden');
+    side.url = toolInput('http://localhost:8080/v3/api-docs');
+    side.url.setAttribute('aria-label', `${title}: the address of the spec`);
+    const get = toolButton('Get', async () => {
+      get.disabled = true;
+      side.card.setStatus(`Getting ${side.url.value.trim()}...`, 'note');
+      const r = await window.tools.apiFetch(side.url.value);
+      get.disabled = false;
+      if (r.error) {
+        side.card.setStatus(r.error, 'bad');
+        return;
+      }
+      side.area.value = r.text;
+      side.source = r.name;
+      urlRow.classList.add('hidden');
+      compare();
+    });
+    side.url.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') get.click();
+    });
+    urlRow.append(side.url, get);
+    side.card.tools.append(
+      toolButton('Open file', async () => {
+        const r = await window.tools.apiOpen();
+        if (r.canceled) return;
+        if (r.error) {
+          side.card.setStatus(r.error, 'bad');
+          return;
+        }
+        side.area.value = r.text;
+        side.source = r.name;
+        compare();
+      }, 'api-open'),
+      toolButton('From URL', () => {
+        urlRow.classList.toggle('hidden');
+        if (!urlRow.classList.contains('hidden')) side.url.focus();
+      }, 'api-from-url'),
+      toolCardClear(`Clear the ${title.toLowerCase()} spec`, () => {
+        side.area.value = '';
+        side.source = '';
+        compare();
+        side.area.focus();
+      })
+    );
+    side.card.body.append(urlRow, side.area);
+    side.area.addEventListener('input', () => {
+      side.source = '';
+      compareSoon();
+    });
+    return side;
+  };
+  const before = makeSide('Before', 'The old spec: paste it (JSON or YAML), open a file or get it from an address');
+  const after = makeSide('After', 'The new spec: paste it (JSON or YAML), open a file or get it from an address');
+  const two = tEl('div', 'tool-two');
+  two.append(before.card, after.card);
+  const actions = tEl('div', 'tool-row');
+  actions.append(toolButton('Swap', () => {
+    [before.area.value, after.area.value] = [after.area.value, before.area.value];
+    [before.source, after.source] = [after.source, before.source];
+    compare();
+  }, 'api-swap'));
+  const out = tEl('div', 'tool-result api-result');
+  box.append(
+    toolHead('Compare APIs', 'Two OpenAPI or Swagger specs (JSON or YAML): which endpoints and models were added, removed or changed, and which changes break a client of the old one. Here in the app: nothing is sent anywhere.'),
+    two, actions, out
+  );
+
+  const describe = (side, info) => {
+    const what = [info.kind, [info.title, info.version].filter(Boolean).join(' '), `${plural(info.endpoints, 'endpoint')}, ${plural(info.models, 'model')}`].filter(Boolean).join(' · ');
+    side.card.setStatus(side.source ? `${what} · from ${side.source}` : what);
+  };
+
+  const compare = async () => {
+    const a = before.area.value.trim();
+    const b = after.area.value.trim();
+    for (const side of [before, after]) if (!side.area.value.trim()) side.card.setStatus('Paste a spec, open a file or get it from an address', 'note');
+    if (!a || !b) {
+      result = null;
+      out.textContent = '';
+      return;
+    }
+    const mine = ++seq;
+    const r = await window.tools.apiCompare(a, b);
+    if (mine !== seq) return;
+    if (r.error) {
+      result = null;
+      out.textContent = '';
+      const bad = /^After/.test(r.error) ? after : before;
+      bad.card.setStatus(r.error, 'bad');
+      (bad === after ? before : after).card.setStatus('');
+      return;
+    }
+    describe(before, r.before);
+    describe(after, r.after);
+    result = r;
+    renderResult();
+  };
+  const compareSoon = debounce(compare, 400);
+
+  // -- the result --
+  const changeRow = (c) => {
+    const row = tEl('div', `api-change${c.breaking ? ' breaking' : ''}`);
+    row.append(tEl('span', 'api-mark', c.breaking ? '!' : ''), tEl('span', 'api-where', c.where), tEl('span', 'api-text', c.text));
+    if (c.breaking) row.title = 'Breaks a client written for the old spec';
+    if (c.model) {
+      row.classList.add('api-link');
+      row.title = `See ${c.model} in Models`;
+      row.addEventListener('click', () => {
+        const m = out.querySelector(`.api-item[data-model="${CSS.escape(c.model)}"]`);
+        if (!m) return;
+        setOpen(m, true);
+        m.scrollIntoView({ block: 'center' });
+        m.classList.add('flash');
+        setTimeout(() => m.classList.remove('flash'), 1200);
+      });
+    }
+    return row;
+  };
+  const setOpen = (item, on) => {
+    item.classList.toggle('open', on);
+    const head = item.querySelector('.api-item-head');
+    if (head) head.setAttribute('aria-expanded', String(on));
+  };
+  const STATE_TEXT = { added: 'Added', removed: 'Removed', changed: 'Changed' };
+  const item = ({ cls, data, head, lines, breaking, state, count, note }) => {
+    const el = tEl('div', `api-item ${state}${breaking ? ' breaking' : ''}${cls ? ` ${cls}` : ''}`);
+    Object.assign(el.dataset, data);
+    const h = tEl('button', 'api-item-head');
+    h.type = 'button';
+    h.innerHTML = API_CHEVRON;
+    h.append(...head);
+    const tail = tEl('span', 'api-item-tail');
+    if (breaking) tail.appendChild(apiChip('Breaking', 'bad'));
+    tail.appendChild(apiChip(STATE_TEXT[state], state));
+    if (count) tail.appendChild(tEl('span', 'api-count', plural(count, 'change')));
+    h.appendChild(tail);
+    const body = tEl('div', 'api-item-body');
+    if (note) body.appendChild(tEl('div', 'api-note', note));
+    // the breaking ones first
+    [...lines].sort((x, y) => Number(y.breaking) - Number(x.breaking)).forEach((c) => body.appendChild(changeRow(c)));
+    h.addEventListener('click', () => setOpen(el, !el.classList.contains('open')));
+    el.append(h, body);
+    setOpen(el, breaking && state === 'changed');
+    return el;
+  };
+  const endpointItem = (e) => item({
+    data: { key: e.key, text: `${e.method} ${e.path} ${e.summary} ${e.changes.map((c) => `${c.where} ${c.text}`).join(' ')}`.toLowerCase() },
+    head: [tEl('span', `api-method m-${e.method.toLowerCase()}`, e.method), tEl('span', 'api-path', e.path), tEl('span', 'api-summary-text', e.summary)],
+    lines: e.changes,
+    breaking: e.breaking,
+    state: e.state,
+    count: e.changes.length,
+    note: e.state === 'removed' ? 'Gone from the new spec: a client that calls it fails now.' : e.state === 'added' ? 'New in the new spec.' : '',
+  });
+  const modelItem = (m) => item({
+    cls: 'api-model',
+    data: { model: m.name, text: `${m.name} ${m.usedBy.join(' ')} ${m.changes.map((c) => `${c.where} ${c.text}`).join(' ')}`.toLowerCase() },
+    head: [tEl('span', 'api-model-name', m.name), tEl('span', 'api-summary-text', m.usedBy.length ? `used by ${plural(m.usedBy.length, 'endpoint')}` : 'used by no endpoint')],
+    lines: m.changes,
+    breaking: m.breaking,
+    state: m.state,
+    count: m.changes.length,
+    note: m.usedBy.length ? `Used by ${m.usedBy.join(', ')}` : '',
+  });
+
+  const search = toolInput('Filter by path, model or change');
+  search.classList.add('api-search');
+  search.setAttribute('aria-label', 'Filter the changes');
+  const applyFilter = () => {
+    const q = search.value.trim().toLowerCase();
+    for (const el of out.querySelectorAll('.api-item')) {
+      el.classList.toggle('hidden', (filter === 'breaking' && !el.classList.contains('breaking')) || (q && !el.dataset.text.includes(q)));
+    }
+    for (const sec of out.querySelectorAll('.api-section')) {
+      const shown = sec.querySelectorAll('.api-item:not(.hidden)').length;
+      sec.classList.toggle('hidden', shown === 0);
+    }
+  };
+  search.addEventListener('input', applyFilter);
+  const seg = toolSegment([['all', 'All changes'], ['breaking', 'Breaking only']], filter, (v) => {
+    filter = v;
+    applyFilter();
+  }, 'Which changes');
+
+  const report = () => {
+    const r = result;
+    const s = r.summary;
+    const lines = [
+      `API changes: ${[r.before.title, r.before.version].filter(Boolean).join(' ')} → ${[r.after.title, r.after.version].filter(Boolean).join(' ')}`,
+      `${s.breaking} breaking · ${s.added} added · ${s.removed} removed · ${s.changed} changed · ${s.same} the same`,
+    ];
+    const block = (title, list, name) => {
+      if (!list.length) return;
+      lines.push('', title);
+      for (const x of list) {
+        lines.push(`${x.breaking ? '[BREAKING] ' : ''}${name(x)} (${x.state})`);
+        for (const c of [...x.changes].sort((p, q) => Number(q.breaking) - Number(p.breaking))) lines.push(`  ${c.breaking ? '!' : '-'} ${c.where}: ${c.text}`);
+      }
+    };
+    block('Endpoints', r.endpoints, (e) => `${e.method} ${e.path}`);
+    block('Models', r.models, (m) => `${m.name}${m.usedBy.length ? `, used by ${m.usedBy.join(', ')}` : ''}`);
+    return lines.join('\n');
+  };
+
+  const renderResult = () => {
+    out.textContent = '';
+    const r = result;
+    const s = r.summary;
+    if (!r.endpoints.length && !r.models.length) {
+      const same = toolCard('No differences');
+      same.body.appendChild(tEl('div', 'api-note', `Both describe the same API: ${plural(s.same, 'endpoint')}, and their models.`));
+      out.appendChild(same);
+      return;
+    }
+    const chips = tEl('div', 'api-summary');
+    chips.append(
+      s.breaking ? apiChip(`${plural(s.breaking, 'endpoint')} with breaking changes`, 'bad big') : apiChip('Nothing breaks a client of the old spec', 'good big'),
+      apiChip(`${s.added} added`, 'added'),
+      apiChip(`${s.removed} removed`, 'removed'),
+      apiChip(`${s.changed} changed`, 'changed'),
+      apiChip(`${s.same} the same`, 'same')
+    );
+    if (s.models.changed || s.models.added || s.models.removed) chips.appendChild(apiChip(`Models: ${[s.models.changed && `${s.models.changed} changed`, s.models.added && `${s.models.added} added`, s.models.removed && `${s.models.removed} removed`].filter(Boolean).join(', ')}`, 'same'));
+    const controls = tEl('div', 'tool-row api-controls');
+    controls.append(seg, search, toolButton('Copy report', () => toolCopy(report(), 'Report'), 'api-copy'));
+    out.append(chips, controls);
+    const section = (title, list, make) => {
+      if (!list.length) return;
+      const sec = tEl('section', 'api-section');
+      sec.appendChild(tEl('h3', 'api-section-title', `${title} · ${list.length}`));
+      // breaking first, then changed, removed, added
+      const rank = (x) => (x.breaking ? 0 : { changed: 1, removed: 2, added: 3 }[x.state]);
+      [...list].sort((x, y) => rank(x) - rank(y)).forEach((x) => sec.appendChild(make(x)));
+      out.appendChild(sec);
+    };
+    section('Endpoints', r.endpoints, endpointItem);
+    section('Models', r.models, modelItem);
+    applyFilter();
+  };
+
+  compare();
+  return { el: box, focus: before.area };
 }
 
 // -- Compare JSON --

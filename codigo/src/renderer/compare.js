@@ -39,11 +39,14 @@ async function loadCmpRefs() {
   return refs;
 }
 
-// On each refresh of the page; a picker still open for another repository closes.
+// On each refresh of the page, only while they are needed: a Base or Compare chosen in this repository (to see it is
+// still there) or a picker open. Otherwise they are forgotten, and a picker asks for them when it opens.
 async function refreshCmpRefs() {
   if (!currentRepo) return;
   if (cmpRefs && cmpRefs.repo !== currentRepo) closeCmpMenu();
-  await loadCmpRefs();
+  const sides = logSides.get(currentRepo);
+  if ((sides && (sides.base || sides.compare)) || $('#cmpMenu')) await loadCmpRefs();
+  else cmpRefs = null;
 }
 
 function cmpFileRow(f, ctx) {
@@ -85,8 +88,19 @@ function openCompareDiff(f, ctx) {
 }
 
 // -- The picker of a side: your branches, the ones on origin, then the tags. A click chooses one (a branch: its history,
-// drawn as a graph); a right-click on a branch asks: View log (the same) or View commits... (one of its commits,
-// chosen in a popup with a search). A hash typed that is not listed can be used as it is. --
+// drawn as a graph); a right-click on a branch asks: View log (the same) or View commits (its commits listed under it,
+// with a search of their own: a click chooses one). A hash typed that is not listed can be used as it is. --
+
+const CMP_COMMITS_MAX = 300; // read at most, of a branch
+const CMP_COMMITS_SHOWN = 30; // listed at first, then Show more
+const CMP_COMMITS_FILTER_FROM = 10; // a search of its own above more commits than this
+
+// "3d ago" within a week, then "28 Sep" (and the year, when not this one)
+function cmpShortDate(date) {
+  const d = new Date(date);
+  if (Date.now() - d < 604800000) return formatDate(date);
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', ...(d.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}) });
+}
 
 function closeCmpMenu(refocus = false) {
   const menu = $('#cmpMenu');
@@ -142,12 +156,10 @@ function openRefPicker(btn, side, onPick) {
     head.className = 'branch-actions-title';
     head.textContent = r.name;
     box.appendChild(head);
+    const listed = Boolean(open) && open.r.ref === r.ref;
     for (const [icon, label, hint, run] of [
       [ACTION_ICONS.log, 'View log', 'The branch itself: its history, drawn as a graph', () => pick(r.ref)],
-      [CMP_ICONS.commit, 'View commits...', 'Its commits, with a search: choose one of them', () => {
-        closeCmpMenu();
-        openCmpCommits(r, side, onPick, btn);
-      }],
+      [CMP_ICONS.commit, listed ? 'Hide commits' : 'View commits', listed ? 'Stop listing its commits under it' : 'Its commits, listed under it: choose one of them', () => toggleCommits(r)],
     ]) {
       const b = document.createElement('button');
       b.type = 'button';
@@ -179,7 +191,122 @@ function openRefPicker(btn, side, onPick) {
     box.querySelector('button').focus();
   };
 
-  const items = () => [...list.querySelectorAll('.branch-menu-item')];
+  // "View commits": the commits of one branch listed under it, { r, data (once read), q (its search), shown }
+  let open = null;
+  const toggleCommits = async (r) => {
+    closeCmpChoice();
+    const was = Boolean(open) && open.r.ref === r.ref;
+    open = was ? null : { r, data: null, q: '', shown: CMP_COMMITS_SHOWN };
+    const top = list.scrollTop;
+    render();
+    list.scrollTop = top;
+    const item = () => [...list.querySelectorAll('.cmp-menu-item')].find((el) => el.dataset.ref === r.ref);
+    if (item()) item().focus();
+    if (was) return;
+    const mine = open;
+    let data;
+    try {
+      data = await window.git.compareCommits(repoPath, r.ref, CMP_COMMITS_MAX);
+    } catch (e) {
+      data = { error: e.message };
+    }
+    if (open !== mine || !menu.isConnected) return;
+    mine.data = data;
+    const block = list.querySelector('.cmp-branch-commits');
+    if (!block) return;
+    const focused = document.activeElement;
+    block.replaceWith(commitsBlock());
+    if (focused && focused.isConnected) focused.focus();
+    // the branch at the top when its commits do not fit under it
+    const at = item();
+    const box = list.getBoundingClientRect();
+    const shown = list.querySelector('.cmp-branch-commits').getBoundingClientRect();
+    if (at && shown.bottom > box.bottom) list.scrollTop += Math.min(shown.bottom - box.bottom, at.getBoundingClientRect().top - box.top - 4);
+  };
+  // the commits matching its search, the first open.shown of them; a click chooses one
+  const fillCommits = (rows) => {
+    rows.textContent = '';
+    const { r, data } = open;
+    const q = open.q.trim().toLowerCase();
+    const hits = data.commits.filter((c) => !q || `${c.fullHash} ${c.message} ${c.author} ${c.tags.join(' ')} ${cmpVersionText(c.version)}`.toLowerCase().includes(q));
+    for (const c of hits.slice(0, open.shown)) {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = `clip-menu-item branch-menu-item cmp-commit-item${side && side.value === c.fullHash ? ' current' : ''}`;
+      row.setAttribute('role', 'menuitem');
+      row.title = `${c.message}\n${c.author} · ${new Date(c.date).toLocaleString()}${c.version ? `\nVersion: ${cmpVersionText(c.version)}` : ''}`;
+      const tags = c.tags.map((t) => `<span class="branch-log-ref tag">${escapeHtml(t)}</span>`).join('');
+      row.innerHTML = `<svg class="branch-menu-check" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg><span class="log-hash">${escapeHtml(c.hash)}</span><span class="cmp-menu-msg">${escapeHtml(c.message)}</span>${tags}<span class="cmp-menu-date">${escapeHtml(cmpShortDate(c.date))}</span>`;
+      row.addEventListener('click', () => pick(c.fullHash, { message: c.message, branch: r.ref, label: c.hash }));
+      rows.appendChild(row);
+    }
+    if (hits.length > open.shown) {
+      const more = document.createElement('button');
+      more.type = 'button';
+      more.className = 'clip-menu-item branch-menu-item cmp-commits-more';
+      more.textContent = `Show ${Math.min(CMP_COMMITS_SHOWN, hits.length - open.shown)} more`;
+      more.addEventListener('click', () => {
+        const from = open.shown;
+        open.shown += CMP_COMMITS_SHOWN;
+        fillCommits(rows);
+        const next = rows.querySelectorAll('.cmp-commit-item')[from];
+        if (next) next.focus();
+      });
+      rows.appendChild(more);
+    }
+    // a hash the list does not have: that commit
+    if (/^[0-9a-f]{4,40}$/.test(q) && !hits.length) {
+      const use = document.createElement('button');
+      use.type = 'button';
+      use.className = 'clip-menu-item branch-menu-item cmp-commit-item';
+      use.innerHTML = `<span class="cmp-menu-msg">Use commit <span class="log-hash">${escapeHtml(q)}</span></span>`;
+      use.addEventListener('click', () => pick(q, { label: q.slice(0, 7), branch: r.ref }));
+      rows.appendChild(use);
+    } else if (!hits.length) rows.appendChild(noteEl(q ? `No commit has "${open.q.trim()}"` : 'No commits'));
+    if (!q && data.total > data.commits.length && hits.length <= open.shown) rows.appendChild(noteEl(`The latest ${data.commits.length} of ${data.total} commits: type a hash to use an older one`));
+  };
+  // under the branch: its search (when it has more than a few), then its commits
+  const commitsBlock = () => {
+    const block = document.createElement('div');
+    block.className = 'cmp-branch-commits';
+    block.setAttribute('role', 'group');
+    block.setAttribute('aria-label', `Commits of ${open.r.name}`);
+    const { data } = open;
+    if (!data || data.error) {
+      block.appendChild(noteEl(data ? data.error : 'Loading...'));
+      return block;
+    }
+    const rows = document.createElement('div');
+    if (data.commits.length > CMP_COMMITS_FILTER_FROM) {
+      const filter = document.createElement('input');
+      filter.className = 'input cmp-commits-filter';
+      filter.type = 'search';
+      filter.placeholder = `Search its ${plural(data.total, 'commit')}...`;
+      filter.title = 'Message, author, hash or version';
+      filter.spellcheck = false;
+      filter.autocomplete = 'off';
+      filter.setAttribute('aria-label', `Search the commits of ${open.r.name}`);
+      filter.value = open.q;
+      filter.addEventListener('input', () => {
+        open.q = filter.value;
+        open.shown = CMP_COMMITS_SHOWN;
+        fillCommits(rows);
+      });
+      filter.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        const first = rows.querySelector('.branch-menu-item');
+        if (first) first.click();
+      });
+      block.appendChild(filter);
+    }
+    block.appendChild(rows);
+    fillCommits(rows);
+    return block;
+  };
+
+  // the keyboard goes through the branches, and the search and commits of the one listed
+  const items = () => [...list.querySelectorAll('.branch-menu-item, .cmp-commits-filter')];
   // more: what a right-click (or the right arrow) opens, for a branch
   const add = (r, kind, title, run, more = null) => {
     const item = document.createElement('button');
@@ -187,6 +314,7 @@ function openRefPicker(btn, side, onPick) {
     item.className = `clip-menu-item branch-menu-item cmp-menu-item${side && side.value === r.ref ? ' current' : ''}`;
     item.setAttribute('role', 'menuitem');
     item.title = title;
+    item.dataset.ref = r.ref;
     item.innerHTML = `<svg class="branch-menu-check" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>${cmpIcon(kind)}<span class="branch-menu-name">${escapeHtml(r.name)}</span>`;
     item.addEventListener('click', run);
     if (more) {
@@ -197,6 +325,13 @@ function openRefPicker(btn, side, onPick) {
       });
     }
     list.appendChild(item);
+    // its commits listed: an arrow down on it, and them under it
+    if (open && open.r.ref === r.ref) {
+      item.classList.add('expanded');
+      item.setAttribute('aria-expanded', 'true');
+      item.insertAdjacentHTML('beforeend', '<svg class="cmp-expanded-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6l6 -6"/></svg>');
+      list.appendChild(commitsBlock());
+    }
   };
   const groupHead = (title, count) => {
     const head = document.createElement('div');
@@ -222,7 +357,7 @@ function openRefPicker(btn, side, onPick) {
       groupHead(title, hits.length);
       for (const r of hits) {
         if (kind === 'tag') add(r, kind, `Tag ${r.name}`, () => pick(r.ref));
-        else add(r, kind, `${r.name}${hint}: click for its log; right-click to choose one of its commits`, () => pick(r.ref), (item) => choose(item, r));
+        else add(r, kind, `${r.name}${hint}: click for its log; right-click to list its commits`, () => pick(r.ref), (item) => choose(item, r));
       }
       shown += hits.length;
     }
@@ -253,6 +388,10 @@ function openRefPicker(btn, side, onPick) {
     } else if ((e.key === 'ArrowRight' || e.key === 'ContextMenu') && i >= 0 && all[i].more) {
       e.preventDefault();
       all[i].more();
+    } else if (e.key === 'ArrowLeft' && i >= 0 && all[i].matches('button') && all[i].closest('.cmp-branch-commits')) {
+      // from its commits: back to the branch, and they go
+      e.preventDefault();
+      toggleCommits(open.r);
     } else if (e.key === 'Enter' && document.activeElement === search) {
       e.preventDefault();
       if (all[0]) all[0].click();
@@ -286,139 +425,3 @@ function openRefPicker(btn, side, onPick) {
     render();
   })();
 }
-
-// -- The commits of a branch, in a popup with a search at the top: a click chooses one --
-const CMP_COMMITS_MAX = 300;
-
-function closeCmpCommits(refocus = null) {
-  const modal = $('#cmpCommitsModal');
-  if (!modal) return;
-  document.removeEventListener('keydown', modal.onEscape, true);
-  modal.remove();
-  if (refocus && refocus.isConnected) refocus.focus();
-}
-
-async function openCmpCommits(r, side, onPick, btn) {
-  closeCmpCommits();
-  const repoPath = currentRepo;
-  const modal = document.createElement('div');
-  modal.id = 'cmpCommitsModal';
-  modal.className = 'settings-overlay';
-  const card = document.createElement('section');
-  card.className = 'settings-card cmp-commits-card';
-  card.setAttribute('role', 'dialog');
-  card.setAttribute('aria-modal', 'true');
-  card.setAttribute('aria-label', `Commits of ${r.name}`);
-  const head = document.createElement('div');
-  head.className = 'branch-log-head';
-  const title = document.createElement('span');
-  title.className = 'branch-log-title';
-  title.textContent = `Commits of ${r.name}`;
-  const count = document.createElement('span');
-  count.className = 'branch-log-count';
-  const close = document.createElement('button');
-  close.type = 'button';
-  close.className = 'icon-btn-plain branch-log-close';
-  close.title = 'Close';
-  close.setAttribute('aria-label', 'Close');
-  close.textContent = '✕';
-  close.addEventListener('click', () => closeCmpCommits(btn));
-  head.append(title, count, close);
-  const search = document.createElement('input');
-  search.className = 'input cmp-commits-search';
-  search.type = 'search';
-  search.placeholder = 'Search commits: message, author, hash or version';
-  search.spellcheck = false;
-  search.autocomplete = 'off';
-  search.setAttribute('aria-label', 'Search commits');
-  const list = document.createElement('div');
-  list.className = 'cmp-commits-list';
-  list.appendChild(noteEl('Loading...'));
-  card.append(head, search, list);
-  modal.appendChild(card);
-  modal.addEventListener('mousedown', (e) => {
-    if (e.target === modal) closeCmpCommits(btn);
-  });
-  modal.onEscape = (e) => {
-    if (e.key !== 'Escape') return;
-    e.stopPropagation();
-    e.preventDefault();
-    closeCmpCommits(btn);
-  };
-  document.addEventListener('keydown', modal.onEscape, true);
-  document.body.appendChild(modal);
-  search.focus();
-
-  const pick = (value, extra) => {
-    closeCmpCommits(btn);
-    onPick(cmpSideFor(value, extra));
-  };
-  let data = null;
-  const rows = () => [...list.querySelectorAll('.cmp-commit-row')];
-  const render = () => {
-    if (!data) return;
-    list.textContent = '';
-    if (data.error) {
-      list.appendChild(noteEl(data.error));
-      return;
-    }
-    const q = search.value.trim().toLowerCase();
-    const hits = data.commits.filter((c) => !q || `${c.fullHash} ${c.message} ${c.author} ${c.tags.join(' ')} ${cmpVersionText(c.version)}`.toLowerCase().includes(q));
-    count.textContent = q ? `${hits.length} found` : data.total > data.commits.length ? `latest ${data.commits.length} of ${data.total}` : plural(data.total, 'commit');
-    for (const c of hits) {
-      const row = document.createElement('button');
-      row.type = 'button';
-      row.className = `cmp-commit-row${side && side.value === c.fullHash ? ' current' : ''}`;
-      row.title = `${c.message}\n${c.author} · ${new Date(c.date).toLocaleString()}${c.version ? `\nVersion: ${cmpVersionText(c.version)}` : ''}`;
-      const right = c.tags.length
-        ? c.tags.map((t) => `<span class="branch-log-ref tag">${escapeHtml(t)}</span>`).join('')
-        : `<span class="cmp-version">${escapeHtml(cmpVersionText(c.version))}</span>`;
-      row.innerHTML = `<span class="log-hash">${escapeHtml(c.hash)}</span><span class="cmp-menu-msg">${escapeHtml(c.message)}</span><span class="cmp-menu-right">${right}<span class="cmp-menu-date">${escapeHtml(formatDate(c.date))}</span></span>`;
-      row.addEventListener('click', () => pick(c.fullHash, { message: c.message, branch: r.ref, label: c.hash }));
-      list.appendChild(row);
-    }
-    // a hash the list does not have: that commit
-    if (/^[0-9a-f]{4,40}$/.test(q) && !hits.length) {
-      const use = document.createElement('button');
-      use.type = 'button';
-      use.className = 'cmp-commit-row';
-      use.innerHTML = `<span class="cmp-menu-msg">Use commit <span class="log-hash">${escapeHtml(q)}</span></span>`;
-      use.addEventListener('click', () => pick(q, { label: q.slice(0, 7), branch: r.ref }));
-      list.appendChild(use);
-    } else if (!hits.length) list.appendChild(noteEl(q ? `No commit has "${search.value.trim()}"` : 'No commits'));
-    if (!q && data.total > data.commits.length) list.appendChild(noteEl(`The latest ${data.commits.length} of ${data.total} commits: type a hash to use an older one`));
-  };
-  search.addEventListener('input', () => {
-    list.scrollTop = 0;
-    render();
-  });
-  card.addEventListener('keydown', (e) => {
-    const all = rows();
-    const i = all.indexOf(document.activeElement);
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      e.preventDefault();
-      if (!all.length) return;
-      const next = i + (e.key === 'ArrowDown' ? 1 : -1);
-      if (next < 0) search.focus();
-      else all[Math.min(next, all.length - 1)].focus();
-    } else if (e.key === 'Enter' && document.activeElement === search) {
-      e.preventDefault();
-      if (all[0]) all[0].click();
-    }
-  });
-
-  try {
-    data = await window.git.compareCommits(repoPath, r.ref, CMP_COMMITS_MAX);
-  } catch (e) {
-    data = { error: e.message };
-  }
-  if (!modal.isConnected || repoPath !== currentRepo) return;
-  render();
-}
-
-// A press elsewhere or leaving the window closes the picker.
-document.addEventListener('mousedown', (e) => {
-  const menu = $('#cmpMenu');
-  if (menu && !menu.contains(e.target) && !menu.anchor.contains(e.target)) closeCmpMenu();
-});
-window.addEventListener('blur', () => closeCmpMenu());

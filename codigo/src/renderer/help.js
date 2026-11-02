@@ -304,7 +304,7 @@ function editMyCommand(c) {
 }
 
 async function deleteMyCommand(c) {
-  if (!(await window.git.confirm(`Delete the saved command "${c.command}"?`))) return;
+  if (!(await askConfirm(`Delete the saved command "${c.command}"?`))) return;
   const r = await window.myCommands.delete(c.id);
   if (r.error) {
     toast(r.error, 'error');

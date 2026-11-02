@@ -1,0 +1,1286 @@
+/* -- Bruno: the requests on the left and the one chosen on the right (the variables and environment on its line) -- */
+#tab-bruno {
+  min-height: 0;
+  padding: 10px 16px 12px;
+  gap: 8px;
+}
+.bru-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--orange) 40%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--orange) 8%, var(--bg));
+  font-size: var(--fs-small);
+}
+.bru-note-text strong {
+  font-weight: 600;
+}
+.bru-note-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.bru-note-cmd {
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  user-select: all;
+}
+.bru-bar {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-left: auto; /* on a line of its own (a narrow request): still on the right */
+}
+.bru-select {
+  max-width: 220px;
+  height: 30px;
+  padding: 0 28px 0 10px;
+}
+/* the environment: its dropdown with an icon inside, on the left of its name */
+.bru-env-pick {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.bru-env-pick svg {
+  position: absolute;
+  left: 9px;
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+.bru-env-pick .bru-select {
+  padding-left: 30px;
+}
+.bru-bar .bru-vars-btn svg,
+.bru-req-line .btn svg {
+  fill: none;
+  stroke: currentColor;
+}
+.bru-dim {
+  color: var(--text-dim);
+}
+.bru-count {
+  min-width: 18px;
+  margin-left: 2px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg));
+  color: var(--accent);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  text-align: center;
+}
+.bru-spin {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border: 2px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.bru-vars-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: min(460px, 90vw);
+  max-height: 60vh;
+  overflow: auto;
+  padding: 10px 12px;
+}
+.bru-vars-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 2px 0 6px;
+  font-size: var(--fs-small);
+}
+.bru-vars-head + .bru-kv,
+.bru-vars-empty {
+  margin-bottom: 12px;
+}
+.bru-vars-empty {
+  font-size: var(--fs-small);
+}
+
+.bru-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  /* the list of requests: as wide as it was dragged (bruno/split.js), between 180px and leaving 360px to the request */
+  grid-template-columns: clamp(180px, var(--bru-tree-w, max(240px, 32%)), calc(100% - 361px)) 1px minmax(0, 1fr);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.bru-tree {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px;
+  background: var(--bg-surface);
+}
+/* the line between the list and the request: 1px to see, 9px to catch */
+.bru-tree-split {
+  position: relative;
+  z-index: 1;
+  background: var(--border);
+  cursor: col-resize;
+}
+.bru-tree-split::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  right: -4px;
+}
+.bru-tree-split::after {
+  content: '';
+  position: absolute;
+  top: calc(50% - 18px);
+  left: -1px;
+  width: 3px;
+  height: 36px;
+  border-radius: 2px;
+  background: var(--border);
+}
+.bru-tree-split:hover::after,
+.bru-tree-split:focus-visible::after {
+  background: var(--accent);
+}
+.bru-tree-split:focus-visible {
+  outline: none;
+}
+.bru-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 2px 8px 2px calc(8px + var(--depth, 0) * 16px);
+  border-radius: 5px;
+  font-size: var(--fs-body);
+  cursor: pointer;
+  user-select: none;
+}
+.bru-row:hover {
+  background: var(--bg-hover);
+}
+.bru-row:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: -2px;
+}
+.bru-req.selected {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.bru-folder {
+  font-weight: 600;
+}
+.bru-folder .dir-caret {
+  transition: transform 0.12s;
+}
+.bru-folder.open .dir-caret {
+  transform: rotate(90deg);
+}
+/* a request lines up its method under the folder's name */
+.bru-req {
+  padding-left: calc(8px + var(--depth, 0) * 16px + 4px);
+}
+.bru-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.bru-method {
+  flex: none;
+  width: 38px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  font-weight: 700;
+  color: var(--text-muted);
+}
+.bru-method.m-get { color: var(--green); }
+.bru-method.m-post { color: var(--yellow); }
+.bru-method.m-put { color: var(--accent); }
+.bru-method.m-patch { color: var(--mauve); }
+.bru-method.m-delete { color: var(--red); }
+.bru-mark,
+.bru-tally {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 9px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  line-height: 18px;
+}
+.bru-mark.pass,
+.bru-tally.pass {
+  background: var(--green-soft);
+  color: var(--green);
+}
+.bru-mark.fail,
+.bru-tally.fail {
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+  color: var(--red);
+}
+.bru-mark.skipped,
+.bru-mark.queued {
+  color: var(--text-dim);
+}
+.bru-tally {
+  font-family: var(--font-ui);
+  font-weight: 500;
+}
+.bru-play-folder {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+.bru-folder:hover .bru-play-folder,
+.bru-folder:focus-within .bru-play-folder,
+.bru-play-folder:focus-visible {
+  opacity: 1;
+}
+.bru-play-folder:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+.bru-play-folder:disabled {
+  cursor: default;
+  opacity: 0;
+}
+/* the folder running: its button stops it, in sight while it runs */
+.bru-play-folder.stop,
+.bru-play-folder.stop:hover {
+  color: var(--red);
+  opacity: 1;
+}
+.bru-play-folder.stop:hover {
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+}
+.bru-play-folder svg {
+  width: 12px;
+  height: 12px;
+  fill: currentColor;
+}
+
+.bru-detail {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px 0;
+  container-type: inline-size; /* the two panes go one over the other when it is narrow */
+}
+.bru-req-head {
+  display: flex;
+  flex-wrap: wrap; /* no room for all: the variables and environment go under the name */
+  align-items: center;
+  gap: 6px 8px;
+  min-height: 30px;
+  margin-bottom: 6px;
+}
+.bru-head-gap {
+  flex: 1;
+}
+/* a narrow request: Variables as its icon and count, a shorter environment */
+@container (max-width: 760px) {
+  .bru-vars-label {
+    display: none;
+  }
+  .bru-env-pick .bru-select {
+    max-width: 150px;
+  }
+}
+.bru-req-name {
+  min-width: 0;
+  max-width: 100%;
+  margin-left: -6px;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+.bru-req-name:not(:disabled):hover {
+  border-color: var(--border);
+  cursor: text;
+}
+.bru-req-name:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--bg-surface);
+  color: var(--text);
+}
+.bru-dirty {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--orange) 14%, transparent);
+  color: var(--orange);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+}
+.bru-dirty.stale {
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+  color: var(--red);
+}
+.bru-req-line:focus-within {
+  border-color: var(--accent);
+}
+.bru-req-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+}
+/* the method, as a dropdown in its colour */
+.bru-method-select {
+  flex: none;
+  height: 28px;
+  padding: 0 20px 0 2px;
+  border: none;
+  border-radius: 4px;
+  background: transparent var(--select-caret) no-repeat right 2px center / 12px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  font-weight: 700;
+  appearance: none;
+  cursor: pointer;
+}
+.bru-method-select:focus-visible {
+  outline: 2px solid var(--accent-ring);
+}
+.bru-method-select.m-get { color: var(--green); }
+.bru-method-select.m-post { color: var(--yellow); }
+.bru-method-select.m-put { color: var(--accent); }
+.bru-method-select.m-patch { color: var(--mauve); }
+.bru-method-select.m-delete { color: var(--red); }
+/* the address: the field's own text is see-through, the layer under it draws it with the {{variables}} in colour */
+.bru-url-box {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+}
+.bru-url-shade,
+.bru-url-input {
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  letter-spacing: 0;
+  line-height: 28px;
+}
+.bru-url-shade {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  padding: 0 6px;
+  white-space: pre;
+  color: var(--text);
+  pointer-events: none;
+}
+.bru-url-shade > span {
+  display: inline-block;
+}
+.bru-url-input {
+  position: relative;
+  width: 100%;
+  height: 28px;
+  padding: 0 6px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--text);
+}
+.bru-url-input::placeholder {
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+}
+.bru-url-input::selection {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+  color: transparent;
+}
+.bru-var {
+  color: var(--accent);
+}
+.bru-var.unknown {
+  color: var(--orange);
+}
+/* the status of the response, on the right of its tabs (same line under them) */
+.bru-res-head {
+  flex: none;
+  display: flex;
+  margin-top: 6px;
+}
+.bru-res-head .bru-tabs {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.bru-status-line {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 2px 0 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-small);
+  white-space: nowrap;
+}
+.bru-status-line:empty {
+  padding: 0;
+}
+.bru-pill {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+.bru-pill.s-2xx { background: var(--green-soft); color: var(--green); }
+.bru-pill.s-3xx { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); }
+.bru-pill.s-4xx { background: color-mix(in srgb, var(--orange) 14%, transparent); color: var(--orange); }
+.bru-pill.s-skip { background: var(--bg-hover); color: var(--text-muted); }
+.bru-pill.s-5xx,
+.bru-pill.s-err { background: color-mix(in srgb, var(--red) 12%, transparent); color: var(--red); }
+.bru-error {
+  color: var(--red);
+}
+.bru-tabs {
+  position: relative; /* for the offsets of its tabs (bruno/split.js) */
+  flex: none;
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto; /* a narrow pane: the tabs scroll sideways rather than overflow it, faded where there are more */
+}
+.bru-tabs::-webkit-scrollbar {
+  display: none;
+}
+.bru-tabs.more-right {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
+}
+.bru-tabs.more-left {
+  -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent);
+}
+.bru-tabs.more-left.more-right {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent);
+}
+.bru-tab {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: -1px;
+  padding: 7px 10px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  cursor: pointer;
+}
+.bru-tab:hover {
+  color: var(--text);
+}
+.bru-tab.active {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+/* the button at the end of a row, for the other tabs: a dropdown laid over its label (bruno/split.js) */
+.bru-tab-more {
+  position: relative;
+}
+.bru-tab-more svg {
+  width: 12px;
+  height: 12px;
+  margin-right: -2px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.bru-tab-more select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.bru-tab-more:hover {
+  color: var(--text);
+}
+.bru-tab-more:has(select:focus-visible) {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: -2px;
+  border-radius: 4px 4px 0 0;
+}
+.bru-tab-more.disabled {
+  opacity: 0.5;
+}
+.bru-tab-more.disabled select {
+  cursor: default;
+}
+.bru-more-alert {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--red);
+}
+.bru-tab-count {
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+}
+.bru-tab-count.fail {
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+  color: var(--red);
+}
+.bru-pane {
+  flex: 1;
+  min-height: 80px;
+  overflow: auto;
+  padding: 10px 2px 12px;
+}
+.bru-pane.log {
+  margin: 8px 0 12px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: #151515;
+}
+.bru-log {
+  margin: 0;
+  color: #d6d4cf;
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+/* a field of the response JSON: a click keeps its value as a variable (bruno/pick.js) */
+.bru-code .pick {
+  border-radius: 3px;
+  cursor: pointer;
+}
+.bru-code .pick:hover,
+.bru-code .pick.picked {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.bru-pick-hint {
+  color: var(--text-dim);
+}
+.bru-pick {
+  z-index: 320;
+  width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+}
+.bru-pick-path {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  word-break: break-all;
+}
+.bru-pick-value {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.bru-pick-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+.bru-pick-row .bru-input {
+  flex: 1;
+  height: 28px;
+  font-family: var(--font-mono);
+}
+.bru-pick-error {
+  color: var(--red);
+  font-size: var(--fs-small);
+}
+.bru-pick-error:empty {
+  display: none;
+}
+.bru-pick-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.bru-pane-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: var(--fs-small);
+}
+.bru-code {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  tab-size: 2;
+}
+.bru-code .j-key { color: var(--mauve); }
+.bru-code .j-str { color: var(--green); }
+.bru-code .j-num { color: var(--orange); }
+.bru-code .j-lit { color: var(--accent); }
+.bru-empty {
+  padding: 18px 4px;
+  font-size: var(--fs-small);
+}
+.bru-section {
+  margin-bottom: 14px;
+}
+.bru-section h4 {
+  margin: 0 0 6px;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.bru-docs {
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+}
+.bru-sent {
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  word-break: break-all;
+}
+.bru-kv {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 14px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+}
+.bru-k {
+  color: var(--text-muted);
+}
+.bru-v {
+  word-break: break-all;
+}
+.bru-k.off,
+.bru-v.unset {
+  color: var(--orange);
+  font-style: italic;
+}
+.bru-vars-note {
+  margin: -6px 0 12px;
+  color: var(--orange);
+  font-size: var(--fs-small);
+}
+.bru-v.off {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+.bru-checks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-small);
+}
+.bru-checks-title {
+  margin: 4px 0 6px;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.bru-checks-title:not(:first-child) {
+  margin-top: 14px;
+}
+.bru-check {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 2px 6px;
+  padding: 3px 0;
+}
+.bru-check-mark {
+  font-weight: 700;
+}
+.bru-check.pass .bru-check-mark { color: var(--green); }
+.bru-check.fail .bru-check-mark,
+.bru-check-error { color: var(--red); }
+.bru-check-name {
+  font-family: var(--font-mono);
+}
+.bru-check-error {
+  grid-column: 2;
+  font-size: var(--fs-caption);
+}
+
+/* -- Under the address, side by side: the request (its tabs and the part open) and what came back, with the line
+   between them that gives one or the other more room (bruno/split.js); one over the other when the room is narrow -- */
+.bru-panes {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  /* the request from 240px; the response from 320px, for its tabs and status */
+  grid-template-columns: clamp(240px, var(--bru-req-w, 50%), calc(100% - 331px)) 11px minmax(0, 1fr);
+  margin: 0 -12px;
+}
+.bru-req-side,
+.bru-res-side {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  container-type: inline-size; /* closer tabs when the pane is narrow */
+}
+@container (max-width: 440px) {
+  .bru-tabs {
+    gap: 0;
+  }
+  .bru-tab {
+    padding: 7px 7px;
+  }
+}
+.bru-req-side {
+  padding-left: 12px;
+}
+.bru-res-side {
+  padding-right: 12px;
+}
+.bru-req-side > .bru-tabs {
+  margin-top: 6px;
+}
+.bru-tab:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.bru-edit-pane {
+  flex: 1;
+  min-height: 90px;
+  overflow: auto;
+  padding: 10px 2px 8px;
+}
+.bru-split {
+  position: relative;
+  cursor: col-resize;
+}
+.bru-split::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 5px;
+  border-left: 1px solid var(--border);
+}
+.bru-split::after {
+  content: '';
+  position: absolute;
+  top: calc(50% - 18px);
+  left: 4px;
+  width: 3px;
+  height: 36px;
+  border-radius: 2px;
+  background: var(--border);
+}
+.bru-split:hover::after,
+.bru-split:focus-visible::after {
+  background: var(--accent);
+}
+.bru-split:focus-visible {
+  outline: none;
+}
+@container (max-width: 600px) {
+  .bru-panes {
+    display: flex;
+    flex-direction: column;
+  }
+  .bru-req-side {
+    flex: 0 0 45%;
+    padding-right: 12px;
+  }
+  .bru-split {
+    display: none;
+  }
+  .bru-res-side {
+    flex: 1;
+    padding-left: 12px;
+    border-top: 1px solid var(--border);
+  }
+}
+body.bru-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+.bru-hint {
+  margin: 6px 0 2px;
+  font-size: var(--fs-small);
+}
+.bru-input {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+}
+.bru-input:disabled {
+  opacity: 0.6;
+}
+/* a table of name / value rows: box, name, value, (Text or File), × */
+.bru-kv-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.bru-kv-row {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) minmax(0, 1.6fr) 24px;
+  align-items: center;
+  gap: 6px;
+}
+.bru-kv-edit.has-extra .bru-kv-row {
+  grid-template-columns: 14px minmax(0, 1fr) minmax(0, 1.6fr) 84px 24px;
+}
+.bru-kv-row.off .bru-input {
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+.bru-kv-row.new .bru-input {
+  border-style: dashed;
+}
+.bru-kv-row.new .bru-input:focus {
+  border-style: solid;
+}
+.bru-kv-name[readonly] {
+  border-color: transparent;
+  background: none;
+  color: var(--text-muted);
+}
+.bru-kv-kind {
+  height: 28px;
+  padding: 0 24px 0 8px;
+  font-family: var(--font-ui);
+}
+.bru-kv-del {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--text-dim);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.bru-kv-del:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+  color: var(--red);
+}
+.bru-kv-del:disabled {
+  visibility: hidden;
+}
+.bru-code-edit {
+  display: block;
+  width: 100%;
+  min-height: 90px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  white-space: pre;
+  tab-size: 2;
+  resize: vertical;
+  outline: none;
+}
+.bru-code-edit:focus {
+  border-color: var(--accent);
+}
+.bru-code-edit::placeholder {
+  color: var(--text-dim);
+}
+.bru-body-edit {
+  min-height: 160px;
+}
+.bru-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 12px;
+}
+.bru-field-label {
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+div.bru-field-label {
+  margin-bottom: 6px;
+}
+/* a script box: its title, and the button of the commands over it (bruno/snippets.js) */
+.bru-field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 26px;
+}
+.bru-snip-btn {
+  height: 26px;
+  padding: 0 8px;
+  font-size: var(--fs-caption);
+}
+.bru-snip-btn[aria-expanded='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.bru-snip-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 420px;
+  max-width: calc(100vw - 16px);
+}
+.bru-snip-find {
+  flex: none;
+  height: 30px;
+}
+.bru-snip-list {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.bru-snip-list .sel-group:first-child {
+  margin-top: 0;
+  border-top: none;
+}
+.bru-snip-item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  min-width: 0;
+}
+.bru-snip-item.active {
+  background: var(--bg-hover);
+}
+.bru-snip-code {
+  max-width: 100%;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.bru-snip-what {
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+}
+.bru-snip-none {
+  padding: 8px 10px;
+  font-size: var(--fs-small);
+}
+.bru-field-hint {
+  color: var(--text-dim);
+  font-size: var(--fs-small);
+}
+.bru-auth-mode {
+  align-self: flex-start;
+  min-width: 220px;
+  height: 30px;
+  padding: 0 28px 0 10px;
+  font-family: var(--font-ui);
+}
+.bru-auth-input {
+  max-width: 520px;
+}
+/* None, JSON, Text... in a row */
+.bru-seg {
+  display: inline-flex;
+  gap: 2px;
+  margin-bottom: 10px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-surface);
+}
+.bru-seg-btn {
+  padding: 4px 10px;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--fs-small);
+  cursor: pointer;
+}
+.bru-seg-btn:hover {
+  color: var(--text);
+}
+.bru-seg-btn.on {
+  background: var(--bg);
+  box-shadow: 0 0 0 1px var(--border);
+  color: var(--text);
+  font-weight: 600;
+}
+.bru-body-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin-bottom: 10px;
+}
+.bru-body-head .bru-seg {
+  margin-bottom: 0;
+}
+.bru-body-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+.bru-json-hint {
+  color: var(--green);
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+.bru-json-hint.bad {
+  color: var(--orange);
+}
+/* the dot of a request changed here and not saved */
+.bru-dot {
+  flex: none;
+  color: var(--orange);
+  font-weight: 700;
+}
+.bru-row .bru-dot {
+  display: none;
+}
+.bru-row.dirty .bru-dot {
+  display: inline;
+}
+.bru-env-btn {
+  width: 30px;
+  height: 30px;
+  justify-content: center;
+  padding: 0;
+}
+.bru-env-btn svg {
+  fill: none !important;
+  stroke: currentColor !important;
+}
+
+/* -- The environments dialog -- */
+.bru-env-card {
+  width: min(780px, 92vw);
+  max-width: none;
+}
+.bru-env-layout {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 16px;
+  min-height: 300px;
+  max-height: 62vh;
+  margin-top: 12px;
+}
+.bru-env-side {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding-right: 12px;
+  border-right: 1px solid var(--border);
+}
+.bru-env-list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: auto;
+}
+.bru-env-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-body);
+  text-align: left;
+  cursor: pointer;
+}
+.bru-env-item:hover {
+  background: var(--bg-hover);
+}
+.bru-env-item.on {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
+  font-weight: 600;
+}
+.bru-env-used {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: var(--fs-caption);
+  font-weight: 400;
+}
+.bru-env-edit {
+  min-height: 0;
+  overflow: auto;
+  padding: 2px 4px 2px 2px;
+}
+.bru-env-name {
+  max-width: 280px;
+}
+.bru-env-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.bru-env-gap {
+  flex: 1;
+}
+
+/* -- The repositories fold to a thin bar while Bruno is open (bruno/sidebar.js); the bar opens them again -- */
+.side-unfold,
+.side-fold {
+  display: none;
+}
+#gitView.side-folded .sidebar {
+  width: 40px;
+}
+#gitView.side-folded .sidebar > :not(.side-unfold) {
+  display: none;
+}
+#gitView.side-folded .side-unfold {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.side-unfold:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.side-unfold:focus-visible,
+.side-fold:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: -2px;
+}
+.side-unfold svg,
+.side-fold svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.side-unfold-label {
+  writing-mode: vertical-rl;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+/* open by hand in Bruno: the button in the header folds it back */
+#gitView.side-bruno:not(.side-folded) .sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 8px;
+}
+#gitView.side-bruno:not(.side-folded) .side-fold {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.side-fold:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+/* the .env (vars.js, envs.js): an empty one in italics; what it lacks in orange */
+.bru-kv.bru-dotenv .bru-v.unset {
+  font-style: italic;
+}
+.bru-env-dotenv {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.bru-env-lacking {
+  color: var(--orange);
+}

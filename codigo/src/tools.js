@@ -25,6 +25,42 @@ function hashes(input, key) {
   return out;
 }
 
+// -- JWT: a token made and signed here, for tests; the secret or key is used for this and not kept --
+const JWT_ALGS = {
+  HS256: ['hmac', 'sha256'], HS384: ['hmac', 'sha384'], HS512: ['hmac', 'sha512'],
+  RS256: ['rsa', 'sha256'], RS384: ['rsa', 'sha384'], RS512: ['rsa', 'sha512'],
+  ES256: ['ec', 'sha256', 'prime256v1'], ES384: ['ec', 'sha384', 'secp384r1'], ES512: ['ec', 'sha512', 'secp521r1'],
+  none: ['none'],
+};
+
+function signJwt(header, payload, key, keyBase64) {
+  if (!header || typeof header !== 'object' || Array.isArray(header)) throw new Error('The header must be a JSON object');
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('The payload must be a JSON object');
+  const how = JWT_ALGS[header.alg];
+  if (!how) throw new Error(`The header's "alg" must be one of ${Object.keys(JWT_ALGS).join(', ')}`);
+  const part = (o) => Buffer.from(JSON.stringify(o), 'utf8').toString('base64url');
+  const input = `${part(header)}.${part(payload)}`;
+  if (how[0] === 'none') return { token: `${input}.` };
+  const k = text(key).trim();
+  if (!k) throw new Error(how[0] === 'hmac' ? 'Type the secret' : 'Paste the private key (PEM)');
+  let signature;
+  if (how[0] === 'hmac') {
+    if (keyBase64 && !/^[A-Za-z0-9+/_-]+={0,2}$/.test(k)) throw new Error('The secret is not Base64');
+    signature = crypto.createHmac(how[1], keyBase64 ? Buffer.from(k, 'base64') : Buffer.from(k, 'utf8')).update(input).digest();
+  } else {
+    let pk;
+    try {
+      pk = crypto.createPrivateKey(k);
+    } catch {
+      throw new Error('This is not a private key in PEM (-----BEGIN PRIVATE KEY----- ...)');
+    }
+    if (pk.asymmetricKeyType !== how[0]) throw new Error(`${header.alg} needs ${how[0] === 'rsa' ? 'an RSA' : 'an EC'} private key; this one is ${pk.asymmetricKeyType.toUpperCase()}`);
+    if (how[2] && pk.asymmetricKeyDetails.namedCurve !== how[2]) throw new Error(`${header.alg} needs a ${how[2]} key; this one is ${pk.asymmetricKeyDetails.namedCurve}`);
+    signature = crypto.sign(how[1], Buffer.from(input), how[0] === 'ec' ? { key: pk, dsaEncoding: 'ieee-p1363' } : pk);
+  }
+  return { token: `${input}.${signature.toString('base64url')}` };
+}
+
 // -- .properties --
 function unescapeProperty(value) {
   return value.replace(/\\(u[0-9a-fA-F]{4}|.)/g, (_, c) => {
@@ -241,6 +277,7 @@ function registerTools({ copySecret }) {
     }
   };
   ipcMain.handle('tools-hash', (_, input, key) => call(() => hashes(input, key ? String(key) : '')));
+  ipcMain.handle('tools-jwt-sign', (_, header, payload, key, keyBase64) => call(() => signJwt(header, payload, key, Boolean(keyBase64))));
   ipcMain.handle('tools-config', (_, source, from, to) => call(() => ({ text: convertConfig(source, String(from), String(to)) })));
   ipcMain.handle('tools-ports', (_, port) => call(async () => ({ rows: await listening(port ? String(port).trim() : '') })));
   ipcMain.handle('tools-end-process', (_, pid) => call(async () => ({ success: await endProcess(pid) })));
@@ -259,4 +296,4 @@ function registerTools({ copySecret }) {
   }));
 }
 
-module.exports = { registerTools, convertConfig, parseProperties, hashes, listening };
+module.exports = { registerTools, convertConfig, parseProperties, hashes, listening, signJwt };

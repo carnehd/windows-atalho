@@ -255,7 +255,7 @@ async function dkAction(c, verb) {
 
 async function dkRemove(c) {
   const lines = [`Remove the container ${c.name}?`, dkRunning(c) ? 'It is running: it is stopped first.' : '', 'Its image and named volumes stay; anything written only inside the container is lost.'];
-  if (!(await window.git.confirm(lines.filter(Boolean).join('\n')))) return;
+  if (!(await askConfirm(lines.filter(Boolean).join('\n')))) return;
   dkAction(c, 'remove');
 }
 

@@ -1,6 +1,7 @@
 // Pull of several repositories: they are chosen in a popup (each with its current branch), then pulled one after the
 // other while a bar at the bottom of the repository list shows how far it got; a click on the bar lists each one.
-// At the end, View results says what happened to each. The same popup chooses the repositories of Fetch several.
+// At the end, View results says what happened to each. The same popup chooses the repositories of Fetch several, and
+// the ones to take out of the list (Remove several).
 // Uses app.js globals ($, $$, repos, repoGroups, displayName, repoName, currentRepo, renderSidebar, refresh,
 // refreshSummaries, toast, fetchManyRepos, fetchingMany, CARD_ID).
 const PM_MODES = {
@@ -11,6 +12,11 @@ const PM_MODES = {
   fetch: {
     key: 'fetchManyChosen', title: 'Fetch repositories', verb: 'Fetch',
     intro: 'Each one gets what is new on origin, without changing any file. The list then shows what each has to pull.',
+  },
+  // none is chosen to begin with (unless asked from one of them or a group), and the choice is not kept
+  remove: {
+    key: null, title: 'Remove from the list', verb: 'Remove',
+    intro: 'They leave the app\'s list only: their folders and files stay on disk, and nothing changes in Git. The app forgets the name, favorite, group and Maven settings it kept for them.',
   },
 };
 let pmMode = 'pull';
@@ -46,8 +52,9 @@ function pmStateIcon(state) {
   return el;
 }
 
-// Why a repository can not be pulled ('' when it can).
+// Why a repository can not be pulled ('' when it can). Any can be taken out of the list.
 function pmBlocked(r) {
+  if (pmMode === 'remove') return '';
   if (r.isGit === false) return 'Folder (no Git)';
   if (r.error) return 'Unavailable';
   return '';
@@ -58,14 +65,74 @@ function pmSections() {
   const ids = new Set(repoGroups.map((g) => g.id));
   const sections = [];
   const favorites = repos.filter((r) => r.favorite);
-  if (favorites.length) sections.push({ name: 'Favorites', repos: favorites });
+  if (favorites.length) sections.push({ key: 'favorites', name: 'Favorites', repos: favorites });
   for (const g of repoGroups) {
     const members = repos.filter((r) => !r.favorite && r.group === g.id);
-    if (members.length) sections.push({ name: g.name, repos: members });
+    if (members.length) sections.push({ key: `group:${g.id}`, name: g.name, repos: members });
   }
   const other = repos.filter((r) => !r.favorite && !ids.has(r.group));
-  if (other.length) sections.push({ name: sections.length ? 'Other' : '', repos: other });
+  if (other.length) sections.push({ key: 'other', name: sections.length ? 'Other' : '', repos: other });
   return sections;
+}
+
+// The groups of the popup start closed, each one line with what it has to pull; the ones opened stay open next time
+// (kept on this PC). While the filter has text, every group with a match is open.
+const PM_OPEN_KEY = 'pullManyOpen';
+let pmOpen = null;
+
+function pmOpenGroups() {
+  if (!pmOpen) {
+    try {
+      pmOpen = new Set(JSON.parse(localStorage.getItem(PM_OPEN_KEY) || '[]'));
+    } catch {
+      pmOpen = new Set();
+    }
+  }
+  return pmOpen;
+}
+
+function togglePullManyGroup(key) {
+  const open = pmOpenGroups();
+  if (open.has(key)) open.delete(key);
+  else open.add(key);
+  try {
+    localStorage.setItem(PM_OPEN_KEY, JSON.stringify([...open]));
+  } catch {
+    // open for this run only
+  }
+  renderPullMany();
+}
+
+// A group's line, closed or open: how many of its repositories have commits to pull and files changed (as of the
+// last fetch); none: up to date.
+function pmSectionSummary(rows) {
+  if (pmMode === 'remove') {
+    const sum = document.createElement('span');
+    sum.className = 'pm-section-sum';
+    const chosen = document.createElement('span');
+    chosen.className = 'pm-section-chosen pm-section-quiet';
+    sum.appendChild(chosen);
+    return sum;
+  }
+  const can = rows.filter((r) => !pmBlocked(r));
+  const behind = can.filter((r) => r.behind > 0).length;
+  const changed = pmMode === 'pull' ? can.filter((r) => r.changes > 0).length : 0;
+  const sum = document.createElement('span');
+  sum.className = 'pm-section-sum';
+  const part = (text, cls, title) => {
+    const el = document.createElement('span');
+    el.className = cls;
+    el.textContent = text;
+    el.title = title;
+    sum.appendChild(el);
+  };
+  if (behind) part(`↓ ${behind} to pull`, 'pm-behind', `${behind === 1 ? '1 repository has' : `${behind} repositories have`} new commits on origin (as of the last fetch)`);
+  if (changed) part(`${changed} with changes`, 'pm-changes', `${changed === 1 ? '1 repository has' : `${changed} repositories have`} files changed and not committed`);
+  if (!behind && !changed) part(can.length ? 'Up to date' : 'Nothing to pull', 'pm-section-quiet', can.length ? 'Nothing new on origin as of the last fetch' : '');
+  const chosen = document.createElement('span');
+  chosen.className = 'pm-section-chosen pm-section-quiet';
+  sum.prepend(chosen);
+  return sum;
 }
 
 // -- The popup to choose them: for a pull, or with mode 'fetch' for a fetch --
@@ -74,7 +141,7 @@ function openPullMany(only = null, mode = 'pull') {
     toast('A fetch is already running', 'info');
     return;
   }
-  if (pmRun && !pmRun.done) {
+  if (pmRun && !pmRun.done && mode !== 'remove') {
     pmRun.expanded = true;
     renderPullDock();
     toast('A pull is already running: its bar is at the bottom of the list', 'info');
@@ -86,8 +153,10 @@ function openPullMany(only = null, mode = 'pull') {
   $('#pullManyModal .pm-intro').textContent = texts.intro;
   $('#pmList').setAttribute('aria-label', `Repositories to ${texts.verb.toLowerCase()}`);
   const can = new Set(repos.filter((r) => !pmBlocked(r)).map((r) => r.path));
-  pmRemember = !only;
-  if (only) {
+  pmRemember = !only && Boolean(texts.key);
+  if (mode === 'remove') {
+    pmChosen = new Set((only || []).filter((p) => can.has(p)));
+  } else if (only) {
     pmChosen = new Set(only.filter((p) => can.has(p)));
   } else {
     let saved = null;
@@ -101,11 +170,14 @@ function openPullMany(only = null, mode = 'pull') {
     pmChosen = new Set(kept.length ? kept : can);
   }
   $('#pmFilter').value = '';
+  $('#pmPull').classList.toggle('btn-primary', mode !== 'remove');
+  $('#pmPull').classList.toggle('btn-danger', mode === 'remove');
+  $('#pullManyModal').classList.toggle('pm-removing', mode === 'remove');
   renderPullMany();
   $('#pullManyModal').classList.remove('hidden');
   $('#pmFilter').focus();
-  // the branches shown are the ones of now
-  refreshSummaries().then(() => {
+  // the branches shown are the ones of now: the repositories changed since git was last asked are asked again
+  refreshChangedSummaries().then(() => {
     if (!$('#pullManyModal').classList.contains('hidden')) renderPullMany();
   });
 }
@@ -126,9 +198,20 @@ function renderPullMany() {
     if (!rows.length) continue;
     shown += rows.length;
     const open = rows.filter((r) => !pmBlocked(r));
+    const body = document.createElement('div');
+    body.className = 'pm-section-rows';
+    for (const r of rows) body.appendChild(pullManyRow(r));
     if (section.name) {
-      const head = document.createElement('label');
-      head.className = 'pm-section';
+      const expanded = Boolean(q) || pmOpenGroups().has(section.key);
+      const head = document.createElement('div');
+      head.className = `pm-section${expanded ? ' open' : ''}`;
+      head.dataset.key = section.key;
+      const caret = document.createElement('button');
+      caret.type = 'button';
+      caret.className = 'pm-section-caret';
+      caret.setAttribute('aria-expanded', String(expanded));
+      caret.setAttribute('aria-label', `${expanded ? 'Hide' : 'Show'} the repositories of ${section.name}`);
+      caret.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg>';
       const box = document.createElement('input');
       box.type = 'checkbox';
       box.className = 'pm-section-box';
@@ -140,14 +223,23 @@ function renderPullMany() {
         syncPullManyChecks();
       });
       const name = document.createElement('span');
+      name.className = 'pm-section-name';
       name.textContent = section.name;
       const count = document.createElement('span');
       count.className = 'pm-section-count';
       count.textContent = rows.length;
-      head.append(box, name, count);
+      head.append(caret, box, name, count, pmSectionSummary(rows));
+      // a click on the line (not on its box) opens or closes the group; while filtering, all stay open
+      head.addEventListener('click', (e) => {
+        if (e.target === box || q) return;
+        togglePullManyGroup(section.key);
+      });
+      if (q) caret.disabled = true;
+      body.classList.toggle('hidden', !expanded);
+      body.classList.add('in-group');
       list.appendChild(head);
     }
-    for (const r of rows) list.appendChild(pullManyRow(r));
+    list.appendChild(body);
   }
   if (!shown) {
     const empty = document.createElement('div');
@@ -166,6 +258,9 @@ function syncPullManyChecks() {
     const chosen = box.paths.filter((p) => pmChosen.has(p)).length;
     box.checked = box.paths.length > 0 && chosen === box.paths.length;
     box.indeterminate = chosen > 0 && chosen < box.paths.length;
+    // closed, the line says when not all of it is chosen
+    const note = box.parentElement.querySelector('.pm-section-chosen');
+    if (note) note.textContent = box.paths.length && chosen < box.paths.length ? `${chosen} of ${box.paths.length} chosen` : '';
   }
   updatePullManyCount();
 }
@@ -191,7 +286,13 @@ function pullManyRow(r) {
   branch.className = 'pm-branch';
   const info = document.createElement('span');
   info.className = 'pm-info';
-  if (blocked) {
+  if (pmMode === 'remove') {
+    // where it is, to tell apart two of the same name; one whose folder is gone says so
+    branch.textContent = r.branch ? `⎇ ${r.branch}` : '';
+    info.textContent = r.error ? 'Unavailable' : `\u200e${r.path}\u200e`; // the marks keep the path in order in a right-to-left box
+    info.title = r.error || r.path;
+    info.classList.add('pm-path');
+  } else if (blocked) {
     info.textContent = blocked;
     if (r.error) info.title = r.error;
   } else {
@@ -437,12 +538,36 @@ function renderPullResults() {
   $('#prRetry').classList.toggle('hidden', !(pmRun.done && c.error));
 }
 
+// Remove several: asked once, then out of the list together. True when they were removed.
+async function removeManyRepos(paths) {
+  const names = paths.map((p) => {
+    const r = repos.find((x) => x.path === p);
+    return r ? displayName(r) : repoName(p);
+  });
+  const which = paths.length === 1 ? `"${names[0]}"` : `${paths.length} repositories`;
+  const listed = paths.length > 1 ? `\n\n${names.slice(0, 12).join('\n')}${names.length > 12 ? `\nand ${names.length - 12} more` : ''}` : '';
+  if (!(await askConfirm(`Remove ${which} from the list? ${paths.length === 1 ? 'Its folder stays' : 'Their folders stay'} on disk.${listed}`))) return false;
+  const r = await window.git.removeRepos(paths);
+  if (paths.some((p) => samePath(p, currentRepo))) currentRepo = null;
+  await loadRepos();
+  // a scan of the microservices folder adds back what is in it
+  const norm = (p) => String(p).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+  const inRoot = reposRootPath ? paths.filter((p) => norm(p).startsWith(`${norm(reposRootPath)}/`)).length : 0;
+  const removed = r && Number.isFinite(r.removed) ? r.removed : paths.length;
+  toast(`Removed ${removed === 1 ? `${names[0]}` : `${removed} repositories`} from the list${inRoot ? '. Look for new repositories adds back the ones in the microservices folder' : ''}`, 'info', { plain: true });
+  return true;
+}
+
 function setupPullMany() {
   window.git.onPullManyProgress(onPullManyProgress);
   $('#pmCancel').addEventListener('click', closePullMany);
-  $('#pmPull').addEventListener('click', () => {
+  $('#pmPull').addEventListener('click', async () => {
     const paths = pmChosenPaths();
     if (!paths.length) return;
+    if (pmMode === 'remove') {
+      if (await removeManyRepos(paths)) closePullMany();
+      return;
+    }
     closePullMany();
     if (pmMode === 'fetch') {
       if (pmRemember) pmKeepChoice('fetch', paths);

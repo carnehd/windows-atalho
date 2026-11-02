@@ -19,6 +19,11 @@ const FULL_CONTEXT = 1000000;
 const MAX_COUNTED_UNTRACKED = 200;
 const SYNC_TIMEOUT_MS = 2 * 60 * 1000; // a pull of many: how long Git may stay silent before it is stopped
 
+// Where Git keeps the files the app reads itself (a merge going on, the last fetch, the folders it ignores, the
+// stashes), by name. Asked once per repository with one git command, then kept: they do not move.
+const GIT_PATH_NAMES = ['MERGE_HEAD', 'REVERT_HEAD', 'CHERRY_PICK_HEAD', 'FETCH_HEAD', 'MERGE_MSG', 'info/exclude', 'logs/refs/stash'];
+const gitPathsOf = new Map();
+
 // Hunk headers ("@@ -172,13 +172,12 @@ pushTo(target)") name the function a change is in. Git has patterns for many
 // languages but has to be told which files are which, and has none for JavaScript, so diffs read this attributes
 // file and the "gqjs" pattern below. A repository's own .gitattributes still wins over it.
@@ -200,6 +205,24 @@ class GitService {
     this.repoPath = repoPath;
   }
 
+  // Kept as the question itself, so parts of a refresh asking at the same time share one git command.
+  gitPaths() {
+    const known = gitPathsOf.get(this.repoPath);
+    if (known) return known;
+    const asked = this.git.raw(['rev-parse', '--git-common-dir', ...GIT_PATH_NAMES.flatMap((n) => ['--git-path', n])]).then((out) => {
+      const [common, ...lines] = out.split('\n').map((l) => l.trim());
+      if (lines.length < GIT_PATH_NAMES.length) throw new Error('Git did not say where its files are');
+      const paths = { common: path.resolve(this.repoPath, common) };
+      GIT_PATH_NAMES.forEach((n, i) => {
+        paths[n] = path.resolve(this.repoPath, lines[i]);
+      });
+      return paths;
+    });
+    gitPathsOf.set(this.repoPath, asked);
+    asked.catch(() => gitPathsOf.delete(this.repoPath)); // not a repository yet: asked again next time
+    return asked;
+  }
+
   async isGitRepo() {
     try {
       return await this.git.checkIsRepo();
@@ -271,8 +294,7 @@ class GitService {
       const operation = await this.operation();
       let operationMessage = '';
       if (operation) {
-        const rel = (await this.git.raw(['rev-parse', '--git-path', 'MERGE_MSG'])).trim();
-        const text = await fs.promises.readFile(path.resolve(this.repoPath, rel), 'utf8').catch(() => '');
+        const text = await fs.promises.readFile((await this.gitPaths()).MERGE_MSG, 'utf8').catch(() => '');
         operationMessage = text.split('\n').find((l) => l.trim() && !l.startsWith('#')) || '';
       }
 
@@ -296,8 +318,7 @@ class GitService {
   // When origin was last asked for news (a fetch or a pull): the time of .git/FETCH_HEAD; null when never.
   async lastFetch() {
     try {
-      const file = (await this.git.raw(['rev-parse', '--git-path', 'FETCH_HEAD'])).trim();
-      return (await fs.promises.stat(path.resolve(this.repoPath, file))).mtimeMs;
+      return (await fs.promises.stat((await this.gitPaths()).FETCH_HEAD)).mtimeMs;
     } catch {
       return null;
     }
@@ -438,9 +459,11 @@ class GitService {
   }
 
   // A merge, revert or cherry-pick that stopped on conflicts and waits to be committed or aborted.
+  // Git leaves MERGE_HEAD (or REVERT_HEAD, CHERRY_PICK_HEAD) in its folder until then: looked for there.
   async operation() {
-    for (const [name, ref] of [['merge', 'MERGE_HEAD'], ['revert', 'REVERT_HEAD'], ['cherry-pick', 'CHERRY_PICK_HEAD']]) {
-      if (await this.refExists(ref)) return name;
+    const paths = await this.gitPaths();
+    for (const [name, file] of [['merge', 'MERGE_HEAD'], ['revert', 'REVERT_HEAD'], ['cherry-pick', 'CHERRY_PICK_HEAD']]) {
+      if (fs.existsSync(paths[file])) return name;
     }
     return null;
   }
@@ -492,20 +515,30 @@ class GitService {
 
   // Where a push goes when no branch was chosen: the upstream on origin, otherwise a branch with the same name.
   async pushContext(target) {
-    const status = await this.git.status();
-    if (!status.current || status.detached) throw new Error('Detached HEAD: check out a branch before pushing');
-    const remotes = await this.git.getRemotes();
-    if (!remotes.some((r) => r.name === 'origin')) throw new Error('The repository has no remote called "origin"');
-    const upstream = status.tracking && status.tracking.startsWith('origin/') ? status.tracking.slice('origin/'.length) : '';
-    const branch = String(target || '').trim() || upstream || status.current;
+    // one look at the branches: yours (* on the one checked out, with what it follows) and the ones on origin
+    const rows = (await this.git.raw(['for-each-ref', '--format=%(HEAD)%1f%(refname)%1f%(upstream:short)', 'refs/heads', 'refs/remotes/origin']))
+      .split('\n').filter(Boolean).map((l) => l.split('\x1f'));
+    const head = rows.find(([mark]) => mark === '*');
+    // none checked out: no branch at all (detached), or one with no commit yet, which has no row
+    const current = head ? head[1].slice('refs/heads/'.length) : (await this.git.raw(['symbolic-ref', '-q', '--short', 'HEAD']).catch(() => '')).trim();
+    if (!current) throw new Error('Detached HEAD: check out a branch before pushing');
+    const onOrigin = new Set(rows.map(([, ref]) => ref).filter((ref) => ref.startsWith('refs/remotes/origin/')));
+    // no branch of origin here: maybe no origin at all (or never fetched)
+    if (!onOrigin.size && !(await this.git.getRemotes()).some((r) => r.name === 'origin')) throw new Error('The repository has no remote called "origin"');
+    const tracking = head ? head[2] : '';
+    const upstream = tracking.startsWith('origin/') ? tracking.slice('origin/'.length) : '';
+    const typed = String(target || '').trim();
+    const branch = typed || upstream || current;
     if (branch.startsWith('-')) throw new Error('Invalid branch name');
-    try {
-      await this.git.raw(['check-ref-format', '--branch', branch]);
-    } catch {
-      throw new Error(`"${branch}" is not a valid branch name`);
+    // a name Git gave is valid; one typed (or remembered) is checked
+    if (typed) {
+      try {
+        await this.git.raw(['check-ref-format', '--branch', branch]);
+      } catch {
+        throw new Error(`"${branch}" is not a valid branch name`);
+      }
     }
-    const targetExists = await this.refExists(`refs/remotes/origin/${branch}`);
-    return { status, current: status.current, upstream, target: branch, targetExists };
+    return { tracking, current, upstream, target: branch, targetExists: onOrigin.has(`refs/remotes/origin/${branch}`) };
   }
 
   // Prints the hash when the ref is a commit and nothing otherwise. The output is checked because simple-git
@@ -534,7 +567,7 @@ class GitService {
       if (commits.length > 0) {
         // Net change: against the target branch, or against the parent of the oldest new commit when origin lacks it.
         let base = ctx.targetExists ? `origin/${ctx.target}` : `${commits[commits.length - 1].fullHash}^`;
-        if (!(await this.refExists(base))) base = EMPTY_TREE;
+        if (!ctx.targetExists && !(await this.refExists(base))) base = EMPTY_TREE; // the first commit has no parent
         files = parseNameStatus(await this.git.raw(['diff', '--name-status', base, 'HEAD']));
       }
       return {
@@ -659,7 +692,7 @@ class GitService {
       const ctx = await this.pushContext(target);
       const args = ['origin', `HEAD:refs/heads/${ctx.target}`];
       // The first push of a branch under its own name sets the upstream, so plain pull works afterwards.
-      if (!ctx.status.tracking && ctx.target === ctx.current) args.unshift('-u');
+      if (!ctx.tracking && ctx.target === ctx.current) args.unshift('-u');
       await this.git.push(args);
       return { success: true, target: ctx.target };
     } catch (e) {
@@ -701,8 +734,12 @@ class GitService {
   async lineCounts(status) {
     const counts = new Map();
     try {
-      const base = (await this.refExists('HEAD')) ? 'HEAD' : EMPTY_TREE;
-      const out = await this.git.raw(['diff', '--numstat', '-z', '-M', base, '--']);
+      // against HEAD; before the first commit (no HEAD yet) against the empty tree
+      const numstat = (base) => this.git.raw(['diff', '--numstat', '-z', '-M', base, '--']);
+      const out = await numstat('HEAD').catch((e) => {
+        if (/(bad revision|ambiguous argument|unknown revision).*'HEAD'/.test(String(e.message))) return numstat(EMPTY_TREE);
+        throw e;
+      });
       const fields = out.split('\0');
       for (let i = 0; i < fields.length; i++) {
         const m = /^(-|\d+)\t(-|\d+)\t(.*)$/.exec(fields[i]);
@@ -759,10 +796,10 @@ class GitService {
 
   // The folders this app added to .git/info/exclude (each line right after its marker comment).
   async parkedFolders() {
-    const rel = (await this.git.raw(['rev-parse', '--git-path', 'info/exclude'])).trim();
+    const file = (await this.gitPaths())['info/exclude'];
     let text = '';
     try {
-      text = await fs.promises.readFile(path.resolve(this.repoPath, rel), 'utf8');
+      text = await fs.promises.readFile(file, 'utf8');
     } catch {
       return [];
     }
@@ -1046,6 +1083,9 @@ class GitService {
 
   async stashList() {
     try {
+      // the stashes are the log of refs/stash: with no such file there is none (a reftable repository has no files)
+      const paths = await this.gitPaths();
+      if (!fs.existsSync(paths['logs/refs/stash']) && !fs.existsSync(path.join(paths.common, 'reftable'))) return [];
       const out = await this.git.raw(['stash', 'list', '--format=%gd%x1f%gs%x1f%cI']);
       return out
         .split('\n')
@@ -1123,17 +1163,34 @@ class GitService {
 
   // Branches first, with the ones deleted on origin pruned; then the tags, without pruning, so a tag made here and not
   // pushed yet is kept. A tag that cannot be fetched (origin has another commit under that name) is only a warning.
+  // Branches and tags of every remote in one trip to the server. Branches gone on origin go here too (--prune); tags
+  // do not: Git prunes only tags fetched by an explicit refspec, not by --tags, so tags only on this PC stay. A tag
+  // that origin has on another commit is left as it is here ("would clobber existing tag"): the rest still comes.
   async fetch() {
     try {
-      await this.git.fetch(['--all', '--prune']);
-    } catch (e) {
-      return { error: e.message };
-    }
-    try {
-      await this.git.fetch(['--all', '--tags', '--no-prune']);
+      await this.git.fetch(['--all', '--prune', '--tags']);
       return { success: true };
     } catch (e) {
-      return { success: true, warning: cleanError(e.message) };
+      const tags = String(e.message).split('\n').map((l) => /\[rejected\]\s+(\S+)\s+->.*would clobber existing tag/.exec(l)).filter(Boolean).map((m) => m[1]);
+      if (tags.length) {
+        const one = tags.length === 1;
+        return { success: true, warning: `${tags.join(', ')} ${one ? 'is' : 'are'} on another commit on origin, so ${one ? 'it was' : 'they were'} left as ${one ? 'it is' : 'they are'} here. Everything else came.` };
+      }
+      return { error: e.message };
+    }
+  }
+
+  // What a fetch changes on the line under the header: the branch, the one it follows, how far ahead and behind, and
+  // when origin was last asked. One git command: for-each-ref counts ahead and behind itself. No branch: ''.
+  async syncState() {
+    try {
+      const out = await this.git.raw(['for-each-ref', '--format=%(HEAD)%1f%(refname)%1f%(upstream:short)%1f%(upstream:track)', 'refs/heads']);
+      const head = out.split('\n').filter(Boolean).map((l) => l.split('\x1f')).find(([mark]) => mark === '*');
+      const [, ref = '', tracking = '', track = ''] = head || [];
+      const count = (word) => Number((new RegExp(`${word} (\\d+)`).exec(track) || [])[1]) || 0;
+      return { branch: ref.replace(/^refs\/heads\//, ''), tracking, ahead: count('ahead'), behind: count('behind'), lastFetch: await this.lastFetch() };
+    } catch (e) {
+      return { error: cleanError(e.message) };
     }
   }
 
@@ -1242,10 +1299,17 @@ class GitService {
   // one row per line of `git log --graph`, a commit's row with its hash.
   async getLogPage(options = {}) {
     try {
-      if (!(await this.refExists('HEAD'))) return { commits: [], total: 0, more: false, head: '' };
-      const skip = Math.max(0, Math.round(Number(options.skip)) || 0);
-      const count = Math.min(Math.max(Math.round(Number(options.count)) || 100, 1), 500);
       const query = String(options.query || '').trim().toLowerCase().slice(0, 200);
+      // light, after a fetch: the same commits of HEAD again, for the branches on each and which origin has; their
+      // number, HEAD and the graph, which a fetch does not change, are not asked again (the page keeps them)
+      const light = Boolean(options.light) && !query && !options.ref && !options.base;
+      // HEAD's commit and the branch it is on ("HEAD" when on none), in one command; none before the first commit
+      const [head = '', onRef = ''] = light ? [] : (await this.git.raw(['rev-parse', 'HEAD', '--symbolic-full-name', 'HEAD']).catch(() => ''))
+        .split('\n').map((l) => l.trim());
+      if (!head && !light) return { commits: [], total: 0, more: false, head: '' };
+      const branch = onRef.startsWith('refs/heads/') ? onRef : ''; // none on no branch
+      const skip = light ? 0 : Math.max(0, Math.round(Number(options.skip)) || 0);
+      const count = Math.min(Math.max(Math.round(Number(options.count)) || 100, 1), 500);
       const graph = Boolean(options.graph) && !query;
       const format = '--format=%x1e%H%x1f%s%x1f%an%x1f%cI%x1f%P%x1f%D';
       const tip = options.ref ? await this.compareTarget(options.ref) : 'HEAD';
@@ -1259,10 +1323,10 @@ class GitService {
           .map(([h]) => h);
         total = found.length;
         const page = found.slice(skip, skip + count);
-        if (page.length === 0) return { commits: [], total, more: false, head: (await this.git.revparse(['HEAD'])).trim() };
+        if (page.length === 0) return { commits: [], total, more: false, head };
         args = ['--no-walk=unsorted', ...page];
       } else {
-        total = Number((await this.git.raw(['rev-list', '--count', ...spec, '--'])).trim()) || 0;
+        total = light ? null : Number((await this.git.raw(['rev-list', '--count', ...spec, '--'])).trim()) || 0;
         args = graph ? ['--topo-order', `-n${skip + count}`, ...spec] : [`--skip=${skip}`, `-n${count}`, ...spec];
       }
       const run = (extra) => this.git.raw(['log', '--decorate=full', '--name-status', ...extra, format, ...args, '--']);
@@ -1279,11 +1343,10 @@ class GitService {
         };
       });
       // commits no branch on any remote has yet (all of them when there is no remote)
-      const hasRemote = (await this.git.getRemotes()).length > 0;
-      const local = new Set(hasRemote ? (await this.git.raw(['rev-list', '-n2000', tip, '--not', '--remotes'])).split('\n').filter(Boolean) : []);
-      for (const c of commits) c.pushed = hasRemote && !local.has(c.fullHash);
-      const branch = (await this.git.raw(['symbolic-ref', '-q', 'HEAD']).catch(() => '')).trim(); // none on no branch
-      const page = { commits, total, more: (graph ? 0 : skip) + commits.length < total, head: (await this.git.revparse(['HEAD'])).trim(), branch };
+      const local = new Set((await this.git.raw(['rev-list', '-n2000', tip, '--not', '--remotes'])).split('\n').filter(Boolean));
+      for (const c of commits) c.pushed = !local.has(c.fullHash);
+      if (light) return { commits, light: true };
+      const page = { commits, total, more: (graph ? 0 : skip) + commits.length < total, head, branch };
       if (graph) {
         // --graph sorts as --topo-order does, so its commits are the ones above, in its order
         const out = await this.git.raw(['log', '--graph', '--format=%x1f%H', `-n${skip + count}`, ...spec, '--']);
@@ -1331,11 +1394,16 @@ class GitService {
   // What can be compared: your branches, the ones on the remotes and the tags (newest version first).
   async compareRefs() {
     try {
-      const branches = await this.git.raw(['for-each-ref', '--format=%(refname)', '--sort=refname', 'refs/heads', 'refs/remotes']);
+      // with the commit each points at and * on the one checked out: HEAD without asking again
+      const branches = await this.git.raw(['for-each-ref', '--format=%(refname)%1f%(objectname)%1f%(HEAD)', '--sort=refname', 'refs/heads', 'refs/remotes']);
       const tagsOut = await this.git.raw(['for-each-ref', '--format=%(refname)%1f%(objectname)%1f%(*objectname)', '--sort=-v:refname', 'refs/tags']);
       const local = [];
       const remote = [];
-      for (const ref of branches.split('\n').filter(Boolean)) {
+      let current = '';
+      let head = '';
+      for (const line of branches.split('\n').filter(Boolean)) {
+        const [ref, object, mark] = line.split('\x1f');
+        if (mark === '*') [current, head] = [ref, object];
         if (ref.startsWith('refs/heads/')) local.push({ ref, name: ref.slice(11) });
         else if (!ref.endsWith('/HEAD')) remote.push({ ref, name: ref.slice(13) });
       }
@@ -1343,10 +1411,9 @@ class GitService {
         const [ref, object, peeled] = line.split('\x1f');
         return { ref, name: ref.slice(10), hash: peeled || object };
       });
-      const hasHead = await this.refExists('HEAD');
-      const current = (await this.git.raw(['symbolic-ref', '-q', 'HEAD']).catch(() => '')).trim();
-      const head = hasHead ? (await this.git.revparse(['HEAD'])).trim() : '';
-      return { local, remote, tags, head, current: current.startsWith('refs/heads/') ? current : '' };
+      // on no branch: HEAD's commit (none before the first commit)
+      if (!current) head = (await this.git.raw(['rev-parse', '--verify', '--quiet', 'HEAD^{commit}']).catch(() => '')).trim();
+      return { local, remote, tags, head, current };
     } catch (e) {
       return { error: cleanError(e.message) };
     }
@@ -1628,4 +1695,5 @@ class GitService {
 module.exports = GitService;
 module.exports.cleanFolder = cleanFolder;
 module.exports.cloneRepo = cloneRepo;
+module.exports.cleanError = cleanError;
 module.exports.PARK_DEFAULT_FOLDER = PARK_DEFAULT_FOLDER;

@@ -1,3 +1,36 @@
+/* The fonts the app brings, for where the Mac ones are missing (Windows): Inter, close to San Francisco, and DejaVu
+   Sans Mono, the font Menlo was made from. Both free to share (fonts/*-LICENSE.txt). */
+@font-face {
+  font-family: 'GQ Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('fonts/inter-latin-wght-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'GQ Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('fonts/inter-latin-ext-wght-normal.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'GQ Mono';
+  font-style: normal;
+  font-weight: 100 500;
+  font-display: swap;
+  src: url('fonts/DejaVuSansMono.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'GQ Mono';
+  font-style: normal;
+  font-weight: 600 900;
+  font-display: swap;
+  src: url('fonts/DejaVuSansMono-Bold.ttf') format('truetype');
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -5,10 +38,14 @@
 }
 
 :root {
-  /* Type: the system's own font (Segoe UI Variable on Windows, San Francisco on macOS), and six sizes. 11px is the
-     smallest; 13px the base, as in VS Code; 400 and 600 the only weights. */
-  --font-ui: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, sans-serif;
-  --font-mono: 'Cascadia Mono', Consolas, Menlo, monospace;
+  /* Type: the same on Windows and on a Mac. A Mac has its own (San Francisco, Menlo); elsewhere the app brings two
+     that look like them (see the @font-face above). Six sizes: 11px is the smallest, 13px the base, as in VS Code;
+     400 and 600 the only weights. */
+  --font-ui: -apple-system, BlinkMacSystemFont, 'GQ Inter', 'Segoe UI', sans-serif;
+  --font-mono: Menlo, 'GQ Mono', Consolas, monospace;
+  /* the arrow of a dropdown (drawn by the app, so it is the same everywhere) */
+  --select-caret: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2371717a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+  color-scheme: light;
   --fs-caption: 11px;
   --fs-small: 12px;
   --fs-body: 13px;
@@ -33,6 +70,7 @@
   --yellow: #b45309;
   --orange: #ea580c;
   --mauve: #7c3aed;
+  --teal: #0d9488;
   --overlay: rgba(255, 255, 255, 0.85);
   --accent-ring: rgba(37, 99, 235, 0.25);
   --green-soft: rgba(22, 163, 74, 0.12);
@@ -45,6 +83,9 @@
 }
 
 :root[data-theme='dark'] {
+  /* scrollbars, and the list a dropdown opens, dark too (Windows draws them in the colours of the page) */
+  color-scheme: dark;
+  --select-caret: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
   /* monochrome: neutral greys (no blue tint), blue only for what is chosen or a link, a light main button */
   --bg: #1a1a19;
   --bg-surface: #1f1f1e;
@@ -65,6 +106,7 @@
   --yellow: #d9a63a;
   --orange: #e08a4f;
   --mauve: #a98be0;
+  --teal: #4db6ac;
   --overlay: rgba(26, 26, 25, 0.85);
   --accent-ring: rgba(122, 165, 230, 0.25);
   --green-soft: rgba(90, 168, 60, 0.16);
@@ -174,22 +216,55 @@ body.resizing-window * {
 .rail {
   width: 64px;
   flex-shrink: 0;
+  transition: width 0.2s ease-out;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 2px;
   padding: 12px 0;
   /* a short window scrolls the icons rather than squeezing them */
+  overflow-x: hidden;
   overflow-y: auto;
   scrollbar-width: none;
   background: var(--bg-surface);
   border-right: 1px solid var(--border);
   -webkit-app-region: drag;
 }
+/* The G: a click opens the rail wider, with the name of each page by its icon (and closes it) */
+.rail.open {
+  width: 184px;
+}
 .rail-logo {
+  -webkit-app-region: no-drag;
+  flex-shrink: 0;
+  width: 48px;
+  height: 40px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 7px;
+  overflow: hidden;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: width 0.2s ease-out, background-color 0.15s;
+}
+.rail-logo:hover {
+  background: var(--bg-hover);
+}
+.rail-logo:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: -2px;
+}
+.rail-logo-mark {
+  flex: none;
   width: 34px;
   height: 34px;
-  margin-bottom: 10px;
   display: grid;
   place-items: center;
   border-radius: 8px;
@@ -197,10 +272,32 @@ body.resizing-window * {
   color: #fff;
   font-weight: 600;
   font-size: var(--fs-body);
+  transition: transform 0.16s cubic-bezier(0.3, 1.4, 0.6, 1);
 }
-:root[data-theme='dark'] .rail-logo {
+.rail-logo:hover .rail-logo-mark {
+  transform: scale(1.12);
+}
+:root[data-theme='dark'] .rail-logo-mark {
   background: var(--primary);
   color: var(--primary-text);
+}
+.rail-logo .rail-label {
+  font-weight: 600;
+}
+.rail.open .rail-logo,
+.rail.open .rail-btn {
+  width: calc(100% - 16px);
+}
+/* the name by an icon: there, cut off by its button, while the rail is narrow; shown once it is wide */
+.rail-label {
+  font-size: var(--fs-body);
+  font-weight: 500;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.rail.open .rail-label {
+  opacity: 1;
+  transition-delay: 0.06s;
 }
 .rail-spacer {
   flex: 1;
@@ -218,14 +315,18 @@ body.resizing-window * {
   flex-shrink: 0;
   width: 48px;
   height: 48px;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 11px; /* the icon in the middle of the 48px button, and in the same place when the rail is wide */
+  overflow: hidden;
   border: none;
   border-radius: 8px;
   background: none;
   color: var(--text-muted);
+  white-space: nowrap;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: width 0.2s ease-out, background-color 0.15s, color 0.15s, box-shadow 0.15s;
 }
 .rail-btn:hover {
   background: var(--bg-hover);
@@ -239,13 +340,34 @@ body.resizing-window * {
   box-shadow: 0 0 0 1px var(--accent);
 }
 .rail-btn svg {
+  flex: none;
   width: 26px;
   height: 26px;
+  transition: transform 0.16s cubic-bezier(0.3, 1.4, 0.6, 1);
   fill: none;
   stroke: currentColor;
   stroke-width: 1.6;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+/* the mouse over an icon: it grows a third, with a small bounce */
+.rail-btn:hover svg {
+  transform: scale(1.35);
+}
+@media (prefers-reduced-motion: reduce) {
+  .rail,
+  .rail-btn,
+  .rail-btn svg,
+  .rail-logo,
+  .rail-logo-mark,
+  .rail-label {
+    transition: none;
+  }
+}
+/* the state it starts in, without the animation */
+.rail.no-anim,
+.rail.no-anim * {
+  transition: none !important;
 }
 /* Tabler icons are drawn on 24 units: about the same line as the 16-unit icons */
 .rail-btn svg.tabler {
@@ -297,6 +419,66 @@ body.resizing-window * {
   background: var(--topbar-bg);
   border-bottom: 1px solid var(--border);
   -webkit-app-region: drag;
+  position: relative;
+}
+/* While a git command runs: what runs, next to the page's name, and a bar moving along the foot of the top bar */
+.git-busy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-left: 4px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  -webkit-app-region: no-drag;
+}
+.git-busy .spinner {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  border-width: 2px;
+}
+.git-busy-text {
+  min-width: 0;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.git-busy-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+}
+.git-busy-bar::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -30%;
+  width: 30%;
+  border-radius: 2px;
+  background: var(--accent);
+  animation: git-busy-slide 1.1s ease-in-out infinite;
+}
+@keyframes git-busy-slide {
+  to { left: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .git-busy-bar::before {
+    left: 0;
+    width: 100%;
+    opacity: 0.6;
+    animation: none;
+  }
 }
 .crumbs {
   display: flex;
@@ -896,22 +1078,22 @@ body.resizing-sidebar {
 }
 
 /* Git or Maven: the switch on the left of the header */
+/* Git or Maven: two tabs, a line under the one on show that slides to the other (blue for Git, orange for Maven) */
 .view-switch {
+  position: relative;
   display: inline-flex;
   flex-shrink: 0;
   gap: 2px;
   margin-right: 8px;
-  padding: 2px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg);
+  padding-right: 10px;
+  border-right: 1px solid var(--border);
 }
 .view-switch-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  height: 24px;
-  padding: 0 10px;
+  gap: 6px;
+  height: 30px;
+  padding: 0 9px;
   border: none;
   border-radius: 6px;
   background: none;
@@ -920,28 +1102,34 @@ body.resizing-sidebar {
   font-size: var(--fs-small);
   font-weight: 600;
   cursor: pointer;
+  transition: color 0.25s;
 }
 .view-switch-btn svg {
-  width: 14px;
-  height: 14px;
+  width: 15px;
+  height: 15px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
+  transition: transform 0.35s cubic-bezier(0.3, 1.6, 0.5, 1);
 }
 .view-switch-btn:hover:not(:disabled):not(.active) {
-  background: var(--bg-hover);
   color: var(--text);
 }
 .view-switch-btn:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline-offset: -2px;
 }
 .view-switch-btn.active {
-  background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+  color: var(--text);
+}
+.view-switch-btn.active svg {
   color: var(--accent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+  transform: scale(1.12) rotate(-6deg);
+}
+.view-switch-btn.active[data-view="maven"] svg {
+  color: var(--orange);
 }
 .view-switch-btn:disabled {
   cursor: not-allowed;
@@ -954,30 +1142,75 @@ body.resizing-sidebar {
   border-radius: 50%;
   background: var(--green);
   box-shadow: 0 0 0 2px var(--green-soft);
+  animation: view-run-pulse 1.6s ease-in-out infinite;
+}
+@keyframes view-run-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+.view-switch-line {
+  position: absolute;
+  bottom: -9px; /* on the bar's bottom border: set from where the bar ends */
+  left: 0;
+  width: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+.view-switch-line[data-view="maven"] {
+  background: var(--orange);
+}
+/* placed at once the first time; from then on it slides, with a little bounce */
+.view-switch.ready .view-switch-line {
+  transition: transform 0.3s cubic-bezier(0.3, 1.3, 0.5, 1), width 0.3s cubic-bezier(0.3, 1.3, 0.5, 1), background-color 0.25s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .view-switch-btn,
+  .view-switch-btn svg,
+  .view-switch.ready .view-switch-line {
+    transition: none;
+  }
+  .view-switch-btn.mvn-running::after {
+    animation: none;
+  }
 }
 
-/* Under the header: the branch next to origin, and Pull and Push */
-.git-status-line {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 40px;
-  padding: 5px 14px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-surface);
+/* On the line of Git and Maven, right before Fetch: where the branch stands next to origin, which explains the button.
+   It gives way first when the window is narrow: the time of the last fetch goes, then the text is cut. */
+.branch-bar {
+  container-type: inline-size;
 }
 .gsl-text {
   display: flex;
-  flex: 1;
-  flex-wrap: wrap;
+  flex: 1 1 0;
+  justify-content: flex-end;
   align-items: center;
-  gap: 2px 12px;
+  gap: 6px;
   min-width: 0;
+  overflow: hidden;
   font-size: var(--fs-small);
+  white-space: nowrap;
+}
+.gsl-part {
+  flex: none;
+}
+.gsl-part.ok,
+.gsl-part.muted,
+.gsl-part.upstream {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@container (max-width: 720px) {
+  .gsl-part.gsl-fetched {
+    display: none;
+  }
 }
 .gsl-part.upstream {
   color: var(--text-muted);
-  font-family: var(--font-mono);
 }
 .gsl-part.behind {
   color: var(--accent);
@@ -1044,6 +1277,17 @@ body.resizing-sidebar {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+/* in the bar of Git and Maven, as tall as their tabs */
+.branch-bar .split-btn .btn {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.branch-bar .split-btn .split-more {
+  padding: 0 8px;
+}
 .gsl-actions .btn.due {
   position: relative;
   border-color: var(--accent);
@@ -1057,26 +1301,29 @@ body.resizing-sidebar {
   border-left-color: color-mix(in srgb, var(--accent) 45%, var(--bg));
 }
 
-/* Maven chosen: only the Maven screen; the branch shows, but is not a menu there */
-#gitView.maven-view .branch-actions,
-#gitView.maven-view .git-status-line,
-#gitView.maven-view .tabs,
-#gitView.maven-view .tab-content {
+/* Maven or Bruno chosen: only its screen; the branch shows, but is not a menu there */
+#gitView:is(.maven-view, .bruno-view) .branch-actions,
+#gitView:is(.maven-view, .bruno-view) .gsl-actions,
+#gitView:is(.maven-view, .bruno-view) .gsl-text,
+#gitView:is(.maven-view, .bruno-view) .tabs,
+#gitView:is(.maven-view, .bruno-view) .tab-content {
   display: none;
 }
-#gitView.maven-view #tab-maven {
+#gitView.maven-view #tab-maven,
+#gitView.bruno-view #tab-bruno {
   display: flex;
 }
-#gitView:not(.maven-view) #tab-maven {
+#gitView:not(.maven-view) #tab-maven,
+#gitView:not(.bruno-view) #tab-bruno {
   display: none;
 }
-#gitView.maven-view .branch-switch {
+#gitView:is(.maven-view, .bruno-view) .branch-switch {
   pointer-events: none;
 }
-#gitView.maven-view .branch-caret {
+#gitView:is(.maven-view, .bruno-view) .branch-caret {
   display: none;
 }
-#gitView.maven-view .branch-name {
+#gitView:is(.maven-view, .bruno-view) .branch-name {
   color: var(--text-muted);
 }
 
@@ -1527,10 +1774,100 @@ body.resizing-sidebar {
   flex-shrink: 0;
   margin-left: 4px;
 }
+.push-target-field {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
 .push-target-input {
   flex: 1;
   min-width: 0;
+  padding-right: 30px;
   font-family: var(--font-mono);
+}
+.push-target-caret {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  transform: translateY(-50%);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.push-target-caret:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.push-target-caret svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* The branches on origin under "Push to": every one until a name is typed, and a new one */
+.push-target-menu {
+  max-height: 320px;
+  overflow-y: auto;
+}
+.push-target-menu .clip-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.push-target-menu .clip-menu-item.active {
+  background: var(--bg-hover);
+}
+.ptm-check {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  visibility: hidden;
+}
+.clip-menu-item.current .ptm-check {
+  visibility: visible;
+}
+.ptm-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ptm-hint {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+}
+.ptm-new {
+  color: var(--accent);
+}
+.ptm-new .ptm-check {
+  visibility: visible;
+}
+.ptm-bad {
+  color: var(--red);
+  cursor: default;
+}
+.ptm-note {
+  padding: 8px 10px;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
 }
 .push-summary {
   padding: 8px 14px;
@@ -1635,6 +1972,7 @@ button.push-file:hover {
 
 /* Changes as columns: tick, type, path, date modified, lines changed; the titles sort */
 #fileList .file-item,
+#fileList .file-dir,
 #fileList .file-head {
   display: grid;
   grid-template-columns: 14px 40px minmax(0, 1fr) 92px 84px;
@@ -1707,6 +2045,95 @@ button.push-file:hover {
 }
 #fileList .file-counts {
   justify-self: end;
+}
+
+/* Group by folder: the button in the list bar (an icon, lit while on) and the tree. Each level is 16px further in; a
+   folder row has an arrow and a folder before its name, and the files under it line up with the folder icon. */
+.group-folders-btn {
+  width: 28px;
+  justify-content: center;
+  padding: 0;
+}
+.group-folders-btn svg {
+  width: 16px;
+  height: 16px;
+}
+.group-folders-btn[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent);
+}
+.group-folders-btn[aria-pressed='true'] svg {
+  color: var(--accent);
+}
+.file-dir {
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.1s;
+}
+.file-dir:hover {
+  background: var(--bg-hover);
+}
+.file-dir:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: -2px;
+}
+#fileList .dir-name {
+  align-items: center;
+  gap: 4px;
+  padding-left: calc(var(--depth) * 16px);
+}
+#fileList .file-item.in-tree .file-path {
+  padding-left: calc(var(--depth) * 16px + 16px);
+}
+.dir-caret {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.12s;
+}
+.file-dir.open .dir-caret {
+  transform: rotate(90deg);
+}
+.dir-icon {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  fill: color-mix(in srgb, var(--accent) 22%, transparent);
+  stroke: color-mix(in srgb, var(--accent) 75%, var(--text-muted));
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+}
+.dir-label {
+  min-width: 0;
+  margin-left: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+/* in the tree, a file moved from another folder says where it was */
+.fp-moved {
+  min-width: 0;
+  margin-left: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--fs-caption);
+}
+.dir-count {
+  flex-shrink: 0;
+  margin-left: 8px;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--fs-caption);
 }
 .file-date {
   overflow: hidden;
@@ -2533,11 +2960,12 @@ button.push-file:hover {
   animation: repo-loading-in 0.15s ease-out 0.12s both;
 }
 .main-content.repo-status-pending .branch-name,
-.main-content.repo-status-pending .git-status-line {
+.main-content.repo-status-pending .gsl-actions,
+.main-content.repo-status-pending .gsl-text {
   opacity: 0.45;
   transition: opacity 0.15s ease-out 0.12s;
 }
-.main-content.repo-status-pending .git-status-line {
+.main-content.repo-status-pending .gsl-actions {
   pointer-events: none;
 }
 @keyframes repo-loading-in {
@@ -2545,11 +2973,122 @@ button.push-file:hover {
   to { opacity: 1; }
 }
 
+/* The app's own confirmation (askConfirm): a card over a dimmed page, a band of colour at its top for how much it
+   weighs (red: something is lost; blue: the others) */
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(20, 20, 26, 0.32);
+  animation: confirm-in 0.12s ease-out;
+}
+:root[data-theme='dark'] .confirm-overlay {
+  background: rgba(0, 0, 0, 0.55);
+}
+.confirm-card {
+  width: min(420px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding: 18px 20px 20px;
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--accent);
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22);
+  animation: confirm-pop 0.14s ease-out;
+}
+.confirm-card.danger {
+  border-top-color: var(--red);
+}
+.confirm-title {
+  margin: 0 0 6px;
+  color: var(--text);
+  font-size: var(--fs-reading);
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.confirm-name {
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-hover);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  font-weight: 500;
+}
+.confirm-body p {
+  margin: 0 0 8px;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+}
+.confirm-list {
+  max-height: 160px;
+  overflow-y: auto;
+  margin: 4px 0 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-surface);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  line-height: 1.6;
+  list-style: none;
+}
+/* Cancel at the left edge, the answer at the right */
+.confirm-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 16px;
+}
+.confirm-actions .btn {
+  min-width: 88px;
+  height: 34px;
+  font-size: var(--fs-reading);
+}
+.confirm-actions .btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.btn.confirm-yes.danger {
+  border-color: var(--red);
+  background: var(--red);
+  color: #fff;
+}
+.btn.confirm-yes.danger:hover {
+  filter: brightness(1.08);
+}
+@keyframes confirm-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes confirm-pop {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .confirm-overlay,
+  .confirm-card {
+    animation: none;
+  }
+}
+
 /* Toast */
 /* Toast: one layout for every message - an icon, a title, a sentence, the files and what to do. Above the popups. */
 .toast {
   position: fixed;
-  bottom: 16px;
+  /* above the Git panel at the bottom */
+  bottom: calc(16px + var(--git-console-h, 0px));
   left: 50%;
   transform: translateX(-50%);
   z-index: 250;
@@ -2648,6 +3187,166 @@ button.push-file:hover {
   justify-content: center;
   background: var(--overlay);
   z-index: 200;
+}
+
+/* Fetch, pull and push on screen (sync-card.js): this branch, origin, and arrows between them the way the commits go */
+.sync-card-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--overlay);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.sync-card-overlay.show {
+  opacity: 1;
+}
+.sync-card {
+  min-width: 320px;
+  padding: 22px 28px 18px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.2);
+  text-align: center;
+  transform: translateY(6px) scale(0.98);
+  transition: transform 0.2s ease-out;
+}
+.sync-card-overlay.show .sync-card {
+  transform: none;
+}
+.sc-ends {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+.sc-end {
+  width: 84px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+}
+.sc-end span {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.sc-end svg,
+.sc-tube svg,
+.sc-check svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.sc-end svg {
+  width: 36px;
+  height: 36px;
+  color: var(--text);
+}
+/* the tube: blue for a pull, green for a push; a fetch only looks: grey, dashed */
+.sc-tube {
+  width: 124px;
+  height: 28px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-radius: 14px;
+}
+.kind-pull .sc-tube {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+.kind-push .sc-tube {
+  background: color-mix(in srgb, var(--green) 14%, transparent);
+  color: var(--green);
+}
+.kind-fetch .sc-tube {
+  border: 1.5px dashed var(--text-muted);
+  color: var(--text-muted);
+}
+.sc-tube svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.4;
+  opacity: 0.15;
+  animation: sc-march 1s ease-in-out infinite;
+}
+/* lit one after the other, from where the commits leave to where they arrive */
+.sc-tube[data-way='left'] svg:nth-child(3),
+.sc-tube[data-way='right'] svg:nth-child(1) {
+  animation-delay: 0s;
+}
+.sc-tube svg:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.sc-tube[data-way='left'] svg:nth-child(1),
+.sc-tube[data-way='right'] svg:nth-child(3) {
+  animation-delay: 0.4s;
+}
+@keyframes sc-march {
+  0%,
+  100% {
+    opacity: 0.15;
+  }
+  30% {
+    opacity: 1;
+  }
+}
+.sc-msg {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: var(--fs-body);
+}
+.sc-check {
+  display: none;
+}
+.sc-check svg {
+  width: 18px;
+  height: 18px;
+}
+/* done: the arrows stop, the outcome in the colour of what was done (a fetch changed nothing: grey) */
+.sync-card-overlay.done .sc-tube svg {
+  animation: none;
+  opacity: 1;
+}
+.sync-card-overlay.done .sc-check {
+  display: inline-flex;
+}
+.sync-card-overlay.done.kind-fetch .sc-msg {
+  color: var(--text-muted);
+}
+.sync-card-overlay.done.kind-pull .sc-msg {
+  color: var(--accent);
+}
+.sync-card-overlay.done.kind-push .sc-msg {
+  color: var(--green);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sc-tube svg {
+    animation: none;
+    opacity: 0.8;
+  }
+  .sync-card,
+  .sync-card-overlay {
+    transition: none;
+  }
 }
 
 .spinner {
@@ -2754,7 +3453,7 @@ button.push-file:hover {
   border: 1px solid var(--border);
   border-radius: 4px;
   color: var(--text-muted);
-  font: 11px 'Consolas', monospace;
+  font: 11px var(--font-mono);
   pointer-events: none;
 }
 .vault-search:focus + .vault-search-key,
@@ -2952,6 +3651,27 @@ button.push-file:hover {
 }
 .vd-head-space {
   flex: 1;
+}
+/* what can be done with the item, at the bottom of the details (vault.js detailActions), the icons a little bigger */
+.vd-actions {
+  position: sticky;
+  bottom: -14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: auto 0 -14px;
+  padding: 10px 0 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+.vd-actions .icon-action {
+  width: 36px;
+  height: 34px;
+}
+.vd-actions .icon-action svg,
+.vd-actions .vd-star.on svg {
+  width: 19px;
+  height: 19px;
 }
 .vd-fields {
   display: flex;
@@ -3281,7 +4001,8 @@ body.card-window .vault-card .copyable {
 /* Quick add row under the cards */
 .vault-quick {
   display: grid;
-  grid-template-columns: var(--pill-w) 170px minmax(0, 1.3fr) minmax(0, 1fr) 180px;
+  /* label, username, password (or the URL across both), the environment it goes to, Add */
+  grid-template-columns: 170px minmax(0, 1.3fr) minmax(0, 1fr) 160px auto;
   column-gap: 10px;
   align-items: center;
   padding: 10px 14px;
@@ -3546,7 +4267,7 @@ body.card-window .vault-card {
   display: flex;
   align-items: flex-start;
   gap: 6px;
-  padding: 4px 4px 4px 10px;
+  padding: 4px 8px 4px 4px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg-input);
@@ -3554,7 +4275,7 @@ body.card-window .vault-card {
 .mvn-cmdline:focus-within {
   border-color: var(--accent);
 }
-/* The words wrap onto more lines; Run stays at the end of the first one */
+/* Run first; the words wrap onto more lines; the folder it runs in at the end of the first one */
 .mvn-words {
   flex: 1;
   min-width: 0;
@@ -3705,7 +4426,25 @@ body.card-window .vault-card {
   gap: 5px;
   flex-shrink: 0;
   height: 30px;
+  margin-right: 4px;
   padding: 0 14px;
+}
+/* Stop: red while the microservice runs */
+.btn.mvn-run.stop {
+  border-color: var(--red);
+  background: var(--red);
+  color: #fff;
+}
+.btn.mvn-run.stop:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+.mvn-cmdline .mvn-folder-row {
+  flex-shrink: 0;
+  height: 30px;
+  padding: 0;
+}
+.mvn-cmdline .mvn-folder {
+  max-width: 240px;
 }
 .mvn-options-menu {
   width: 380px;
@@ -3758,64 +4497,253 @@ body.card-window .vault-card {
   font-size: var(--fs-small);
 }
 /* Under the bar: the ports Start and Debug use, edited in place, and Separate window */
-.mvn-ports {
-  display: flex;
-  flex-wrap: wrap;
+/* Values: the environment Start and Debug take their values from (mvn-values.js) */
+.mvn-values-btn {
+  flex: none;
+  max-width: 300px;
+  height: 28px;
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: var(--fs-small);
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: none;
   color: var(--text-muted);
-}
-.mvn-ports-title {
-  margin-right: 2px;
-}
-.mvn-port-label {
-  white-space: nowrap;
-}
-.mvn-port + .mvn-port-label {
-  margin-left: 6px;
-}
-.mvn-port {
-  width: 62px;
-  height: 22px;
-  padding: 0 4px;
-  border: 1px solid transparent;
-  border-bottom: 1px dashed var(--text-dim);
-  border-radius: 4px 4px 0 0;
-  background: transparent;
-  color: var(--text);
-  font-family: var(--font-mono);
+  font: inherit;
   font-size: var(--fs-small);
-  font-weight: 600;
-  text-align: center;
-  outline: none;
-}
-.mvn-port::placeholder {
-  color: var(--text-muted);
-  font-weight: 400;
-}
-.mvn-port:hover {
-  border-color: var(--border);
-}
-.mvn-port:focus {
-  border: 1px solid var(--accent);
-  border-radius: 4px;
-  background: var(--bg-input);
-}
-.mvn-external {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: auto;
-  font-size: var(--fs-small);
-  color: var(--text-muted);
-  white-space: nowrap;
   cursor: pointer;
 }
-.mvn-status-row {
+.mvn-values-btn span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.mvn-values-btn svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.mvn-values-btn:hover,
+.mvn-values-btn[aria-expanded='true'] {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.mvn-values-btn.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+.mv-card {
+  width: min(980px, 94vw);
+  max-width: none;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+}
+.mv-sub {
+  margin: -4px 0 10px;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+  word-break: break-word;
+}
+.mv-all {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  margin-bottom: 10px;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+.mv-seg {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.mv-seg-item {
+  padding: 4px 12px;
+  border-left: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--font-mono);
+  cursor: pointer;
+}
+.mv-seg-item:first-child {
+  border-left: none;
+}
+.mv-seg-item:has(input:checked) {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.mv-seg-item:has(input:focus-visible),
+.mv-cell:has(input:focus-visible) {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: -2px;
+}
+.mv-seg input,
+.mv-cell input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.mv-wrap {
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.mv-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: var(--fs-small);
+}
+.mv-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  text-align: left;
+}
+.mv-table th:first-child {
+  width: 30%;
+  font-family: inherit;
+}
+.mv-table td {
+  padding: 2px 3px;
+  border-bottom: 1px solid var(--border);
+}
+.mv-table tr:last-child td {
+  border-bottom: none;
+}
+.mv-key {
+  padding-left: 8px !important;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.mv-prefix {
+  color: var(--text-dim);
+}
+.mv-cell {
+  position: relative;
+  display: block;
+  padding: 4px 7px;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.mv-cell:hover {
+  background: var(--bg-hover);
+}
+.mv-cell.inherited span {
+  font-style: italic;
+  opacity: 0.75;
+}
+.mv-cell.none span {
+  opacity: 0.5;
+}
+.mv-cell.warn span::before {
+  content: '\26A0  ';
+  color: var(--orange);
+}
+.mv-cell:has(input:checked) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.mv-legend {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+.mv-actions {
+  align-items: center;
+}
+.mv-differs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+.mv-gap {
+  flex: 1;
+}
+.mvn-ports-btn {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.mvn-ports-btn:hover,
+.mvn-ports-btn[aria-expanded='true'] {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.mvn-ports-btn svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* the ports of Start and Debug, under the gear */
+.mvn-ports-pop {
+  width: 270px;
+  padding: 12px;
+}
+.mvn-ports-title {
+  margin-bottom: 10px;
+  color: var(--text);
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+.mvn-port-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+.mvn-ports-pop .mvn-port {
+  width: 120px;
+  height: 30px;
+}
+.mvn-ports-hint {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  line-height: 1.45;
 }
 .mvn-status {
   flex: 1;
@@ -3835,6 +4763,90 @@ body.card-window .vault-card {
 .mvn-status.failed {
   color: var(--red);
 }
+/* Search in the output */
+.mvn-find {
+  display: inline-flex;
+  flex: 0 1 300px;
+  align-items: center;
+  gap: 4px;
+  min-width: 160px;
+  height: 28px;
+  padding: 0 4px 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+}
+.mvn-find:focus-within {
+  border-color: var(--accent);
+}
+.mvn-find-icon {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.mvn-find-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+}
+.mvn-find-count {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  white-space: nowrap;
+}
+.mvn-find-count.none {
+  color: var(--red);
+}
+.mvn-find-btn {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.mvn-find-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.mvn-find-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.mvn-find-btn svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+::highlight(mvn-find) {
+  background-color: rgba(227, 179, 65, 0.35);
+}
+::highlight(mvn-find-current) {
+  background-color: #e3b341;
+  color: #151515;
+}
 .mvn-wrapper {
   font-size: var(--fs-caption);
   padding: 0 6px;
@@ -3842,13 +4854,131 @@ body.card-window .vault-card {
   border-radius: 8px;
   color: var(--text-muted);
 }
+/* The output, with a header of its own over it: search, status, separate window, Clear */
+.mvn-console {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #151515;
+}
+:root[data-theme='dark'] .mvn-console {
+  border: 1px solid var(--border);
+}
+.mvn-console-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid #2c2c2b;
+  background: #1f1f1f;
+}
+.mvn-console-head .mvn-status {
+  color: #a8a6a0;
+}
+.mvn-console-head .mvn-status.running {
+  color: #7db4f0;
+}
+.mvn-console-head .mvn-status.ok {
+  color: #8bd17c;
+}
+.mvn-console-head .mvn-status.failed {
+  color: #ff7b72;
+}
+.mvn-console-head .mvn-find {
+  border-color: #3a3a3a;
+  background: #151515;
+}
+.mvn-console-head .mvn-find:focus-within {
+  border-color: #7db4f0;
+}
+.mvn-console-head .mvn-find-input {
+  color: #e8e6e1;
+}
+.mvn-console-head .mvn-find-input::placeholder,
+.mvn-console-head .mvn-find-count {
+  color: #8b8a85;
+}
+.mvn-console-head .mvn-find-icon {
+  stroke: #8b8a85;
+}
+.mvn-console-head .mvn-find-count.none {
+  color: #ff7b72;
+}
+.mvn-console-head .mvn-find-btn {
+  color: #a8a6a0;
+}
+.mvn-console-head .mvn-find-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e8e6e1;
+}
+.mvn-console-head .mvn-wrapper {
+  border-color: #3a3a3a;
+  color: #8b8a85;
+  white-space: nowrap;
+}
+/* Separate window (a checkbox drawn as a button that stays pressed) and Clear */
+.mvn-ext,
+.mvn-head-btn {
+  position: relative;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  background: none;
+  color: #cfcdc8;
+  cursor: pointer;
+}
+.mvn-ext:hover,
+.mvn-head-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+.mvn-ext input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.mvn-ext:has(input:checked) {
+  border-color: #7db4f0;
+  background: #24364d;
+  color: #7db4f0;
+}
+.mvn-ext:has(input:disabled),
+.mvn-head-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.mvn-ext:has(input:focus-visible),
+.mvn-head-btn:focus-visible {
+  outline: 2px solid #7db4f0;
+  outline-offset: 1px;
+}
+.mvn-ext svg,
+.mvn-head-btn svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .mvn-output {
   flex: 1;
   min-height: 0;
   margin: 0;
   padding: 10px 12px;
   overflow: auto;
-  border-radius: 8px;
   background: #151515;
   color: #e8e6e1;
   font-family: var(--font-mono);
@@ -3858,9 +4988,7 @@ body.card-window .vault-card {
   word-break: break-word;
   user-select: text;
 }
-:root[data-theme='dark'] .mvn-output {
-  border: 1px solid var(--border);
-}
+
 /* Favorite repos */
 .repo-section {
   padding: 8px 8px 4px;
@@ -3910,6 +5038,27 @@ body.card-window .vault-card {
 }
 .repo-menu-item.danger {
   color: var(--red);
+}
+/* Open with: an arrow that turns down when its editors show, indented under it */
+.repo-menu-item .repo-menu-caret {
+  width: 12px;
+  height: 12px;
+  margin-left: auto;
+  transform: rotate(-90deg);
+  transition: transform 0.15s;
+}
+.repo-menu-item[aria-expanded='true'] .repo-menu-caret {
+  transform: none;
+}
+.repo-menu .repo-menu-sub {
+  padding-left: 32px;
+}
+.repo-menu-note {
+  max-width: 230px;
+  padding: 4px 10px 6px 32px;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  line-height: 1.4;
 }
 .repo-menu-item.danger svg {
   stroke: var(--red);
@@ -4295,19 +5444,93 @@ body.card-window .vault-card {
   border-radius: 8px;
   background: var(--bg);
 }
+/* A group: one line (arrow, box for all of it, name, how many, what it has to pull); a click opens it, its
+   repositories under it, set in */
 .pm-section {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 8px 4px;
-  color: var(--text-dim);
+  min-height: 36px;
+  padding: 4px 8px 4px 2px;
+  border-radius: 6px;
+  color: var(--text);
   font-size: var(--fs-small);
   font-weight: 600;
   cursor: pointer;
 }
-.pm-section-count {
+.pm-section:hover {
+  background: var(--bg-hover);
+}
+.pm-section + .pm-section,
+.pm-section-rows + .pm-section {
+  margin-top: 2px;
+  box-shadow: 0 -1px 0 var(--border);
+}
+.pm-section-caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
   color: var(--text-dim);
+  cursor: pointer;
+}
+.pm-section-caret:disabled {
+  cursor: default;
+}
+.pm-section-caret svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.15s;
+}
+.pm-section.open .pm-section-caret svg {
+  transform: rotate(90deg);
+}
+.pm-section-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pm-section-count {
+  flex-shrink: 0;
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text-dim);
+  font-size: var(--fs-caption);
   font-weight: 600;
+  line-height: 17px;
+  text-align: center;
+}
+.pm-section:hover .pm-section-count {
+  background: var(--bg-surface);
+}
+.pm-section-sum {
+  display: flex;
+  flex-shrink: 0;
+  gap: 10px;
+  margin-left: auto;
+  font-size: var(--fs-caption);
+}
+.pm-section-quiet {
+  color: var(--text-dim);
+  font-weight: 400;
+}
+.pm-section-chosen:empty {
+  display: none;
+}
+.pm-section-rows.in-group {
+  padding: 0 0 4px 28px;
 }
 .pm-row {
   display: grid;
@@ -4348,6 +5571,17 @@ body.card-window .vault-card {
   gap: 6px;
   color: var(--text-dim);
   font-size: var(--fs-caption);
+}
+/* Remove several: where each one is, cut at its start so the end of the path shows */
+.pm-info.pm-path {
+  display: block;
+  max-width: min(320px, 55vw);
+  overflow: hidden;
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
 }
 .pm-behind {
   color: var(--accent);
@@ -4509,7 +5743,7 @@ body.card-window .vault-card {
   margin-bottom: 2px;
   border-bottom: 1px solid var(--border);
   color: var(--text-muted);
-  font: 600 11px 'Consolas', monospace;
+  font: 600 11px var(--font-mono);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4632,6 +5866,7 @@ body.card-window .vault-card {
 }
 .branch-log-graph svg {
   display: block;
+  overflow: visible; /* the "_" on the bottom edge of a row: all of its stroke, not half */
 }
 .branch-log-graph line {
   stroke-width: 2;
@@ -4646,7 +5881,14 @@ body.card-window .vault-card {
 .lane-2 { stroke: var(--orange); }
 .lane-3 { stroke: var(--mauve); }
 .lane-4 { stroke: var(--red); }
-.lane-5 { stroke: var(--yellow); }
+.lane-5 { stroke: var(--teal); }
+/* a commit's id in the colour of its line, a quarter of the way to the text colour so the small text reads well */
+:is(.log-hash, .branch-log-hash).hash-lane-0 { color: color-mix(in srgb, var(--accent) 75%, var(--text)); }
+:is(.log-hash, .branch-log-hash).hash-lane-1 { color: color-mix(in srgb, var(--green) 75%, var(--text)); }
+:is(.log-hash, .branch-log-hash).hash-lane-2 { color: color-mix(in srgb, var(--orange) 75%, var(--text)); }
+:is(.log-hash, .branch-log-hash).hash-lane-3 { color: color-mix(in srgb, var(--mauve) 75%, var(--text)); }
+:is(.log-hash, .branch-log-hash).hash-lane-4 { color: color-mix(in srgb, var(--red) 75%, var(--text)); }
+:is(.log-hash, .branch-log-hash).hash-lane-5 { color: color-mix(in srgb, var(--teal) 75%, var(--text)); }
 .branch-log-msg {
   display: flex;
   flex-direction: column;
@@ -4669,7 +5911,7 @@ body.card-window .vault-card {
 }
 .branch-log-sep {
   color: var(--text-muted);
-  font: 600 11px 'Consolas', monospace;
+  font: 600 11px var(--font-mono);
 }
 .branch-log-subject,
 .branch-log-author {
@@ -4687,7 +5929,7 @@ body.card-window .vault-card {
   white-space: nowrap;
   padding: 0 6px;
   border-radius: 8px;
-  font: 600 10.5px 'Consolas', monospace;
+  font: 600 10.5px var(--font-mono);
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
@@ -7170,6 +8412,174 @@ label.file-item {
   padding: 1px 8px;
   font-size: var(--fs-caption);
 }
+.tool-sub {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+/* JWT: Decode or Encode at the top; each part a card - a grey frame with a bar (title, buttons), the field on white
+   inside, and a line saying whether it is right */
+.jwt-mode {
+  align-self: flex-start;
+}
+.tool-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 0 6px 6px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--text) 4%, var(--bg));
+}
+.tool-card-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 4px 6px 4px 10px;
+}
+.tool-card-title {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+.tool-card-title svg,
+.tool-card-clear svg,
+.tool-card-status svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.tool-card-tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+.tool-card-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+}
+.tool-card-clear svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.8;
+}
+.tool-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-input);
+}
+.tool-card-body .tool-area,
+.tool-card-body .tool-out {
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.tool-card-body .tool-area:focus {
+  box-shadow: none;
+}
+.tool-card-body .tool-fields {
+  margin: 0;
+  padding: 2px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+.tool-card-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px 2px;
+  font-size: var(--fs-small);
+}
+.tool-card-status:empty {
+  display: none;
+}
+.tool-card-status.ok {
+  color: var(--green);
+}
+.tool-card-status.bad {
+  color: var(--red);
+}
+.tool-card-status.note {
+  color: var(--text-dim);
+}
+.jwt-expiry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 4px 0;
+}
+.jwt-label {
+  flex: none;
+  margin-right: 4px;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+.jwt-alg {
+  width: 150px;
+  height: 28px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.jwt-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+  cursor: pointer;
+}
+.jwt-token {
+  max-height: none;
+  word-break: break-all;
+}
+.jwt-token-empty {
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+}
+.jwt-result {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+/* the three parts of a token in their own colours, as token sites show them */
+.jwt-h {
+  color: var(--red);
+}
+.jwt-p {
+  color: var(--mauve);
+}
+.jwt-s {
+  color: var(--accent);
+}
+.jwt-dot {
+  color: var(--text-dim);
+}
 .tool-section {
   display: flex;
   flex-direction: column;
@@ -7213,6 +8623,223 @@ label.file-item {
   color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: var(--fs-small);
+}
+/* Compare APIs: a summary, then each endpoint and model on a line that opens on what changed; breaking ones marked */
+.api-url {
+  flex-wrap: nowrap;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.api-result {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.api-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.api-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  line-height: 20px;
+  white-space: nowrap;
+}
+.api-chip.big {
+  padding: 2px 12px;
+  font-size: var(--fs-small);
+}
+.api-chip.bad,
+.api-chip.removed {
+  background: color-mix(in srgb, var(--red) 13%, transparent);
+  color: var(--red);
+}
+.api-chip.good,
+.api-chip.added {
+  background: var(--green-soft);
+  color: var(--green);
+}
+.api-chip.changed {
+  background: color-mix(in srgb, var(--yellow) 16%, transparent);
+  color: var(--yellow);
+}
+.api-controls {
+  flex-wrap: nowrap;
+}
+.api-search {
+  min-width: 120px;
+}
+.api-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.api-section-title {
+  margin: 6px 0 2px;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+.api-item {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-input);
+  overflow: hidden;
+  transition: box-shadow 0.3s;
+}
+.api-item.breaking {
+  border-color: color-mix(in srgb, var(--red) 45%, var(--border));
+}
+.api-item.flash {
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+.api-item-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.api-item-head:hover {
+  background: var(--bg-hover);
+}
+.api-chevron {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: var(--text-dim);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.15s;
+}
+.api-item.open .api-chevron {
+  transform: rotate(90deg);
+}
+.api-method {
+  flex: none;
+  min-width: 58px;
+  padding: 1px 0;
+  border-radius: 5px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  font-weight: 700;
+  text-align: center;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+.api-method.m-get {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+.api-method.m-post {
+  background: var(--green-soft);
+  color: var(--green);
+}
+.api-method.m-put {
+  background: color-mix(in srgb, var(--orange) 15%, transparent);
+  color: var(--orange);
+}
+.api-method.m-patch {
+  background: color-mix(in srgb, var(--mauve) 15%, transparent);
+  color: var(--mauve);
+}
+.api-method.m-delete {
+  background: color-mix(in srgb, var(--red) 13%, transparent);
+  color: var(--red);
+}
+.api-path,
+.api-model-name {
+  flex: none;
+  max-width: 50%;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.api-item.removed .api-path {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+.api-summary-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: var(--fs-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.api-item-tail {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+.api-count {
+  color: var(--text-dim);
+  font-size: var(--fs-caption);
+}
+.api-item-body {
+  display: none;
+  padding: 4px 12px 10px 36px;
+  border-top: 1px solid var(--border);
+}
+.api-item.open .api-item-body {
+  display: block;
+}
+.api-item-body:empty {
+  display: none !important;
+}
+.api-note {
+  padding: 6px 0;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+.api-change {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 240px) minmax(0, 1fr);
+  column-gap: 10px;
+  padding: 3px 0;
+  font-size: var(--fs-small);
+  line-height: 1.5;
+}
+.api-mark {
+  color: var(--red);
+  font-weight: 700;
+  text-align: center;
+}
+.api-where {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+.api-change.breaking .api-text {
+  color: var(--red);
+}
+.api-change.api-link {
+  cursor: pointer;
+}
+.api-change.api-link .api-where {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .tool-badge {
   display: inline-block;
@@ -7898,6 +9525,149 @@ label.file-item {
   background: color-mix(in srgb, var(--yellow) 38%, transparent);
   color: inherit;
 }
+/* A line found, in its file: the lines around it in a popup, the line on a soft band, the text found softly marked */
+.sr-peek {
+  display: flex;
+  flex-direction: column;
+  width: min(1000px, calc(100vw - 80px));
+  height: min(660px, calc(100vh - 80px));
+  padding: 0;
+  overflow: hidden;
+  outline: none;
+}
+.sr-peek-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.sr-peek-title {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.sr-peek-title svg {
+  flex: none;
+  align-self: center;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.sr-peek-base {
+  flex: none;
+  font-weight: 600;
+}
+.sr-peek-dir {
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: var(--fs-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sr-peek-repo {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+}
+.sr-peek-nav {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+.sr-peek-count {
+  min-width: 56px;
+  text-align: center;
+}
+.sr-peek-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+}
+.sr-peek-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.sr-peek-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.sr-peek-code {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 0;
+  background: var(--bg);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  line-height: 1.6;
+  tab-size: 4;
+  user-select: text;
+}
+.sr-peek-line {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  column-gap: 14px;
+  min-height: 1.6em;
+  padding-right: 16px;
+}
+.sr-peek-ln {
+  color: var(--text-dim);
+  text-align: right;
+  user-select: none;
+}
+.sr-peek-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.sr-peek-line.current {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.sr-peek-line.current .sr-peek-ln {
+  color: var(--accent);
+  font-weight: 600;
+}
+.sr-peek-hl {
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--yellow) 22%, transparent);
+  color: inherit;
+}
+.sr-peek-note {
+  padding: 16px;
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+}
+.sr-peek-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 16px;
+  border-top: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: var(--fs-caption);
+}
 .sr-problems {
   padding: 8px 12px;
   border: 1px solid var(--border);
@@ -8154,6 +9924,160 @@ label.file-item {
 .mvn-macro-spacer {
   flex: 1;
 }
+/* "Start from" a template, for a new macro */
+.mvn-macro-templates {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 10px;
+}
+.mvn-macro-templates.hidden {
+  display: none;
+}
+.mvn-macro-templates-label {
+  margin-right: 2px;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+.mvn-macro-template {
+  font-family: inherit;
+  font-size: var(--fs-small);
+}
+.mvn-macro-template[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--text);
+}
+/* a git step: its tag, what it does, its branch */
+.mvn-macro-tag {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--orange) 16%, transparent);
+  color: color-mix(in srgb, var(--orange) 80%, var(--text));
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+}
+.mvn-macro-words {
+  flex: none;
+  font-size: var(--fs-body);
+  white-space: nowrap;
+}
+.mvn-macro-body > .mvn-macro-words:last-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mvn-macro-branch {
+  flex: 1;
+  min-width: 80px;
+  height: 28px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+}
+.mvn-macro-note {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+  white-space: nowrap;
+}
+
+/* A macro starting: what it asks, then what it runs */
+.settings-card.mvn-ask-card {
+  width: min(520px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+.mvn-ask-where {
+  margin: -4px 0 6px;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+.mvn-ask-body > .settings-label:not(:first-child),
+.mvn-ask-card > .settings-label {
+  margin-top: 16px;
+}
+.mvn-ask-branch {
+  width: 100%;
+  height: 32px;
+}
+.mvn-ask-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+.mvn-ask-row .branch-create-chips {
+  margin: 0;
+}
+.mvn-ask-note {
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+.mvn-ask-note.bad {
+  color: var(--red);
+}
+.mvn-ask-files {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mvn-ask-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+.mvn-ask-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.mvn-ask-choice:has(input:checked) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.mvn-ask-choice.danger:has(input:checked) {
+  border-color: var(--red);
+  background: color-mix(in srgb, var(--red) 8%, transparent);
+}
+.mvn-ask-choice input {
+  margin: 3px 0 0;
+}
+.mvn-ask-choice span {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.mvn-ask-choice strong {
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+.mvn-ask-choice small {
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+.mvn-ask-steps {
+  margin: 0;
+  padding-left: 22px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  line-height: 1.6;
+}
+.mvn-ask-steps li.git {
+  color: var(--text);
+}
 
 /* Manage groups: a column per group */
 .groups-overlay {
@@ -8388,6 +10312,29 @@ label.file-item {
 }
 .mvn-output-row .mvn-output {
   min-width: 0;
+}
+/* the steps over the modules; with neither, no column (nor its gap) */
+.mvn-side {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+.mvn-side:not(:has(> :not(.hidden))) {
+  display: none;
+}
+/* with the modules under them, the steps take what they need (up to 60%); alone, the whole height, as the modules do */
+.mvn-side > .mvn-steps {
+  flex: 0 1 auto;
+  max-height: 60%;
+}
+.mvn-side > .mvn-steps:has(+ .hidden) {
+  flex: 1 1 auto;
+  max-height: none;
+}
+.mvn-side > #mvnModules {
+  flex: 1 1 auto;
 }
 .mvn-modules {
   flex: none;
@@ -8887,6 +10834,16 @@ label.file-item {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
+/* the rows of the environment shown, when it is not GERAL (vault.js tintOwn): its colour, faintly */
+.vd-tr.vd-tr-own {
+  background: color-mix(in srgb, var(--vd-env) 7%, transparent);
+}
+.vd-tr.vd-tr-own:hover {
+  background: color-mix(in srgb, var(--vd-env) 12%, transparent);
+}
+.vd-tr.vd-tr-own.selected {
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg));
+}
 .vd-td-name {
   white-space: nowrap;
 }
@@ -8948,6 +10905,29 @@ label.file-item {
   font-size: var(--fs-small);
   font-weight: 600;
   cursor: pointer;
+}
+/* a general link or user (vault.js nameCell): GERAL at the right of the name */
+.vd-name-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.vd-name-wrap .vd-fav {
+  margin-left: 0;
+}
+.vd-tag-geral {
+  margin-left: auto;
+  padding: 1px 7px;
+  border-radius: 8px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+.vd-tr:hover .vd-tag-geral {
+  background: var(--bg);
 }
 .vd-tag-all {
   margin-left: 6px;
@@ -9175,63 +11155,52 @@ label.file-item {
   white-space: nowrap;
   font-family: var(--font-ui);
 }
-.cmp-menu-right {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-  color: var(--text-muted);
-  font-size: var(--fs-caption);
-}
-.cmp-version {
-  font-family: var(--font-mono);
-}
 .cmp-menu-date {
-  min-width: 64px;
-  text-align: right;
+  flex-shrink: 0;
+  min-width: 44px;
+  color: var(--text-muted);
   font-family: var(--font-ui);
+  font-size: var(--fs-caption);
+  font-weight: 400;
+  text-align: right;
 }
-/* The commits of a branch: a search at the top, one line per commit; a click chooses it */
-.cmp-commits-card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: min(760px, calc(100vw - 32px));
-  max-height: calc(100vh - 48px);
+/* View commits: the commits of a branch under it, set in, with a search of their own when there are many */
+.cmp-expanded-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  margin-left: auto;
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
-.cmp-commits-search {
+.cmp-branch-commits {
+  margin: 0 0 6px 16px;
+  padding-left: 6px;
+  border-left: 2px solid var(--border);
+}
+.cmp-branch-commits .list-note {
+  padding: 8px 10px;
+}
+.cmp-commits-filter {
   width: 100%;
+  margin: 2px 0 4px;
+  padding: 4px 8px;
+}
+.branch-menu .cmp-commit-item {
+  padding: 5px 8px;
+}
+.cmp-commit-item .log-hash {
+  margin-top: 0;
+}
+.cmp-commit-item .branch-log-ref {
   flex-shrink: 0;
 }
-.cmp-commits-list {
-  flex: 1;
-  min-height: 120px;
-  overflow-y: auto;
-  margin: 0 -6px;
-}
-.cmp-commit-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 7px 8px;
-  border: none;
-  border-radius: 6px;
-  background: none;
-  color: var(--text);
-  font: inherit;
-  font-size: var(--fs-small);
-  text-align: left;
-  cursor: pointer;
-}
-.cmp-commit-row:hover,
-.cmp-commit-row:focus-visible {
-  background: var(--bg-hover);
-  outline: none;
-}
-.cmp-commit-row.current {
+.branch-menu .cmp-commits-more {
   color: var(--accent);
-  font-weight: 600;
+  font-family: var(--font-ui);
 }
 
 /* Log: Base <- Compare above the search; while comparing, Commits | Files on the left of it */
@@ -9351,3 +11320,411 @@ label.file-item {
   font-size: var(--fs-small);
 }
 
+/* Dropdowns: drawn by the app with its own arrow, so they look the same on Windows and on a Mac (the Maven command
+   has its own); the list they open takes the colours of the page */
+select:not(.mvn-goal-select):not([multiple]) {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 26px;
+  background-image: var(--select-caret);
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 10px 10px;
+  cursor: pointer;
+}
+select option,
+select optgroup {
+  background: var(--bg-input);
+  color: var(--text);
+}
+
+/* Maven: the list of commands, drawn by the app; the macros with a pencil each, then New macro... */
+.mvn-cmd-menu {
+  display: flex;
+  flex-direction: column;
+  min-width: 240px;
+  max-width: 440px;
+  overflow-y: auto;
+}
+.mvn-cmd-menu .mvn-cmd-item,
+.mvn-cmd-menu .mvn-cmd-new {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+}
+.mvn-cmd-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mvn-cmd-check {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  visibility: hidden;
+}
+.mvn-cmd-item.current {
+  color: var(--accent);
+  font-weight: 600;
+}
+.mvn-cmd-item.current .mvn-cmd-check {
+  visibility: visible;
+}
+.mvn-cmd-group {
+  margin-top: 4px;
+  padding: 8px 10px 4px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+.mvn-cmd-macro {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.mvn-cmd-macro .mvn-cmd-item {
+  flex: 1;
+  min-width: 0;
+}
+.mvn-cmd-steps {
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--fs-caption);
+  font-weight: 400;
+  white-space: nowrap;
+}
+.mvn-cmd-edit svg,
+.mvn-cmd-new svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.mvn-cmd-new {
+  color: var(--text-muted);
+}
+.mvn-cmd-new svg {
+  margin-left: 2px;
+}
+
+/* The list a dropdown opens, drawn by the app (select-menu.js): the same on Windows and on a Mac, over dialogs too */
+.sel-menu {
+  z-index: 350;
+  display: flex;
+  flex-direction: column;
+  max-width: 480px;
+  overflow-y: auto;
+}
+.sel-menu .sel-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: inherit;
+}
+.sel-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sel-check {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  visibility: hidden;
+}
+.sel-item.current {
+  color: var(--accent);
+  font-weight: 600;
+}
+.sel-item.current .sel-check {
+  visibility: visible;
+}
+.sel-group {
+  margin-top: 4px;
+  padding: 8px 10px 4px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+.sel-group:first-child {
+  margin-top: 0;
+  border-top: none;
+}
+
+/* The Git panel at the bottom of the window: every git command the app runs. A line closed; open, a terminal-like
+   list (always dark, as the Maven output) whose top edge sets its height. */
+.git-console {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+.git-console-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 8px 0 4px;
+}
+.git-console-toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--fs-small);
+  text-align: left;
+  cursor: pointer;
+}
+.git-console-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.git-console-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.git-console-caret {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.15s;
+}
+.git-console.open .git-console-caret {
+  transform: rotate(180deg);
+}
+.git-console-title {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--text);
+}
+.git-console-count {
+  flex-shrink: 0;
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text-dim);
+  font-size: var(--fs-caption);
+  line-height: 17px;
+  text-align: center;
+}
+.git-console-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--yellow);
+  animation: git-console-pulse 1s ease-in-out infinite;
+}
+@keyframes git-console-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+.git-console-last {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+}
+.git-console-last.fail {
+  color: var(--red);
+}
+.git-console-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.git-console-resizer {
+  position: absolute;
+  top: -4px;
+  left: 0;
+  right: 0;
+  height: 8px;
+  z-index: 6;
+  cursor: ns-resize;
+}
+body.git-console-resizing {
+  cursor: ns-resize;
+}
+body.git-console-resizing * {
+  pointer-events: none;
+}
+.git-console-list {
+  overflow: auto;
+  padding: 6px 0 8px;
+  background: #151515;
+  color: #e8e6e1;
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  user-select: text;
+}
+:root[data-theme='dark'] .git-console-list {
+  border-top: 1px solid var(--border);
+}
+.gc-row {
+  display: grid;
+  grid-template-columns: 8ch 18ch minmax(0, 1fr) auto;
+  column-gap: 12px;
+  padding: 1px 12px;
+}
+.gc-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.gc-time,
+.gc-out {
+  color: #8b8a85;
+  white-space: nowrap;
+}
+.gc-out {
+  text-align: right;
+}
+.gc-repo {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: #7db4f0;
+}
+.gc-cmd {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.gc-row.fail .gc-cmd {
+  color: #f2a39d;
+}
+.gc-row.fail .gc-out {
+  color: #ff7b72;
+}
+.gc-row.run .gc-out {
+  color: #e3b341;
+}
+.gc-empty {
+  padding: 4px 12px;
+  color: #8b8a85;
+}
+/* A command typed below: marked, with its output under it */
+.gc-row.typed {
+  margin-top: 4px;
+  background: rgba(125, 180, 240, 0.08);
+}
+.gc-row.typed .gc-cmd::before {
+  content: '❯ ';
+  color: #8bd17c;
+}
+.gc-output {
+  grid-column: 1 / -1;
+  margin: 2px 0 6px;
+  padding-left: calc(8ch + 12px);
+  color: #d6d4cf;
+  font: inherit;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.git-console-list.only-typed .gc-row:not(.typed) {
+  display: none;
+}
+#gitConsoleTyped[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+/* The line to type a git command, at the foot of the panel */
+.gc-prompt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-top: 1px solid #2c2c2b;
+  background: #151515;
+  color: #e8e6e1;
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+}
+.gc-prompt:focus-within {
+  background: #1c1c1b;
+}
+.gc-where {
+  flex: none;
+  max-width: 24ch;
+  overflow: hidden;
+  color: #7db4f0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gc-git {
+  flex: none;
+  color: #8bd17c;
+  font-weight: 600;
+}
+.gc-git::before {
+  content: '❯ ';
+}
+.gc-input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  caret-color: #e8e6e1;
+}
+.gc-input::placeholder {
+  color: #6f6e69;
+}
+.gc-stop {
+  flex: none;
+  height: 22px;
+  padding: 0 10px;
+  border: 1px solid #ff7b72;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: #ff7b72;
+  font: inherit;
+  cursor: pointer;
+}
+.gc-stop:hover {
+  background: rgba(255, 123, 114, 0.15);
+}

@@ -121,7 +121,7 @@ function searchRegExp(text, o) {
   }
 }
 
-function markInto(el, text, re) {
+function markInto(el, text, re, cls = 'sr-hl') {
   if (!re) {
     el.textContent = text;
     return;
@@ -135,7 +135,7 @@ function markInto(el, text, re) {
       re.lastIndex++;
       continue;
     }
-    el.append(text.slice(last, m.index), tEl('mark', 'sr-hl', m[0]));
+    el.append(text.slice(last, m.index), tEl('mark', cls, m[0]));
     last = m.index + m[0].length;
   }
   el.append(text.slice(last));
@@ -443,6 +443,140 @@ function onSearchProgress(p) {
   renderSearchStatus();
 }
 
+// -- A line found, in its file: a popup with the lines around it, the line itself on a soft band and the text found
+// marked in a soft colour. Up and Down go to the other lines found in that file; Open file opens it as before. --
+let peek = null; // { repo, label, rel, base, dir, rev, found: [line numbers], index, re, from: the row clicked, data }
+
+function closeSearchPeek() {
+  const modal = $('#srPeek');
+  if (modal) {
+    window.removeEventListener('keydown', modal.onKey, true);
+    modal.remove();
+  }
+  const back = peek && peek.from;
+  peek = null;
+  if (back && back.isConnected) back.focus();
+}
+
+function peekButton(label, svg, onClick) {
+  const b = tEl('button', 'icon-btn-plain sr-peek-btn');
+  b.type = 'button';
+  b.title = label;
+  b.setAttribute('aria-label', label);
+  b.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${svg}</svg>`;
+  b.addEventListener('click', onClick);
+  return b;
+}
+
+function openSearchPeek(o) {
+  closeSearchPeek();
+  peek = { ...o, data: null };
+  const modal = tEl('div', 'settings-overlay sr-peek-overlay');
+  modal.id = 'srPeek';
+  const card = tEl('section', 'settings-card sr-peek');
+  card.setAttribute('role', 'dialog');
+  card.setAttribute('aria-modal', 'true');
+  card.setAttribute('aria-label', `${o.base}, around the lines found`);
+  card.tabIndex = -1;
+  const head = tEl('div', 'sr-peek-head');
+  const title = tEl('div', 'sr-peek-title');
+  title.innerHTML = FILE_ICON;
+  title.append(tEl('span', 'sr-peek-base', o.base), tEl('span', 'sr-peek-dir', o.dir));
+  title.title = o.rel;
+  const where = tEl('span', 'sr-peek-repo', o.rev ? `${o.label} · ${o.rev}` : o.label);
+  const nav = tEl('div', 'sr-peek-nav');
+  const prev = peekButton('Previous line found (Up)', '<path d="M6 15l6 -6l6 6"/>', () => showPeekLine(peek.index - 1));
+  const count = tEl('span', 'sr-peek-count');
+  const next = peekButton('Next line found (Down)', '<path d="M6 9l6 6l6 -6"/>', () => showPeekLine(peek.index + 1));
+  nav.append(prev, count, next);
+  const open = tEl('button', 'btn btn-sm sr-peek-open', 'Open file');
+  open.type = 'button';
+  open.title = o.rev ? `Open ${o.rel} (your working copy of it)` : `Open ${o.rel}`;
+  open.addEventListener('click', () => searchOpenFile(o.repo, o.rel));
+  const close = peekButton('Close (Esc)', '<path d="M18 6l-12 12"/><path d="M6 6l12 12"/>', closeSearchPeek);
+  head.append(title, where, nav, open, close);
+  card.append(head, tEl('div', 'sr-peek-code'), tEl('div', 'sr-peek-foot'));
+  modal.appendChild(card);
+  modal.addEventListener('mousedown', (e) => {
+    if (e.target === modal) closeSearchPeek();
+  });
+  modal.onKey = (e) => {
+    if (e.key === 'Escape') closeSearchPeek();
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') showPeekLine(peek.index + (e.key === 'ArrowDown' ? 1 : -1));
+    else return;
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  // before the page's own keys (Esc there stops a search)
+  window.addEventListener('keydown', modal.onKey, true);
+  document.body.appendChild(modal);
+  card.focus();
+  showPeekLine(o.index);
+}
+
+// One of the lines found: its part of the file is asked for when it is not the part on show.
+async function showPeekLine(i) {
+  if (!peek || i < 0 || i >= peek.found.length) return;
+  peek.index = i;
+  const n = peek.found[i];
+  const card = $('#srPeek .sr-peek');
+  card.querySelector('.sr-peek-count').textContent = `${i + 1} of ${peek.found.length}`;
+  const [prev, , next] = card.querySelector('.sr-peek-nav').children;
+  prev.disabled = i === 0;
+  next.disabled = i === peek.found.length - 1;
+  const shown = peek.data && !peek.data.error && n >= peek.data.from && n < peek.data.from + peek.data.lines.length;
+  if (!shown) {
+    const code = card.querySelector('.sr-peek-code');
+    code.textContent = '';
+    code.appendChild(tEl('div', 'sr-peek-note', 'Loading...'));
+    const mine = peek;
+    const data = await window.search.context(peek.repo, peek.rel, n, peek.rev);
+    if (peek !== mine || peek.index !== i) return;
+    peek.data = data;
+    renderPeekCode();
+  }
+  markPeekLine(n);
+}
+
+function renderPeekCode() {
+  const card = $('#srPeek .sr-peek');
+  const code = card.querySelector('.sr-peek-code');
+  const foot = card.querySelector('.sr-peek-foot');
+  code.textContent = '';
+  foot.textContent = '';
+  const { data } = peek;
+  if (data.error) {
+    code.appendChild(tEl('div', 'sr-peek-note', data.error));
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  data.lines.forEach((text, k) => {
+    const row = tEl('div', 'sr-peek-line');
+    row.dataset.line = data.from + k;
+    const body = tEl('span', 'sr-peek-text');
+    markInto(body, text, peek.re, 'sr-peek-hl');
+    row.append(tEl('span', 'sr-peek-ln', String(data.from + k)), body);
+    frag.appendChild(row);
+  });
+  code.appendChild(frag);
+  const last = data.from + data.lines.length - 1;
+  foot.append(
+    tEl('span', '', data.from === 1 && last === data.total ? srPlural(data.total, 'line') : `Lines ${data.from}-${last} of ${data.total}`),
+    tEl('span', '', 'Up and Down: the other lines found  ·  Esc closes')
+  );
+}
+
+function markPeekLine(n) {
+  const code = $('#srPeek .sr-peek-code');
+  if (!code) return;
+  code.querySelectorAll('.sr-peek-line.current').forEach((r) => r.classList.remove('current'));
+  const row = code.querySelector(`.sr-peek-line[data-line="${n}"]`);
+  if (!row) return;
+  row.classList.add('current');
+  // in the middle of the view, with the lines before and after it
+  code.scrollTop = Math.max(0, row.offsetTop - (code.clientHeight - row.offsetHeight) / 2);
+}
+
 function setCollapsed(block, collapsed) {
   block.classList.toggle('collapsed', collapsed);
   block.querySelector('.sr-service-head').setAttribute('aria-expanded', String(!collapsed));
@@ -480,16 +614,17 @@ function addRepoBlock(run, repo) {
     name.addEventListener('click', () => searchOpenFile(repo.path, rel));
     fileHead.append(name, fileActions(repo.path, rel));
     file.appendChild(fileHead);
-    for (const m of lines) {
+    const found = lines.map((m) => m.line);
+    lines.forEach((m, i) => {
       const line = tEl('button', 'sr-line');
       line.type = 'button';
-      line.title = `Open ${base} (line ${m.line})`;
+      line.title = `Show line ${m.line} of ${base} in its file`;
       const text = tEl('span', 'sr-text');
       markInto(text, m.text.replace(/^\s+/, ''), run.re);
       line.append(tEl('span', 'sr-ln', String(m.line)), text);
-      line.addEventListener('click', () => searchOpenFile(repo.path, rel));
+      line.addEventListener('click', () => openSearchPeek({ repo: repo.path, label, rel, base, dir, rev: repo.rev || null, found, index: i, re: run.re, from: line }));
       file.appendChild(line);
-    }
+    });
     body.appendChild(file);
   }
   block.append(head, body);

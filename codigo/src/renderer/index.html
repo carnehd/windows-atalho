@@ -5,52 +5,72 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Git Quick</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="bruno/bruno.css" />
+  <link rel="stylesheet" href="db/db.css" />
 </head>
 <body>
   <div id="app">
     <nav class="rail">
-      <div class="rail-logo" aria-hidden="true">G</div>
+      <!-- the G opens the rail wider, with the name of each page by its icon (app.js) -->
+      <button id="railLogo" class="rail-logo" type="button" aria-expanded="false" aria-label="Show the names of the pages" title="Show the names of the pages"><span class="rail-logo-mark" aria-hidden="true">G</span><span class="rail-label" aria-hidden="true">Git Quick</span></button>
       <button class="rail-btn mode-tab active" data-mode="git" title="Git" aria-label="Git" type="button">
         <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="4" cy="3.5" r="1.6"/><circle cx="4" cy="12.5" r="1.6"/><circle cx="12" cy="5.5" r="1.6"/><path d="M4 5.1v5.8M12 7.1c0 3-3 3-6.6 4.2"/></svg>
+        <span class="rail-label" aria-hidden="true">Git</span>
       </button>
       <button class="rail-btn mode-tab" data-mode="search" title="Search the microservices" aria-label="Search the microservices" type="button">
         <!-- Tabler icon "search" (MIT) -->
         <svg class="tabler" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 10m-7 0a7 7 0 1 0 14 0a7 7 0 1 0 -14 0"/><path d="M21 21l-6 -6"/></svg>
+        <span class="rail-label" aria-hidden="true">Search</span>
       </button>
       <button class="rail-btn mode-tab" data-mode="vault" title="Vault" aria-label="Vault" type="button">
         <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>
+        <span class="rail-label" aria-hidden="true">Vault</span>
       </button>
       <button class="rail-btn mode-tab" data-mode="logs" title="Logs" aria-label="Logs" type="button">
         <!-- Tabler icon "list-search" (MIT) -->
         <svg class="tabler" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 15m-4 0a4 4 0 1 0 8 0a4 4 0 1 0 -8 0"/><path d="M18.5 18.5l2.5 2.5"/><path d="M4 6h16"/><path d="M4 12h4"/><path d="M4 18h4"/></svg>
+        <span class="rail-label" aria-hidden="true">Logs</span>
       </button>
       <button class="rail-btn mode-tab" data-mode="docker" title="Containers" aria-label="Containers" type="button">
         <!-- Tabler icon "box" (MIT) -->
         <svg class="tabler" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4.5v9l-8 4.5l-8 -4.5v-9l8 -4.5"/><path d="M12 12l8 -4.5"/><path d="M12 12v9"/><path d="M12 12l-8 -4.5"/></svg>
+        <span class="rail-label" aria-hidden="true">Containers</span>
+      </button>
+      <button class="rail-btn mode-tab" data-mode="db" title="Database" aria-label="Database" type="button">
+        <!-- Tabler icon "database" (MIT) -->
+        <svg class="tabler" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6m-8 0a8 3 0 1 0 16 0a8 3 0 1 0 -16 0"/><path d="M4 6v6a8 3 0 0 0 16 0v-6"/><path d="M4 12v6a8 3 0 0 0 16 0v-6"/></svg>
+        <span class="rail-label" aria-hidden="true">Database</span>
       </button>
       <button class="rail-btn mode-tab" data-mode="clip" title="Clipboard history" aria-label="Clipboard history" type="button">
         <!-- Tabler icon "files" (MIT) -->
         <svg class="tabler" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3v4a1 1 0 0 0 1 1h4"/><path d="M18 17h-7a2 2 0 0 1 -2 -2v-10a2 2 0 0 1 2 -2h4l5 5v7a2 2 0 0 1 -2 2z"/><path d="M16 17v2a2 2 0 0 1 -2 2h-7a2 2 0 0 1 -2 -2v-10a2 2 0 0 1 2 -2h2"/></svg>
+        <span class="rail-label" aria-hidden="true">Clipboard</span>
       </button>
       <button class="rail-btn mode-tab" data-mode="todo" title="Tasks" aria-label="Tasks" type="button">
         <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="2.5"/><path d="M5.5 8.2l1.8 1.8 3.2-3.5"/></svg>
+        <span class="rail-label" aria-hidden="true">Tasks</span>
       </button>
       <button class="rail-btn mode-tab" data-mode="analysis" title="Analysis of the microservices" aria-label="Analysis of the microservices" type="button">
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 13.5h11"/><path d="M4.5 11V8.5M7.5 11V4.5M10.5 11V7"/><circle cx="11.6" cy="3.6" r="1.6"/><path d="M12.8 4.8l1.2 1.2"/></svg>
+        <span class="rail-label" aria-hidden="true">Analysis</span>
       </button>
       <button class="rail-btn mode-tab" data-mode="tools" title="Tools" aria-label="Tools" type="button">
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.6 2.4a3.1 3.1 0 0 0-3.3 4.2L2.6 11.3a1.3 1.3 0 0 0 1.9 1.9l4.7-4.7a3.1 3.1 0 0 0 4.2-3.3l-1.9 1.9-1.6-.3-.3-1.6z"/></svg>
+        <span class="rail-label" aria-hidden="true">Tools</span>
       </button>
       <button class="rail-btn mode-tab" data-mode="help" title="Command help" aria-label="Command help" type="button">
         <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M6.2 6.3a1.9 1.9 0 0 1 3.7.5c0 1.3-1.9 1.6-1.9 2.8M8 11.6h.01"/></svg>
+        <span class="rail-label" aria-hidden="true">Help</span>
       </button>
       <div class="rail-spacer"></div>
       <button id="themeBtn" class="rail-btn" title="Toggle light / dark theme" aria-label="Toggle theme" type="button">
         <svg class="icon-sun" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.6"/><path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M3.6 12.4l1.1-1.1M11.3 4.7l1.1-1.1"/></svg>
         <svg class="icon-moon" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 9.5A5.5 5.5 0 0 1 6.5 3 5.5 5.5 0 1 0 13 9.5z"/></svg>
+        <span class="rail-label" aria-hidden="true">Theme</span>
       </button>
       <button id="settingsBtn" class="rail-btn" title="Settings" aria-label="Settings" type="button">
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h6M11.5 4.5h2M2.5 11.5h2M7.5 11.5h6"/><circle cx="10" cy="4.5" r="1.5"/><circle cx="6" cy="11.5" r="1.5"/></svg>
+        <span class="rail-label" aria-hidden="true">Settings</span>
       </button>
     </nav>
     <div class="shell">
@@ -59,7 +79,9 @@
         <span id="crumbMode" class="crumb-mode">Git</span>
         <span id="crumbSep" class="crumb-sep">/</span>
         <span id="crumbCtx" class="crumb-ctx"></span>
+        <span id="gitBusy" class="git-busy hidden"><span class="spinner" aria-hidden="true"></span><span id="gitBusyText" class="git-busy-text"></span></span>
       </div>
+      <div id="gitBusyBar" class="git-busy-bar hidden" aria-hidden="true"></div>
       <button id="pinBtn" class="pin-btn" type="button" aria-pressed="false" title="Pin: keep the window open when you click outside">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>
       </button>
@@ -113,9 +135,11 @@
       <!-- Branch Info -->
       <div class="branch-bar">
         <div class="branch-info">
-          <div class="view-switch" role="group" aria-label="Show Git or Maven">
+          <div class="view-switch" role="group" aria-label="Show Git, Maven or Bruno">
+            <span id="viewSwitchLine" class="view-switch-line" aria-hidden="true"></span>
             <button id="viewGitBtn" class="view-switch-btn active" type="button" data-view="git" aria-pressed="true" title="Git: changes, branches and history"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M7 6m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M17 6m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M7 8l0 8"/><path d="M9 18h6a2 2 0 0 0 2 -2v-5"/><path d="M14 14l3 -3l3 3"/></svg>Git</button>
             <button id="viewMavenBtn" class="view-switch-btn" type="button" data-view="maven" aria-pressed="false" title="Maven: build, start and debug"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 14c.83 .642 2.077 1.017 3.5 1c1.423 .017 2.67 -.358 3.5 -1c.83 -.642 2.077 -1.017 3.5 -1c1.423 -.017 2.67 .358 3.5 1"/><path d="M8 3a2.4 2.4 0 0 0 -1 2a2.4 2.4 0 0 0 1 2"/><path d="M12 3a2.4 2.4 0 0 0 -1 2a2.4 2.4 0 0 0 1 2"/><path d="M3 10h14v5a6 6 0 0 1 -6 6h-2a6 6 0 0 1 -6 -6v-5z"/><path d="M16.746 16.726a3 3 0 1 0 .252 -5.555"/></svg>Maven</button>
+            <button id="viewBrunoBtn" class="view-switch-btn hidden" type="button" data-view="bruno" aria-pressed="false" title="Bruno: send the requests of the Bruno collection in this repository"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14l11 -11"/><path d="M21 3l-6.5 18a.55 .55 0 0 1 -1 0l-3.5 -7l-7 -3.5a.55 .55 0 0 1 0 -1l18 -6.5"/></svg>Bruno</button>
           </div>
           <svg class="branch-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="4" cy="3.5" r="1.6"/><circle cx="4" cy="12.5" r="1.6"/><circle cx="12" cy="5.5" r="1.6"/><path d="M4 5.1v5.8M12 7.1c0 3-3 3-6.6 4.2"/></svg>
           <button id="branchSwitchBtn" class="branch-switch" type="button" title="Switch to another branch" aria-haspopup="true" aria-expanded="false">
@@ -123,16 +147,14 @@
             <svg class="branch-caret" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
           </button>
         </div>
-        <button id="initRepoBtn" class="btn btn-sm btn-icon folder-only" type="button" title="Make this folder a Git repository"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>Initialize Git</button>
-      </div>
-
-      <!-- Where the branch stands next to origin, and the next step -->
-      <div id="gitStatusLine" class="git-status-line">
+        <!-- where the branch stands next to origin, which explains the next step (Fetch, Pull, Push) after it; then
+             that button, and an arrow with all four -->
         <div id="gslText" class="gsl-text" aria-live="polite"></div>
         <div class="gsl-actions split-btn">
           <button id="syncMainBtn" class="btn btn-sm btn-icon split-main" type="button"><span id="syncMainIcon" class="split-icon" aria-hidden="true"></span><span id="syncMainLabel">Fetch</span></button>
           <button id="syncMoreBtn" class="btn btn-sm split-more" type="button" title="Fetch, pull, push or stash" aria-label="Fetch, pull, push or stash" aria-haspopup="menu"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button>
         </div>
+        <button id="initRepoBtn" class="btn btn-sm btn-icon folder-only" type="button" title="Make this folder a Git repository"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>Initialize Git</button>
       </div>
 
       <!-- Tabs -->
@@ -161,6 +183,7 @@
               <div class="file-list-actions">
                 <button id="parkBtn" class="btn btn-sm btn-icon" type="button" title="Move the selected files to a folder that Git ignores in this repository, so they are left out of commits" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M19 19h-14a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 1.172 -1.821m3.828 -.179h1l3 3h7a2 2 0 0 1 2 2v8"/></svg>Move to ignored folder...</button>
                 <button id="revertBtn" class="btn btn-sm btn-danger btn-icon" type="button" title="Throw away the changes in the selected files and go back to the last commit" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14l-4 -4l4 -4"/><path d="M5 10h11a4 4 0 1 1 0 8h-1"/></svg><span class="btn-label">Revert...</span></button>
+                <button id="groupFoldersBtn" class="btn btn-sm btn-icon group-folders-btn" type="button" aria-pressed="false" aria-label="Group by folder" title="Group the files by folder, as a tree"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5.5a1.5 1.5 0 0 1 1.5 -1.5h3l2 2h3.5a1.5 1.5 0 0 1 1.5 1.5v1a1.5 1.5 0 0 1 -1.5 1.5h-8.5a1.5 1.5 0 0 1 -1.5 -1.5z"/><path d="M6 10v7.5a1.5 1.5 0 0 0 1.5 1.5h3.5"/><path d="M6 14h5"/><path d="M15 14h6"/><path d="M15 19h6"/></svg></button>
               </div>
             </div>
             <div id="fileList" class="file-list"></div>
@@ -208,8 +231,10 @@
         <div class="push-target-area">
           <label class="push-target-label" for="pushTarget">Push to</label>
           <span class="push-target-prefix">origin/</span>
-          <input id="pushTarget" class="input push-target-input" list="pushTargetOptions" maxlength="200" placeholder="branch name" autocomplete="off" spellcheck="false" title="Remote branch that receives the push. Pick an existing one or type a new name; it is remembered for this repository. Empty = the usual branch." />
-          <datalist id="pushTargetOptions"></datalist>
+          <span class="push-target-field">
+            <input id="pushTarget" class="input push-target-input" maxlength="200" placeholder="branch name" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="pushTargetMenu" title="Remote branch that receives the push: any branch on origin, or a new name, which the push creates. Remembered for this repository. Empty = the usual branch." />
+            <button id="pushTargetCaret" class="push-target-caret" type="button" tabindex="-1" aria-label="Show the branches on origin"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button>
+          </span>
           <button id="pushNowBtn" class="btn btn-primary" type="button" disabled>Push</button>
         </div>
         <div id="pushSummary" class="push-summary"></div>
@@ -281,19 +306,71 @@
       </div>
 
       <!-- Maven Tab -->
-      <div id="tab-maven" class="tab-content">
-        <div id="mvnFolderRow" class="mvn-folder-row hidden">
-          <label class="mvn-folder-label" for="mvnFolder">Runs in</label>
-          <select id="mvnFolder" class="input mvn-folder" title="The folder of the microservice where the Maven commands run (where its pom.xml is), saved for this repository"></select>
-          <span id="mvnFolderNote" class="mvn-folder-note"></span>
+      <!-- Bruno: the requests of the repository's Bruno collection, sent with the Bruno CLI (renderer/bruno.js) -->
+      <div id="tab-bruno" class="tab-content">
+        <div id="bruNote" class="bru-note hidden" role="status"></div>
+        <div class="bru-body">
+          <div id="bruTree" class="bru-tree" role="tree" aria-label="Requests"></div>
+          <div id="bruTreeSplit" class="bru-tree-split" role="separator" aria-orientation="vertical" aria-label="Drag to make the list of requests wider or narrower" title="Drag to make the list of requests wider or narrower (double click: as it was)" tabindex="0"></div>
+          <div id="bruDetail" class="bru-detail empty">
+            <!-- the request, to change (bruno/editor.js): name, Save / Revert, the variables and environment; method and address, its parts in tabs -->
+            <div class="bru-req-head">
+              <input id="bruReqName" class="bru-req-name" type="text" spellcheck="false" autocomplete="off" maxlength="120" aria-label="Request name" title="Its name: change it here, Save writes it to its file (Enter: done, Esc: back to the name saved)" disabled />
+              <span id="bruDirty" class="bru-dirty hidden"></span>
+              <span class="bru-head-gap"></span>
+              <button id="bruRevertBtn" class="btn btn-sm hidden" type="button" title="Forget the changes: the request as its file has it">Revert</button>
+              <button id="bruSaveBtn" class="btn btn-sm btn-primary hidden" type="button" title="Write the changes to its .bru file (Cmd+S)">Save</button>
+              <div id="bruBar" class="bru-bar">
+                <!-- on the right of the name: the collection (when there are several), the variables, the environment and its editor -->
+                <select id="bruCollection" class="input bru-select hidden" aria-label="Collection" title="The Bruno collection (a folder with a bruno.json)"></select>
+                <button id="bruVarsBtn" class="btn btn-sm btn-icon bru-vars-btn" type="button" aria-haspopup="dialog" aria-expanded="false" title="The variables: the environment's, and those the scripts kept"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4c-2.5 5 -2.5 11 0 16"/><path d="M19 4c2.5 5 2.5 11 0 16"/><path d="M9 9h1c1 0 1 1 2.016 3.527c.984 2.473 .984 3.473 1.984 3.473h1"/><path d="M8 16c1.5 0 3 -2 4 -3.5s2.5 -3.5 4 -3.5"/></svg><span class="bru-vars-label">Variables</span><span id="bruVarsCount" class="bru-count hidden"></span></button>
+                <div id="bruVarsPop" class="clip-menu bru-vars-pop hidden" role="dialog" aria-label="Variables"></div>
+                <span class="bru-env-pick">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0"/><path d="M3.6 9h16.8"/><path d="M3.6 15h16.8"/><path d="M11.5 3a17 17 0 0 0 0 18"/><path d="M12.5 3a17 17 0 0 1 0 18"/></svg>
+                  <select id="bruEnv" class="input bru-select" aria-label="Environment" title="The environment the requests are sent in: its variables ({{baseUrl}}...)"></select>
+                </span>
+                <button id="bruEnvBtn" class="btn btn-sm btn-icon bru-env-btn" type="button" aria-haspopup="dialog" title="Environments: add one, change its variables" aria-label="Edit environments"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4"/><path d="M13.5 6.5l4 4"/></svg></button>
+              </div>
+            </div>
+            <div class="bru-req-line">
+              <select id="bruMethodSel" class="bru-method-select" aria-label="Method"><option value="GET">GET</option><option value="POST">POST</option><option value="PUT">PUT</option><option value="PATCH">PATCH</option><option value="DELETE">DELETE</option><option value="OPTIONS">OPTIONS</option><option value="HEAD">HEAD</option></select>
+              <div class="bru-url-box">
+                <div class="bru-url-shade" aria-hidden="true"><span id="bruUrlShade"></span></div>
+                <input id="bruUrlInput" class="bru-url-input" type="text" spellcheck="false" autocomplete="off" aria-label="Address" />
+              </div>
+              <button id="bruSendBtn" class="btn btn-primary btn-sm btn-icon" type="button" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14l11 -11"/><path d="M21 3l-6.5 18a.55 .55 0 0 1 -1 0l-3.5 -7l-7 -3.5a.55 .55 0 0 1 0 -1l18 -6.5"/></svg><span class="btn-label">Send</span></button>
+            </div>
+            <!-- under the address: the request on the left, what came back on the right (one over the other when narrow) -->
+            <div id="bruPanes" class="bru-panes">
+              <div id="bruReqSide" class="bru-req-side">
+                <div id="bruEditTabs" class="bru-tabs bru-edit-tabs" role="tablist" aria-label="The request"></div>
+                <div id="bruEditPane" class="bru-edit-pane" role="tabpanel"></div>
+              </div>
+              <div id="bruSplit" class="bru-split" role="separator" aria-orientation="vertical" aria-label="Drag to give the request or the response more room" title="Drag to give the request or the response more room (double click: as it was)" tabindex="0"></div>
+              <!-- what came back (bruno/response.js) -->
+              <div id="bruResSide" class="bru-res-side">
+                <div class="bru-res-head">
+                  <div id="bruTabs" class="bru-tabs" role="tablist" aria-label="What came back"></div>
+                  <div id="bruStatusLine" class="bru-status-line" aria-live="polite"></div>
+                </div>
+                <div id="bruPane" class="bru-pane" role="tabpanel"></div>
+              </div>
+            </div>
+          </div>
         </div>
+      </div>
+      <div id="tab-maven" class="tab-content">
         <div id="mvnNoPom" class="list-note hidden">No pom.xml in the root of this repository.</div>
         <div id="mvnPanel" class="mvn-panel">
+          <!-- Run, the command, then on the right the folder it runs in (moved on top when the folder has no pom.xml) -->
           <div id="mvnCmdline" class="mvn-cmdline">
+            <!-- Run, or Stop while the microservice runs; "Run macro" too then, for a macro that stops it first (to restart it) -->
+            <button id="mvnRunBtn" class="btn btn-primary btn-sm mvn-run" type="button"><svg id="mvnRunIcon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg><span id="mvnRunLabel">Run</span></button>
+            <button id="mvnRestartBtn" class="btn btn-sm mvn-run mvn-restart hidden" type="button"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg>Run macro</button>
             <div class="mvn-words">
               <span class="mvn-prefix" aria-hidden="true">mvn</span>
               <span class="mvn-goal">
-                <select id="mvnCommand" class="mvn-goal-select" aria-label="Maven command">
+                <select id="mvnCommand" class="mvn-goal-select" aria-label="Maven command" data-own-menu>
                   <option value="clean-install">clean install</option>
                   <option value="install-skip-tests">clean install -DskipTests</option>
                   <option value="test">test</option>
@@ -314,33 +391,58 @@
               <span id="mvnTags" class="mvn-tags"></span>
               <button id="mvnOptionsBtn" class="mvn-add-option" type="button" aria-haspopup="true" aria-expanded="false" title="Add flags and pom.xml profiles">+ option</button>
             </div>
-            <button id="mvnRunBtn" class="btn btn-primary btn-sm mvn-run" type="button"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg>Run</button>
+            <div id="mvnFolderRow" class="mvn-folder-row hidden">
+              <label class="mvn-folder-label" for="mvnFolder">Runs in</label>
+              <select id="mvnFolder" class="input mvn-folder" title="The folder of the microservice where the Maven commands run (where its pom.xml is), saved for this repository"></select>
+              <span id="mvnFolderNote" class="mvn-folder-note"></span>
+            </div>
+            <!-- the ports of Start and Debug, in a popover -->
+            <!-- the values Start and Debug take, per variable from an environment's application file (mvn-values.js) -->
+            <button id="mvnValuesBtn" class="mvn-values-btn hidden" type="button" aria-haspopup="dialog" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0"/><path d="M3.6 9h16.8"/><path d="M3.6 15h16.8"/><path d="M11.5 3a17 17 0 0 0 0 18"/><path d="M12.5 3a17 17 0 0 1 0 18"/></svg><span id="mvnValuesLabel">Values: local</span></button>
+            <button id="mvnPortsBtn" class="mvn-ports-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="mvnPortsPop" title="Start / Debug ports"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z"/><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></svg></button>
           </div>
-          <div class="mvn-ports" title="Used by Start and Debug, saved for this repository">
-            <span class="mvn-ports-title">Start / Debug:</span>
-            <label class="mvn-port-label" for="mvnDebugPort">debug port</label>
-            <input id="mvnDebugPort" class="mvn-port" type="text" inputmode="numeric" maxlength="5" placeholder="5005" autocomplete="off" title="Port the debugger connects to (Remote JVM Debug in IntelliJ)" />
-            <label class="mvn-port-label" for="mvnServerPort">app port</label>
-            <input id="mvnServerPort" class="mvn-port" type="text" inputmode="numeric" maxlength="5" placeholder="project" autocomplete="off" title="Port the microservice listens on (server.port). Empty keeps the project's own setting." />
-            <label class="mvn-external" title="Opens a separate window (PowerShell on Windows, Terminal on Mac) instead of showing the output here">
-              <input id="mvnExternal" type="checkbox" /> Separate window
-            </label>
-          </div>
-          <div class="mvn-status-row">
-            <span id="mvnStatus" class="mvn-status">Idle</span>
-            <span id="mvnWrapper" class="mvn-wrapper hidden">using mvnw</span>
-            <button id="mvnStopBtn" class="btn btn-sm btn-danger hidden" type="button">Stop</button>
-            <button id="mvnClearBtn" class="btn btn-sm" type="button">Clear</button>
+          <div id="mvnPortsPop" class="clip-menu mvn-ports-pop hidden" role="dialog" aria-label="Start / Debug ports">
+            <div class="mvn-ports-title">Start / Debug ports</div>
+            <label class="mvn-port-row" for="mvnDebugPort"><span>Debug port</span><input id="mvnDebugPort" class="input mvn-port" type="text" inputmode="numeric" maxlength="5" placeholder="5005" autocomplete="off" title="Port the debugger connects to (Remote JVM Debug in IntelliJ)" /></label>
+            <label class="mvn-port-row" for="mvnServerPort"><span>App port</span><input id="mvnServerPort" class="input mvn-port" type="text" inputmode="numeric" maxlength="5" placeholder="project" autocomplete="off" title="Port the microservice listens on (server.port). Empty keeps the project's own setting." /></label>
+            <p class="mvn-ports-hint">Used by Start and Debug, saved for this microservice. An empty app port keeps the project's own (server.port).</p>
           </div>
           <div class="mvn-output-row">
-            <div id="mvnModules" class="mvn-modules hidden" role="group" aria-label="Modules of the build">
-              <div class="mvn-mod-head"><span>Modules</span><span id="mvnModCount" class="mvn-mod-count"></span></div>
-              <ol id="mvnModList" class="mvn-mod-list"></ol>
-              <button id="mvnModFold" class="mvn-mod-fold" type="button" aria-expanded="true" aria-controls="mvnModList" title="Show only the bars" aria-label="Show only the bars">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 7l-5 5l5 5"/><path d="M17 7l-5 5l5 5"/></svg>
-              </button>
+            <!-- left of the output: the steps of a macro, and the modules of the build (of the step that builds) -->
+            <div class="mvn-side">
+              <div id="mvnSteps" class="mvn-modules mvn-steps hidden" role="group" aria-label="Steps of the macro">
+                <div class="mvn-mod-head"><span>Steps</span><span id="mvnStepCount" class="mvn-mod-count"></span></div>
+                <ol id="mvnStepList" class="mvn-mod-list"></ol>
+                <button id="mvnStepFold" class="mvn-mod-fold" type="button" aria-expanded="true" aria-controls="mvnStepList" title="Show only the bars" aria-label="Show only the bars">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 7l-5 5l5 5"/><path d="M17 7l-5 5l5 5"/></svg>
+                </button>
+              </div>
+              <div id="mvnModules" class="mvn-modules hidden" role="group" aria-label="Modules of the build">
+                <div class="mvn-mod-head"><span>Modules</span><span id="mvnModCount" class="mvn-mod-count"></span></div>
+                <ol id="mvnModList" class="mvn-mod-list"></ol>
+                <button id="mvnModFold" class="mvn-mod-fold" type="button" aria-expanded="true" aria-controls="mvnModList" title="Show only the bars" aria-label="Show only the bars">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 7l-5 5l5 5"/><path d="M17 7l-5 5l5 5"/></svg>
+                </button>
+              </div>
             </div>
-            <pre id="mvnOutput" class="mvn-output"></pre>
+            <!-- the output, and over it what goes with it: search, how the last run went, a separate window, Clear -->
+            <div class="mvn-console">
+              <div class="mvn-console-head">
+                <!-- search in the output: the matches marked, Enter / Shift+Enter between them, Ctrl+F (Cmd+F) to get here -->
+                <span class="mvn-find" role="search">
+                  <svg class="mvn-find-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 10m-7 0a7 7 0 1 0 14 0a7 7 0 1 0 -14 0"/><path d="M21 21l-6 -6"/></svg>
+                  <input id="mvnFind" class="mvn-find-input" type="text" placeholder="Search the output" autocomplete="off" spellcheck="false" aria-label="Search the output" aria-describedby="mvnFindCount" />
+                  <span id="mvnFindCount" class="mvn-find-count" aria-live="polite"></span>
+                  <button id="mvnFindPrev" class="mvn-find-btn" type="button" title="Previous match (Shift+Enter)" aria-label="Previous match"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 10l4-4 4 4"/></svg></button>
+                  <button id="mvnFindNext" class="mvn-find-btn" type="button" title="Next match (Enter)" aria-label="Next match"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button>
+                </span>
+                <span id="mvnStatus" class="mvn-status">Idle</span>
+                <span id="mvnWrapper" class="mvn-wrapper hidden">using mvnw</span>
+                <label class="mvn-ext" title="Opens a separate window (PowerShell on Windows, Terminal on Mac) instead of showing the output here"><input id="mvnExternal" type="checkbox" aria-label="Run in a separate window" /><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 9l3 3l-3 3"/><path d="M13 15h3"/><path d="M3 6a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2z"/></svg></label>
+                <button id="mvnClearBtn" class="mvn-head-btn" type="button" title="Clear the output" aria-label="Clear the output"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 20h-10.5l-4.21 -4.3a1 1 0 0 1 0 -1.41l10 -10a1 1 0 0 1 1.41 0l5 5a1 1 0 0 1 0 1.41l-9.2 9.3"/><path d="M18 13.3l-6.3 -6.3"/></svg></button>
+              </div>
+              <pre id="mvnOutput" class="mvn-output"></pre>
+            </div>
           </div>
         </div>
       </div>
@@ -393,16 +495,16 @@
           </div>
           <div id="vaultItems" class="vault-split vd-split"></div>
           <div id="qaCredential" class="vault-quick hidden">
-            <span class="type-pill type-credential">New</span>
             <input id="qaCredTitle" class="input vault-quick-input" maxlength="120" placeholder="Label" />
             <input id="qaCredUser" class="input vault-quick-input mono" maxlength="200" placeholder="Username" autocomplete="off" />
             <input id="qaCredPass" class="input vault-quick-input mono" type="password" maxlength="500" placeholder="Password" autocomplete="new-password" />
+            <select id="qaCredEnv" class="input vault-quick-input vault-quick-env" aria-label="Environment" title="The environment it goes to"></select>
             <button id="qaCredAdd" class="btn btn-primary btn-sm vault-quick-add" type="button">Add</button>
           </div>
           <div id="qaLink" class="vault-quick hidden">
-            <span class="type-pill type-link">New</span>
             <input id="qaLinkTitle" class="input vault-quick-input" maxlength="120" placeholder="Title (optional)" />
             <input id="qaLinkUrl" class="input vault-quick-input mono span-2" maxlength="1000" placeholder="URL - copy a link and it appears here" autocomplete="off" />
+            <select id="qaLinkEnv" class="input vault-quick-input vault-quick-env" aria-label="Environment" title="The environment it goes to"></select>
             <button id="qaLinkAdd" class="btn btn-primary btn-sm vault-quick-add" type="button">Add</button>
           </div>
         </div>
@@ -509,6 +611,33 @@
       </div>
     </div>
 
+    <!-- Database: the data of a PostgreSQL database, read only (db/db.js, db/db-conn.js) -->
+    <div id="dbView" class="body hidden">
+      <div class="content db-page">
+        <div class="db-bar">
+          <select id="dbConn" class="input db-conn" aria-label="Connection" title="The PostgreSQL connection"></select>
+          <button id="dbConnBtn" class="btn btn-sm btn-icon db-icon-btn" type="button" aria-haspopup="dialog" title="Connections: add one, change it, test it" aria-label="Connections"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z"/><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></svg></button>
+          <button id="dbRefreshBtn" class="btn btn-sm btn-icon db-icon-btn" type="button" title="Read the schemas and tables again" aria-label="Refresh"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg></button>
+          <span id="dbStatus" class="db-status" aria-live="polite"></span>
+          <span class="db-ro" title="This page only reads: one SELECT, WITH, SHOW, EXPLAIN, VALUES or TABLE at a time, in a read only transaction">read only</span>
+        </div>
+        <div id="dbEmpty" class="db-empty hidden">
+          <p>Connect to a PostgreSQL database to see its tables and rows. Nothing here changes data.</p>
+          <button id="dbEmptyNew" class="btn btn-primary" type="button">+ New connection</button>
+        </div>
+        <div id="dbMain" class="db-main">
+          <aside class="db-side">
+            <input id="dbFilter" class="input db-filter" placeholder="Find a table" aria-label="Find a table" spellcheck="false" />
+            <div id="dbTree" class="db-tree" role="tree" aria-label="Schemas and tables"></div>
+          </aside>
+          <section class="db-detail">
+            <div id="dbTabs" class="bru-tabs db-tabs" role="tablist" aria-label="The table"></div>
+            <div id="dbPane" class="db-pane" role="tabpanel"></div>
+          </section>
+        </div>
+      </div>
+    </div>
+
     <!-- Clipboard history -->
     <div id="clipView" class="body hidden">
       <div class="content">
@@ -612,6 +741,33 @@
     </div>
 
     </div>
+
+    <!-- The Git panel: every git command the app runs. Closed it is one line with the last one; open, the list -->
+    <section id="gitConsole" class="git-console" aria-label="Git commands">
+      <div id="gitConsoleResizer" class="git-console-resizer hidden" role="separator" aria-orientation="horizontal" aria-label="Height of the Git panel" title="Drag to make it taller or shorter"></div>
+      <div class="git-console-bar">
+        <button id="gitConsoleToggle" class="git-console-toggle" type="button" aria-expanded="false" aria-controls="gitConsoleList" title="Show every git command the app runs, and type your own (Ctrl+`)">
+          <svg class="git-console-caret" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 9.5L8 6l3.5 3.5"/></svg>
+          <span class="git-console-title">Git commands</span>
+          <span id="gitConsoleCount" class="git-console-count">0</span>
+          <span id="gitConsoleDot" class="git-console-dot hidden" title="Running"></span>
+          <span id="gitConsoleLast" class="git-console-last"></span>
+        </button>
+        <div id="gitConsoleActions" class="git-console-actions hidden">
+          <button id="gitConsoleTyped" class="btn btn-sm" type="button" aria-pressed="false" title="Show only the commands typed below, with their output">Typed only</button>
+          <button id="gitConsoleCopy" class="btn btn-sm" type="button" title="Copy every command in the list, with its time, folder and result">Copy</button>
+          <button id="gitConsoleClear" class="btn btn-sm" type="button" title="Empty the list">Clear</button>
+        </div>
+      </div>
+      <div id="gitConsoleList" class="git-console-list hidden" role="log" aria-label="Git commands, oldest first"></div>
+      <!-- a git command typed here runs in the repository on show; its output goes under it in the list -->
+      <div id="gcPrompt" class="gc-prompt hidden">
+        <span id="gcWhere" class="gc-where"></span>
+        <label class="gc-git" for="gcInput">git</label>
+        <input id="gcInput" class="gc-input" type="text" autocomplete="off" spellcheck="false" aria-label="Git command to run" />
+        <button id="gcStop" class="gc-stop hidden" type="button" title="Stop it (Ctrl+C)">Stop</button>
+      </div>
+    </section>
     </div>
 
     <!-- Pop-out card window -->
@@ -958,18 +1114,36 @@
     <div id="mvnMacroModal" class="settings-overlay hidden">
       <div class="settings-card mvn-macro-card" role="dialog" aria-modal="true" aria-labelledby="mvnMacroTitle">
         <h3 id="mvnMacroTitle">New macro</h3>
+        <div id="mvnMacroTemplates" class="mvn-macro-templates hidden" role="group" aria-label="Start from"></div>
         <label class="settings-label" for="mvnMacroName">Name</label>
         <input id="mvnMacroName" class="input" maxlength="60" placeholder="Rebuild and restart" autocomplete="off" spellcheck="false" />
         <div class="settings-label mvn-macro-steps-label">Steps, in this order</div>
         <ol id="mvnMacroSteps" class="mvn-macro-steps"></ol>
         <select id="mvnMacroAdd" class="input mvn-macro-add" aria-label="Add a step"></select>
-        <p class="settings-hint">For every microservice, in its folder. It stops at the first step that fails. Stop ends what is running in the microservice, so the app can start again; a step that starts the app keeps running, so it goes last.</p>
+        <p class="settings-hint">For every microservice: git steps in its repository, Maven steps in its folder. It stops at the first step that fails. What a step asks (a new branch's name, what to do with local changes) is asked once, when the macro starts. Stop ends what is running in the microservice, so the app can start again; a step that starts the app keeps running, so it goes last.</p>
         <div id="mvnMacroError" class="tool-error" role="alert"></div>
         <div class="action-row settings-actions mvn-macro-actions">
           <button id="mvnMacroDelete" class="btn btn-danger hidden" type="button">Delete</button>
           <span class="mvn-macro-spacer"></span>
           <button id="mvnMacroCancel" class="btn" type="button">Cancel</button>
           <button id="mvnMacroSave" class="btn btn-primary" type="button">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- A macro starting: what its steps ask (a new branch's name, what to do with local changes), then what it runs -->
+    <div id="mvnAskModal" class="settings-overlay hidden">
+      <div class="settings-card mvn-ask-card" role="dialog" aria-modal="true" aria-labelledby="mvnAskTitle" aria-describedby="mvnAskWhere">
+        <h3 id="mvnAskTitle">Run macro</h3>
+        <p id="mvnAskWhere" class="mvn-ask-where"></p>
+        <div id="mvnAskBody" class="mvn-ask-body"></div>
+        <div class="settings-label">What it runs</div>
+        <ol id="mvnAskSteps" class="mvn-ask-steps"></ol>
+        <div id="mvnAskError" class="tool-error" role="alert"></div>
+        <div class="action-row settings-actions mvn-macro-actions">
+          <span class="mvn-macro-spacer"></span>
+          <button id="mvnAskCancel" class="btn" type="button">Cancel</button>
+          <button id="mvnAskRun" class="btn btn-primary" type="button">Run</button>
         </div>
       </div>
     </div>
@@ -996,9 +1170,30 @@
   </div>
 
   <script src="app.js"></script>
+  <script src="sync-card.js"></script>
+  <script src="db/db.js"></script>
+  <script src="db/db-link.js"></script>
+  <script src="db/db-conn.js"></script>
   <script src="vault.js"></script>
   <script src="todo.js"></script>
+  <!-- before maven.js, which sets up its button when it loads -->
+  <script src="mvn-values.js"></script>
   <script src="maven.js"></script>
+  <script src="bruno/state.js"></script>
+  <script src="bruno/view.js"></script>
+  <script src="bruno/tree.js"></script>
+  <script src="bruno/req-menu.js"></script>
+  <script src="bruno/kv.js"></script>
+  <script src="bruno/editor.js"></script>
+  <script src="bruno/snippets.js"></script>
+  <script src="bruno/split.js"></script>
+  <script src="bruno/response.js"></script>
+  <script src="bruno/pick.js"></script>
+  <script src="bruno/run.js"></script>
+  <script src="bruno/vars.js"></script>
+  <script src="bruno/envs.js"></script>
+  <script src="bruno/sidebar.js"></script>
+  <script src="bruno/setup.js"></script>
   <script src="clipboard.js"></script>
   <script src="logs.js"></script>
   <script src="containers.js"></script>
@@ -1010,5 +1205,7 @@
   <script src="search.js"></script>
   <script src="groups-board.js"></script>
   <script src="compare.js"></script>
+  <script src="git-console.js"></script>
+  <script src="select-menu.js"></script>
 </body>
 </html>

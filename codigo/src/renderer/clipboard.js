@@ -194,7 +194,7 @@ function setupClips() {
     renderClips();
   });
   $('#clipClearBtn').addEventListener('click', async () => {
-    if (!(await window.git.confirm('Delete the clipboard history? Pinned items are kept.'))) return;
+    if (!(await askConfirm('Delete the clipboard history? Pinned items are kept.'))) return;
     await window.clips.clear();
     await refreshClips();
   });

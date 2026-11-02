@@ -5,6 +5,11 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+// Every git process the app starts is listed in the Git panel at the bottom of the window.
+const gitLog = require('./git-log');
+gitLog.install();
+// Which repositories changed on disk since git was last asked about them.
+const repoWatch = require('./repo-watch');
 const Store = require('./store');
 const { findRepos } = require('./scan');
 const GitService = require('./git-service');
@@ -14,12 +19,16 @@ const { TodoStore } = require('./todos');
 const { MyCommands } = require('./my-commands');
 const { RepoGroups } = require('./repo-groups');
 const { registerTools } = require('./tools');
+const { compareSpecs } = require('./api-diff');
 const { registerAnalysis } = require('./analysis');
 const { registerSearch } = require('./search');
 const { registerCardWindows } = require('./card-windows');
 const { registerMaven } = require('./maven');
 const { registerContainers } = require('./containers');
 const { registerTerminal } = require('./terminal');
+const { registerIdeOpen } = require('./ide-open');
+const { registerBruno } = require('./bruno');
+const { registerDb } = require('./db');
 const { stepBack } = require('./shell');
 const { registerSignInWindows } = require('./sign-in-window');
 const { registerClipboardHistory } = require('./clipboard-history');
@@ -34,6 +43,8 @@ const DATA_DIR = app.isPackaged
   ? path.join(process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(process.execPath), 'data')
   : path.join(__dirname, '..', 'data');
 const ELECTRON_DIR = path.join(DATA_DIR, 'electron');
+// the app's own files change all the time: not a change of the repository they may be in
+repoWatch.ignore(DATA_DIR);
 fs.mkdirSync(ELECTRON_DIR, { recursive: true });
 if (!app.isPackaged) {
   // One-time move of data from the old AppData location. The vault key lives in "Local State", so it moves with vault.dat.
@@ -79,6 +90,7 @@ let pinned = false;
 let maven = null;
 let containers = null;
 let terminal = null;
+let bruno = null;
 // Log explorer: settings and credentials in data/logs-config.json. Requests go through Chromium's network stack,
 // so Windows' trusted certificates and proxy settings apply.
 // Grafana with browserLogin: a login window like the log-explorer's, and the requests made inside a Grafana page.
@@ -329,6 +341,56 @@ function revealPath(target) {
   shell.showItemInFolder(target);
 }
 
+// Tools > Compare APIs: a spec from a file or an address (the window gets its text), and the comparison of two.
+const API_SPEC_MAX = 20 * 1024 * 1024;
+const API_FETCH_MS = 20000;
+
+function registerApiCompare() {
+  ipcMain.handle('tools-api-open', async () => {
+    const result = await withDialog(() =>
+      dialog.showOpenDialog(mainWindow, {
+        title: 'Open an OpenAPI or Swagger spec',
+        properties: ['openFile'],
+        filters: [{ name: 'OpenAPI or Swagger (JSON, YAML)', extensions: ['json', 'yaml', 'yml'] }, { name: 'All files', extensions: ['*'] }],
+      })
+    );
+    if (result.canceled || result.filePaths.length === 0) return { canceled: true };
+    try {
+      const file = result.filePaths[0];
+      if (fs.statSync(file).size > API_SPEC_MAX) return { error: 'This file is too big for a spec (over 20 MB)' };
+      return { text: fs.readFileSync(file, 'utf8'), name: path.basename(file) };
+    } catch (e) {
+      return { error: e.message };
+    }
+  });
+  ipcMain.handle('tools-api-fetch', async (_, address) => {
+    let url;
+    try {
+      url = new URL(String(address || '').trim());
+    } catch {
+      return { error: 'Type an address like http://localhost:8080/v3/api-docs' };
+    }
+    if (!/^https?:$/.test(url.protocol)) return { error: 'Use an http:// or https:// address' };
+    try {
+      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error(`No answer from ${url.host} in ${API_FETCH_MS / 1000} seconds`)), API_FETCH_MS));
+      const res = await Promise.race([net.fetch(url.toString(), { headers: { Accept: 'application/json, application/yaml, text/yaml, */*' } }), timeout]);
+      if (!res.ok) return { error: `${url.host} answered ${res.status} ${res.statusText}`.trim() };
+      const text = await Promise.race([res.text(), timeout]);
+      if (text.length > API_SPEC_MAX) return { error: 'The answer is too big for a spec (over 20 MB)' };
+      return { text, name: `${url.host}${url.pathname}` };
+    } catch (e) {
+      return { error: `Couldn't get it: ${e.message}` };
+    }
+  });
+  ipcMain.handle('tools-api-compare', (_, before, after) => {
+    try {
+      return compareSpecs(String(before || ''), String(after || ''));
+    } catch (e) {
+      return { error: e.message };
+    }
+  });
+}
+
 async function withDialog(fn) {
   dialogOpen = true;
   try {
@@ -461,6 +523,7 @@ app.whenReady().then(() => {
   });
   containers = registerContainers({ getWindow: () => mainWindow });
   registerTools({ copySecret });
+  registerApiCompare();
   const listNamedRepos = () => {
     const names = store.get('repoNames', {});
     return getRepoList().map((p) => ({ path: p, name: names[pathKey(p)] || path.basename(p) }));
@@ -468,6 +531,9 @@ app.whenReady().then(() => {
   registerAnalysis({ listRepos: listNamedRepos, isKnownRepo, openPath });
   registerSearch({ listRepos: listNamedRepos, isKnownRepo, openPath, revealPath });
   terminal = registerTerminal({ isKnownRepo, getWindow: () => mainWindow });
+  registerIdeOpen({ isKnownRepo });
+  bruno = registerBruno({ isKnownRepo, getWindow: () => mainWindow, savedDir: path.join(DATA_DIR, 'saved-requests') });
+  registerDb({ dataDir: DATA_DIR });
   maven = registerMaven({
     isKnownRepo,
     getWindow: () => mainWindow,
@@ -516,7 +582,7 @@ app.on('before-quit', (e) => {
   if (quitting || !maven) return;
   e.preventDefault();
   quitting = true;
-  Promise.all([maven.stopAll(), terminal ? terminal.stop() : null]).finally(() => app.quit());
+  Promise.all([maven.stopAll(), terminal ? terminal.stop() : null, bruno ? bruno.stopAll() : null]).finally(() => app.quit());
 });
 
 app.on('window-all-closed', (e) => {
@@ -525,18 +591,35 @@ app.on('window-all-closed', (e) => {
 
 function setupIPC() {
   setupWindowSizeIPC();
+  // The Git panel: the commands so far, then each one as it starts and ends.
+  gitLog.onChange((batch) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('git-log', batch);
+  });
+  ipcMain.handle('git-log-list', () => gitLog.list());
+  ipcMain.handle('git-log-clear', () => gitLog.clear());
+  ipcMain.handle('git-log-copy', () => {
+    const text = gitLog.text();
+    if (!text) return { error: 'Nothing to copy' };
+    clipboard.writeText(text);
+    return { count: text.split('\n').length };
+  });
   ipcMain.handle('get-repos', () => {
     const names = store.get('repoNames', {});
     const favorites = new Set(store.get('repoFavorites', []));
     const groupOf = repoGroups.members();
-    return getRepoList().map((p) => ({
+    const list = getRepoList().map((p) => ({
       path: p,
       name: names[pathKey(p)] || '',
       favorite: favorites.has(pathKey(p)),
       group: groupOf[pathKey(p)] || '',
       isGit: isGitFolder(p),
     }));
+    repoWatch.sync(list.filter((r) => r.isGit).map((r) => r.path));
+    return list;
   });
+  // How many changes each repository had on disk so far (-1: not watched), so the page asks git only about the ones
+  // that changed since it last did.
+  ipcMain.handle('repo-changes', (_, paths) => repoWatch.counts(Array.isArray(paths) ? paths.map(String) : []));
 
   // Groups of the list: create, rename, delete, order, fold, and the group of a repository.
   ipcMain.handle('repo-groups-get', () => vaultCall(() => ({ groups: repoGroups.list() })));
@@ -576,8 +659,10 @@ function setupIPC() {
     return error ? { error } : { success: true };
   });
 
-  ipcMain.handle('get-repo-summaries', async () => {
-    const repos = getRepoList();
+  // The branch and changes of each repository, or of these ones only.
+  ipcMain.handle('get-repo-summaries', async (_, only) => {
+    const known = getRepoList();
+    const repos = Array.isArray(only) ? known.filter((p) => only.includes(p)) : known;
     const summary = async (p) => {
       if (!fs.existsSync(p)) return { error: 'Folder not found' };
       if (!isGitFolder(p)) return { notGit: true };
@@ -667,24 +752,29 @@ function setupIPC() {
     return error ? { error } : { success: true };
   });
 
+  // Out of the list, and what the app kept for them (name, favorite, group, push target, Maven ports and folder). Their
+  // folders stay as they are.
+  const forgetRepos = (paths) => {
+    const keys = new Set(paths.map((p) => pathKey(String(p))));
+    store.set('repos', getRepoList().filter((r) => !keys.has(pathKey(r))));
+    store.set('repoFavorites', store.get('repoFavorites', []).filter((k) => !keys.has(k)));
+    for (const name of ['repoNames', 'pushTargets', 'mavenPorts', 'mavenDirs']) {
+      const kept = { ...store.get(name, {}) };
+      for (const key of keys) delete kept[key];
+      store.set(name, kept);
+    }
+    for (const key of keys) repoGroups.forget(key);
+  };
+
   ipcMain.handle('remove-repo', (_, repoPath) => {
-    const key = pathKey(repoPath);
-    store.set('repos', getRepoList().filter((r) => pathKey(r) !== key));
-    const names = { ...store.get('repoNames', {}) };
-    delete names[key];
-    store.set('repoNames', names);
-    store.set('repoFavorites', store.get('repoFavorites', []).filter((k) => k !== key));
-    repoGroups.forget(key);
-    const targets = { ...store.get('pushTargets', {}) };
-    delete targets[key];
-    store.set('pushTargets', targets);
-    const mavenPorts = { ...store.get('mavenPorts', {}) };
-    delete mavenPorts[key];
-    store.set('mavenPorts', mavenPorts);
-    const mavenDirs = { ...store.get('mavenDirs', {}) };
-    delete mavenDirs[key];
-    store.set('mavenDirs', mavenDirs);
+    forgetRepos([repoPath]);
     return true;
+  });
+
+  ipcMain.handle('remove-repos', (_, paths) => {
+    const list = (Array.isArray(paths) ? paths : []).map(String).filter(isKnownRepo);
+    forgetRepos(list);
+    return { removed: list.length };
   });
 
   ipcMain.handle('get-status', async (_, repoPath) => {
@@ -900,6 +990,8 @@ function setupIPC() {
   ipcMain.handle('log-page', repoCall((g, options) => g.getLogPage(options && typeof options === 'object' ? options : {})));
   ipcMain.handle('commit-file-diff', repoCall((g, hash, file, from, options) => g.getCommitFileDiff(hash, file, from, { full: Boolean(options && options.full) })));
   ipcMain.handle('compare-refs', repoCall((g) => g.compareRefs()));
+  // after a fetch: the branch, what it follows, ahead and behind (one git command)
+  ipcMain.handle('sync-state', repoCall((g) => g.syncState()));
   ipcMain.handle('compare-commits', repoCall((g, side, count) => g.compareCommits(side, count)));
   ipcMain.handle('compare', repoCall((g, from, to, options) => g.compare(from, to, { mergeBase: Boolean(options && options.mergeBase) })));
   ipcMain.handle('list-tags', repoCall((g) => g.listTags()));
@@ -1028,6 +1120,7 @@ function setupIPC() {
   ipcMain.handle('vault-delete-env', (_, id) => vaultCall(() => vault.deleteEnv(id)));
   ipcMain.handle('vault-save-item', (_, item) => vaultCall(() => vault.saveItem(item || {})));
   ipcMain.handle('vault-delete-item', (_, id) => vaultCall(() => vault.deleteItem(id)));
+  ipcMain.handle('vault-copy-item', (_, id, envId) => vaultCall(() => vault.copyItem(String(id || ''), String(envId || ''))));
   ipcMain.handle('vault-delete-items', (_, ids) => vaultCall(() => vault.deleteItems(ids)));
   ipcMain.handle('vault-set-favorite', (_, id, on) => vaultCall(() => vault.setFavorite(id, on === true)));
   // Import of users from a sheet: the file is read here and kept until the import is confirmed, so its passwords never
@@ -1109,19 +1202,6 @@ function setupIPC() {
       back();
       return { error: `The browser could not open the link: ${e.message}` };
     }
-  });
-
-  ipcMain.handle('confirm', async (_, message) => {
-    const result = await withDialog(() =>
-      dialog.showMessageBox(mainWindow, {
-        type: 'question',
-        buttons: ['Cancel', 'OK'],
-        defaultId: 0,
-        cancelId: 0,
-        message,
-      })
-    );
-    return result.response === 1;
   });
 
   ipcMain.handle('get-ui-state', () => store.get('uiState', {}));

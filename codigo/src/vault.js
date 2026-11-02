@@ -21,6 +21,25 @@ function noEnv(d) {
 }
 const HAS_SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
 
+// The name of a link or a user as it is saved (or imported): each word with a capital first letter, the rest small
+// (JENKINS, google cloud: Jenkins, Google Cloud). A word in capitals stays so in a name that has small letters too
+// (API gateway), and in a name all in capitals when it is short (AWS CONSOLE: AWS Console); one with capitals inside
+// (GitHub, iPhone) and an address (docs.example.com) stay as they were typed.
+// short words that are not acronyms, in a name all in capitals (QUICK LINK TO UAT: Quick Link To UAT)
+const SMALL_WORDS = new Set(['a', 'an', 'and', 'as', 'at', 'by', 'for', 'in', 'of', 'on', 'or', 'the', 'to', 'com', 'da', 'das', 'de', 'do', 'dos', 'e', 'em', 'na', 'no', 'o', 'os', 'por', 'um']);
+function titleWords(text) {
+  const shouting = String(text) === String(text).toUpperCase();
+  return String(text).split(/(\s+)/).map((w) => {
+    if (!w.trim() || /[./:@\\]/.test(w)) return w;
+    const letters = w.replace(/[^\p{L}]/gu, '');
+    if (!letters) return w;
+    if (letters === letters.toUpperCase() && (!shouting || (letters.length <= 3 && !SMALL_WORDS.has(letters.toLowerCase())))) return w;
+    const inner = letters.slice(1);
+    if (inner !== inner.toLowerCase() && inner !== inner.toUpperCase()) return w;
+    return w.toLocaleLowerCase().replace(/\p{L}/u, (c) => c.toLocaleUpperCase());
+  }).join('');
+}
+
 function webUrl(value, label) {
   let u = clip(value, LIMITS.url);
   if (!u) return '';
@@ -129,6 +148,7 @@ class Vault {
 
       const item = { type: p.type, title: clip(p.title, LIMITS.title), notes: clip(p.notes, LIMITS.notes) };
       if (p.type === 'credential') {
+        item.title = titleWords(item.title);
         item.username = clip(p.username, LIMITS.username);
         item.password = String(p.password ?? '').slice(0, LIMITS.password);
         item.url = webUrl(p.url, 'URL');
@@ -136,6 +156,7 @@ class Vault {
       } else {
         if (!item.title) throw new Error('Title is required');
         if (p.type === 'link') {
+          item.title = titleWords(item.title);
           item.url = webUrl(p.url, 'URL');
           if (!item.url) throw new Error('URL is required');
           item.username = clip(p.username, LIMITS.username);
@@ -191,7 +212,7 @@ class Vault {
       let updated = 0;
       let skipped = 0;
       for (const u of list) {
-        const title = clip(u && u.title, LIMITS.title);
+        const title = titleWords(clip(u && u.title, LIMITS.title));
         const username = clip(u && u.username, LIMITS.username);
         const password = String((u && u.password) ?? '').slice(0, LIMITS.password);
         if (!username && !password) {
@@ -215,6 +236,23 @@ class Vault {
         }
       }
       return { added, updated, skipped };
+    });
+  }
+
+  // A copy of an item, with all its values (its password too, which stays here), in another environment ('' for no
+  // environment). Not where the same item (type and name) is already.
+  copyItem(id, envId) {
+    return this.mutate((d) => {
+      const from = d.environments.flatMap((e) => e.items).find((i) => i.id === id);
+      if (!from) throw new Error('Item not found');
+      const env = !envId || envId === NO_ENV ? noEnv(d) : d.environments.find((e) => e.id === envId);
+      if (!env) throw new Error('Environment not found');
+      const name = (i) => `${i.type}|${(i.title || i.username || '').trim().toLowerCase()}`;
+      if (env.items.some((i) => name(i) === name(from))) throw new Error(`${env.generic ? 'No environment' : env.name} has it already`);
+      const { favorite, ...copy } = JSON.parse(JSON.stringify(from));
+      copy.id = crypto.randomUUID();
+      env.items.push(copy);
+      return { id: copy.id };
     });
   }
 

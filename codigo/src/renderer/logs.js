@@ -1197,7 +1197,7 @@ function openLogsLoginMenu(anchor) {
 }
 
 async function logsGrafanaLogout() {
-  if (!window.confirm(`Log out of Grafana (${logsGrafanaUser})? The next search will ask for the login again.`)) return;
+  if (!(await askConfirm(`Log out of Grafana (${logsGrafanaUser})? The next search will ask for the login again.`, { confirm: 'Log out' }))) return;
   const r = await window.logs.grafanaLogout();
   if (r.error) {
     toast(r.error, 'error');

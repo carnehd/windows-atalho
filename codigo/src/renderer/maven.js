@@ -15,10 +15,25 @@ let mvnLastChoice = 'clean-install';
 const macroOf = (value) => (String(value || '').startsWith('macro:') ? mvnMacros.find((m) => `macro:${m.id}` === value) || null : null);
 const chosenMacro = () => macroOf(mvnChoice());
 
+// What to do with local changes, as a Local changes step is set (ask: chosen each time the macro runs).
+const CHANGES_CHOICES = [
+  ['ask', 'Ask what to do when it runs'],
+  ['stash', 'Stash them'],
+  ['discard', 'Discard them'],
+  ['stop', 'Stop the macro'],
+];
+const MACRO_GIT_KINDS = new Set(['changes', 'fetch', 'checkout', 'branch', 'pull', 'unstash']);
+
 // What a step runs, as the bar shows it (Start and Debug with this repository's ports).
 function macroStepText(step) {
   if (step.kind === 'stop') return 'Stop what is running';
   if (step.kind === 'custom') return `mvn ${step.goals}`;
+  if (step.kind === 'changes') return `Local changes: ${(CHANGES_CHOICES.find(([v]) => v === step.policy) || CHANGES_CHOICES[0])[1].toLowerCase()}`;
+  if (step.kind === 'fetch') return 'git fetch --all --prune --tags';
+  if (step.kind === 'checkout') return `git checkout ${step.branch}`;
+  if (step.kind === 'branch') return `New branch from origin/${step.base} (its name is asked when it runs)`;
+  if (step.kind === 'pull') return step.from ? `git pull origin ${step.from}` : 'git pull';
+  if (step.kind === 'unstash') return 'Bring back the stashed changes (git stash pop)';
   const base = (mvnPortsView && mvnPortsView.commands && mvnPortsView.commands[step.preset]) || `mvn ${step.preset}`;
   return step.extra ? `${base} ${step.extra}` : base;
 }
@@ -267,14 +282,23 @@ function renderMvnPreview() {
   updateMvnRunButton();
 }
 
-// While something runs here, only a macro that begins by stopping it can start (to build and start the app again).
+// Run, or Stop while something runs here. A macro that begins by stopping what runs (to build and start the app
+// again) can still start then, from "Run macro" next to it.
+let mvnStopping = false;
 function updateMvnRunButton() {
   const running = Boolean(mvnRun && mvnRun.running);
   const macro = chosenMacro();
   const restarts = Boolean(macro && macro.steps.some((st) => st.kind === 'stop'));
   const btn = $('#mvnRunBtn');
-  btn.disabled = running && !restarts;
-  btn.title = !running ? '' : restarts ? `Runs ${macro.name}: its Stop step ends what is running` : 'Something is running here: Stop it first';
+  btn.classList.toggle('stop', running);
+  btn.classList.toggle('btn-primary', !running);
+  $('#mvnRunIcon').innerHTML = running ? '<rect x="6" y="6" width="12" height="12" rx="1.5"/>' : '<path d="M7 4v16l13-8z"/>';
+  $('#mvnRunLabel').textContent = !running ? 'Run' : mvnStopping ? 'Stopping...' : 'Stop';
+  btn.disabled = running && mvnStopping;
+  btn.title = running ? `Stop ${mvnRun.command}` : '';
+  const again = $('#mvnRestartBtn');
+  again.classList.toggle('hidden', !(running && restarts));
+  again.title = running && restarts ? `Runs ${macro.name}: its Stop step ends what is running` : '';
 }
 
 function formatDuration(ms) {
@@ -291,6 +315,7 @@ function setMvnOutput(text) {
   resetMvnModules();
   feedMvnModules(clean, false);
   renderMvnModules();
+  mvnFindLater();
 }
 
 function appendMvnOutput(text) {
@@ -300,6 +325,101 @@ function appendMvnOutput(text) {
   out.textContent = (out.textContent + clean).slice(-MAX_OUTPUT_CHARS);
   if (atBottom) out.scrollTop = out.scrollHeight;
   if (feedMvnModules(clean, true)) renderMvnModules();
+  mvnFindLater();
+}
+
+// -- Search in the output: every match marked (CSS highlights, so the text itself is not touched), the one on show
+// brighter and scrolled to. It starts on the last one (the newest output); Enter and Shift+Enter go to the next and the
+// previous, round; Esc empties it. The marks follow the output as it comes, without moving it. --
+const MVN_FIND_MAX = 5000;
+let mvnFind = { q: '', hits: [], at: -1 };
+let mvnFindTimer = 0;
+
+function mvnFindLater() {
+  if (!mvnFind.q && !$('#mvnFind').value) return;
+  clearTimeout(mvnFindTimer);
+  mvnFindTimer = setTimeout(() => mvnFindRun(), 150);
+}
+
+// fresh: a new search (it goes to the last match); else the same one again over the output as it is now
+function mvnFindRun({ fresh = false } = {}) {
+  clearTimeout(mvnFindTimer);
+  const q = $('#mvnFind').value;
+  const node = $('#mvnOutput').firstChild;
+  const text = node ? node.data.toLowerCase() : '';
+  const hits = [];
+  if (q) {
+    const word = q.toLowerCase();
+    for (let i = text.indexOf(word); i !== -1 && hits.length < MVN_FIND_MAX; i = text.indexOf(word, i + word.length)) hits.push(i);
+  }
+  let at = -1;
+  if (hits.length) at = fresh || mvnFind.q !== q || mvnFind.at < 0 ? hits.length - 1 : Math.min(mvnFind.at, hits.length - 1);
+  mvnFind = { q, hits, at };
+  mvnFindPaint(fresh);
+}
+
+function mvnFindPaint(scroll) {
+  const { q, hits, at } = mvnFind;
+  const count = $('#mvnFindCount');
+  count.textContent = !q ? '' : !hits.length ? 'No matches' : `${at + 1} of ${hits.length}${hits.length >= MVN_FIND_MAX ? '+' : ''}`;
+  count.classList.toggle('none', Boolean(q) && !hits.length);
+  $('#mvnFindPrev').disabled = hits.length < 2;
+  $('#mvnFindNext').disabled = hits.length < 2;
+  if (!window.CSS || !CSS.highlights) return;
+  const out = $('#mvnOutput');
+  const node = out.firstChild;
+  const others = [];
+  let current = null;
+  if (node && q) {
+    hits.forEach((i, k) => {
+      const r = new Range();
+      r.setStart(node, i);
+      r.setEnd(node, Math.min(node.length, i + q.length));
+      if (k === at) current = r;
+      else others.push(r);
+    });
+  }
+  CSS.highlights.set('mvn-find', new Highlight(...others));
+  CSS.highlights.set('mvn-find-current', new Highlight(...(current ? [current] : [])));
+  if (scroll && current) {
+    const top = current.getBoundingClientRect().top - out.getBoundingClientRect().top;
+    out.scrollTop += top - out.clientHeight / 2;
+  }
+}
+
+function mvnFindStep(d) {
+  if (!mvnFind.hits.length) return;
+  mvnFind.at = (mvnFind.at + d + mvnFind.hits.length) % mvnFind.hits.length;
+  mvnFindPaint(true);
+}
+
+function setupMvnFind() {
+  const input = $('#mvnFind');
+  input.addEventListener('input', () => mvnFindRun({ fresh: true }));
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      // a search typed but not run yet (the output was busy): run it first
+      if (mvnFind.q !== input.value) mvnFindRun({ fresh: true });
+      else mvnFindStep(e.shiftKey ? -1 : 1);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      input.value = '';
+      mvnFindRun({ fresh: true });
+    }
+  });
+  $('#mvnFindPrev').addEventListener('click', () => mvnFindStep(-1));
+  $('#mvnFindNext').addEventListener('click', () => mvnFindStep(1));
+  // Ctrl+F (Cmd+F) on the Maven page, with no popup over it
+  document.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== 'f') return;
+    if (currentMode !== 'git' || effectiveGitView() !== 'maven' || $('#mvnPanel').classList.contains('hidden')) return;
+    if (document.querySelector('.settings-overlay:not(.hidden)')) return;
+    e.preventDefault();
+    input.focus();
+    input.select();
+  });
 }
 
 // -- The modules of a multi-module build, read from Maven's output as it comes: their order from "Reactor Build
@@ -311,13 +431,15 @@ const MVN_MOD_STATES = { SUCCESS: 'success', FAILURE: 'failed', SKIPPED: 'skippe
 const MVN_MOD_FOLD_KEY = 'mvnModulesFolded';
 
 // Folded, the area keeps only the bars (each one's name and state in its tooltip); remembered.
+// (the steps of a macro too: one choice for the column)
 function setMvnModulesFolded(folded) {
-  $('#mvnModules').classList.toggle('folded', folded);
-  const btn = $('#mvnModFold');
-  const label = folded ? 'Show the names of the modules' : 'Show only the bars';
-  btn.title = label;
-  btn.setAttribute('aria-label', label);
-  btn.setAttribute('aria-expanded', String(!folded));
+  for (const [box, btn, what] of [['#mvnModules', '#mvnModFold', 'modules'], ['#mvnSteps', '#mvnStepFold', 'steps']]) {
+    $(box).classList.toggle('folded', folded);
+    const label = folded ? `Show the names of the ${what}` : 'Show only the bars';
+    $(btn).title = label;
+    $(btn).setAttribute('aria-label', label);
+    $(btn).setAttribute('aria-expanded', String(!folded));
+  }
   try {
     localStorage.setItem(MVN_MOD_FOLD_KEY, folded ? '1' : '0');
   } catch {
@@ -467,6 +589,94 @@ function renderMvnModules() {
   }
 }
 
+// -- The steps of a macro, by the output as the modules are: a segment each (waiting, running, done, failed, stopped,
+// not run), what it runs and how long it took; a click shows where it starts in the output. --
+let mvnStepTimer = null;
+
+function mvnStepState(n) {
+  const m = mvnRun.macro;
+  const at = m.step || 1;
+  if (mvnRun.running) return n < at ? 'success' : n === at ? 'building' : 'pending';
+  if (mvnRun.stopped) return n < at ? 'success' : n === at ? 'stopped' : 'skipped';
+  if (mvnRun.failedStep) return n < mvnRun.failedStep ? 'success' : n === mvnRun.failedStep ? 'failed' : 'skipped';
+  return 'success';
+}
+
+const mvnStepTook = (mark) => {
+  if (!mark) return '';
+  const ms = mark.ms ?? Date.now() - mark.at;
+  return ms < 1000 ? `${ms} ms` : formatDuration(ms);
+};
+
+function mvnStepWhen(state, mark) {
+  const took = mvnStepTook(mark);
+  if (state === 'pending') return 'waiting';
+  if (state === 'skipped') return 'not run';
+  if (state === 'building') return took ? `running · ${took}` : 'running';
+  if (state === 'failed' || state === 'stopped') return [state, took].filter(Boolean).join(' · ');
+  return took || 'done';
+}
+
+function renderMvnSteps() {
+  const box = $('#mvnSteps');
+  const m = mvnRun && mvnRun.macro;
+  clearInterval(mvnStepTimer);
+  box.classList.toggle('hidden', !m || m.total < 2);
+  if (!m || m.total < 2) return;
+  const marks = m.marks || [];
+  const states = m.steps.map((_, i) => mvnStepState(i + 1));
+  const count = $('#mvnStepCount');
+  const failed = states.indexOf('failed');
+  const stopped = states.indexOf('stopped');
+  count.textContent = failed !== -1 ? `failed at ${failed + 1} of ${m.total}` : stopped !== -1 ? `stopped at ${stopped + 1} of ${m.total}` : `${mvnRun.running ? m.step || 1 : m.total} of ${m.total}`;
+  count.classList.toggle('failed', failed !== -1);
+  $('#mvnStepList').replaceChildren(
+    ...m.steps.map((label, i) => {
+      const li = document.createElement('li');
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'mvn-mod';
+      b.dataset.state = states[i];
+      b.title = `${i + 1}. ${label}: ${mvnStepWhen(states[i], marks[i])}. A click shows where it starts in the output.`;
+      const seg = document.createElement('span');
+      seg.className = 'mvn-mod-seg';
+      const text = document.createElement('span');
+      text.className = 'mvn-mod-text';
+      const name = document.createElement('span');
+      name.className = 'mvn-mod-name';
+      name.textContent = label;
+      const when = document.createElement('span');
+      when.className = 'mvn-mod-when';
+      when.textContent = mvnStepWhen(states[i], marks[i]);
+      text.append(name, when);
+      b.append(seg, text);
+      b.addEventListener('click', () => scrollToMvnStep(i + 1, m.total));
+      li.appendChild(b);
+      return li;
+    })
+  );
+  const running = states.indexOf('building');
+  if (running !== -1) {
+    mvnStepTimer = setInterval(() => {
+      const el = $(`#mvnStepList li:nth-child(${running + 1}) .mvn-mod-when`);
+      if (el && mvnRun && mvnRun.macro) el.textContent = mvnStepWhen('building', (mvnRun.macro.marks || [])[running]);
+    }, 1000);
+  }
+}
+
+// The output scrolled to the line where the step starts ("▶ 2/5").
+function scrollToMvnStep(n, total) {
+  const out = $('#mvnOutput');
+  const node = out.firstChild;
+  if (!node) return;
+  const at = node.data.lastIndexOf(`▶ ${n}/${total} `);
+  if (at === -1) return;
+  const range = document.createRange();
+  range.setStart(node, at);
+  range.setEnd(node, Math.min(node.length, at + 1));
+  out.scrollTop += range.getBoundingClientRect().top - out.getBoundingClientRect().top - 8;
+}
+
 // The output scrolled to the line where the module starts (in the last build of the output).
 function scrollToMvnModule(x) {
   const out = $('#mvnOutput');
@@ -484,9 +694,10 @@ function scrollToMvnModule(x) {
 
 function renderMvnStatus() {
   clearInterval(mvnTimer);
+  renderMvnSteps();
   const status = $('#mvnStatus');
   const running = Boolean(mvnRun && mvnRun.running);
-  $('#mvnStopBtn').classList.toggle('hidden', !running);
+  if (!running) mvnStopping = false;
   $('#mvnClearBtn').disabled = running;
   $('#mvnOptionsBtn').disabled = running;
   $$('#mvnTags button').forEach((b) => (b.disabled = running));
@@ -512,7 +723,7 @@ function renderMvnStatus() {
   status.classList.add(ok ? 'ok' : 'failed');
   const took = mvnRun.endedAt ? ` in ${formatDuration(mvnRun.endedAt - mvnRun.startedAt)}` : '';
   if (m && mvnRun.stopped) status.textContent = `Stopped ${mvnRun.command} at step ${m.step} of ${m.total}${took}`;
-  else if (m && !ok) status.textContent = `Failed ${mvnRun.command} at step ${mvnRun.failedStep || m.step}: ${m.steps[(mvnRun.failedStep || m.step) - 1]} (exit code ${mvnRun.exitCode})${took}`;
+  else if (m && !ok) status.textContent = `Failed ${mvnRun.command} at step ${mvnRun.failedStep || m.step}: ${m.steps[(mvnRun.failedStep || m.step) - 1]}${mvnRun.failedGit ? ' (why is in the output)' : ` (exit code ${mvnRun.exitCode})`}${took}`;
   else if (m) status.textContent = `Finished ${mvnRun.command}, ${m.total} step${m.total === 1 ? '' : 's'}${took}`;
   else status.textContent = ok ? `Finished ${mvnRun.command}${took}` : `Failed ${mvnRun.command} (exit code ${mvnRun.exitCode})${took}`;
 }
@@ -525,6 +736,7 @@ function renderMvnPorts(view) {
   const serverInput = $('#mvnServerPort');
   if (document.activeElement !== debugInput) debugInput.value = String(ports.debug);
   if (document.activeElement !== serverInput) serverInput.value = ports.server ? String(ports.server) : '';
+  $('#mvnPortsBtn').title = `Start / Debug ports: debug ${ports.debug}, app ${ports.server || "the project's own"}`;
   $('#mvnCommand option[value="debug"]').textContent = `Debug :${ports.debug}`;
   $('#mvnCommand option[value="start"]').textContent = ports.server ? `Start :${ports.server}` : 'Start';
   $$('#mvnCommand option').forEach((o) => {
@@ -532,6 +744,58 @@ function renderMvnPorts(view) {
   });
   renderMacroOptions(); // their steps show these ports
   renderMvnPreview();
+}
+
+// -- The ports of Start and Debug, in a popover under the gear at the end of the command line: saved when a field is
+// left or Enter is pressed (Enter closes it too); Esc, a click elsewhere or the window left close it. --
+function closeMvnPorts(refocus = false) {
+  const pop = $('#mvnPortsPop');
+  if (pop.classList.contains('hidden')) return;
+  // a field being typed in is saved as it is left
+  if (pop.contains(document.activeElement)) document.activeElement.blur();
+  pop.classList.add('hidden');
+  $('#mvnPortsBtn').setAttribute('aria-expanded', 'false');
+  if (refocus) $('#mvnPortsBtn').focus();
+}
+
+function openMvnPorts() {
+  const pop = $('#mvnPortsPop');
+  const btn = $('#mvnPortsBtn');
+  pop.classList.remove('hidden');
+  btn.setAttribute('aria-expanded', 'true');
+  // under the gear, its right edge lined up with it, inside the window
+  const a = btn.getBoundingClientRect();
+  pop.style.left = `${Math.round(Math.max(8, Math.min(a.right - pop.offsetWidth, window.innerWidth - pop.offsetWidth - 8)))}px`;
+  pop.style.top = `${Math.round(a.bottom + 6)}px`;
+  $('#mvnDebugPort').focus();
+  $('#mvnDebugPort').select();
+}
+
+function setupMvnPorts() {
+  const pop = $('#mvnPortsPop');
+  const btn = $('#mvnPortsBtn');
+  btn.addEventListener('click', () => (pop.classList.contains('hidden') ? openMvnPorts() : closeMvnPorts()));
+  ['#mvnDebugPort', '#mvnServerPort'].forEach((sel) => {
+    const input = $(sel);
+    input.addEventListener('change', saveMvnPorts);
+    input.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      // the key ends here: else it would press the gear the focus goes back to, and open it again
+      e.preventDefault();
+      closeMvnPorts(true);
+    });
+  });
+  pop.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      closeMvnPorts(true);
+    }
+  });
+  document.addEventListener('mousedown', (e) => {
+    if (!pop.classList.contains('hidden') && !pop.contains(e.target) && !btn.contains(e.target)) closeMvnPorts();
+  }, true);
+  window.addEventListener('blur', () => closeMvnPorts());
 }
 
 async function saveMvnPorts() {
@@ -556,6 +820,7 @@ async function refreshMaven() {
   const repo = currentRepo;
   let info = await window.maven.info(repo);
   if (repo !== currentRepo) return;
+  if (repo !== mvnRepo) closeMvnPorts(); // the ports are another microservice's
   mvnRepo = repo;
   closeMvnOptions();
   if (info.error) {
@@ -575,15 +840,23 @@ function applyMvnInfo(info) {
   mvnOptionList = info.options || [];
   mvnProfiles = info.profiles || [];
   renderMvnFolder(info);
+  renderMvnValuesBtn(info);
   renderMvnPreview();
   if (info.ports) renderMvnPorts(info);
   $('#mvnNoPom').classList.toggle('hidden', info.hasPom);
   $('#mvnNoPom').textContent = info.folders && info.folders.length ? 'No pom.xml in this folder: choose the folder of the microservice above.' : 'No pom.xml in this repository.';
   $('#mvnPanel').classList.toggle('hidden', !info.hasPom);
+  // "Runs in" at the right of the command line; with no pom.xml in the folder (no command line), on top to choose another
+  const row = $('#mvnFolderRow');
+  if (info.hasPom) $('#mvnCmdline').insertBefore(row, $('#mvnValuesBtn'));
+  else $('#tab-maven').insertBefore(row, $('#mvnNoPom'));
   $('#mvnWrapper').classList.toggle('hidden', !info.wrapper);
   $('#mvnWrapper').textContent = info.wrapperDir ? `using ${info.wrapperDir}/mvnw` : 'using mvnw';
-  mvnRun = info.run || null;
-  setMvnOutput(mvnRun ? mvnRun.log : '');
+  // the same run, read while its output came: the page already has more of it than this copy
+  const behind = info.run && mvnRun && mvnRun.id === info.run.id && (mvnRun.written || 0) > (info.run.written || 0);
+  if (!behind) mvnStopping = false;
+  mvnRun = info.run ? { ...info.run, ...(behind ? { written: mvnRun.written } : {}) } : null;
+  if (!behind) setMvnOutput(mvnRun ? mvnRun.log : '');
   // read again from the output, a run that ended without its summary (stopped, or Maven killed) still ends its modules
   if (mvnRun && !mvnRun.running) finishMvnModules(mvnRun.exitCode, mvnRun.stopped);
   renderMvnStatus();
@@ -617,38 +890,271 @@ async function setMvnFolder(rel) {
 async function runMaven(request) {
   if (!mvnRepo) return;
   const external = $('#mvnExternal').checked;
-  const r = await window.maven.run(mvnRepo, { ...request, external });
+  // the values chosen per environment (mvn-values.js): maven.js gives them to spring-boot:run only
+  const r = await window.maven.run(mvnRepo, { ...request, ...(await mvnValuesRequest()), external });
   if (r.error) {
     toast(r.error, 'error');
     return;
   }
   if (r.external) {
-    toast(`Opened ${r.command} in a ${window.git.platform === 'win32' ? 'PowerShell' : 'Terminal'} window`, 'success');
+    toast(`Opened ${r.command} in a ${window.git.platform === 'win32' ? 'PowerShell' : 'Terminal'} window${r.valuesLeft ? ', with the files\' own values: those chosen in Values go to a run here only' : ''}`, r.valuesLeft ? 'info' : 'success', { plain: true });
     return;
   }
-  mvnRun = { command: r.command, running: true, startedAt: r.startedAt, exitCode: null };
+  mvnRun = { id: r.id, written: r.written, command: r.command, running: true, startedAt: r.startedAt, exitCode: null };
   setMvnOutput(r.log || `> ${r.command}\n`);
   renderMvnStatus();
 }
 
+// -- What a macro asks when it starts: the name of each new branch, and what to do with the local changes when one of
+// its steps asks (or discards them, which is never done without saying so). Nothing to ask: it starts at once. --
+const macroBranchOk = (t) => /^[\w./-]+$/.test(t) && !/^[-/]|[/.]$|\.lock$|\.\.|\/\//.test(t);
+let macroAsk = null; // { resolve, macro, names }
+
+async function askMacroAnswers(macro, repo) {
+  const branchSteps = macro.steps.map((st, i) => ({ st, i })).filter(({ st }) => st.kind === 'branch');
+  const changesStep = macro.steps.find((st) => st.kind === 'changes' && (st.policy === 'ask' || st.policy === 'discard'));
+  let status = null;
+  if (changesStep) {
+    status = await window.git.getStatus(repo).catch(() => null);
+    if (!status || status.error || !(status.entries || []).length) status = null;
+  }
+  if (!branchSteps.length && !status) return {};
+  return new Promise((resolve) => openMacroAsk(macro, repo, { branchSteps, status, changesStep }, resolve));
+}
+
+function closeMacroAsk(answers) {
+  $('#mvnAskModal').classList.add('hidden');
+  const ask = macroAsk;
+  macroAsk = null;
+  if (ask) ask.resolve(answers);
+}
+
+function openMacroAsk(macro, repo, { branchSteps, status, changesStep }, resolve) {
+  const names = new Map(); // step index -> its input
+  macroAsk = { resolve, macro, names };
+  const entry = repos.find((r) => r.path === repo);
+  const branch = (status && status.branch) || (entry && entry.branch) || '';
+  $('#mvnAskTitle').textContent = `Run ${macro.name}`;
+  $('#mvnAskWhere').textContent = `In ${entry ? displayName(entry) : repoName(repo)}${branch ? `, on ${branch}` : ''}`;
+  $('#mvnAskError').textContent = '';
+  const body = $('#mvnAskBody');
+  body.textContent = '';
+  let local = new Set(); // the branches here, for "already exists"
+  window.git.getBranches(repo).then((b) => {
+    local = new Set(((b && b.local) || []).map((x) => x.name));
+    names.forEach((input) => input.dispatchEvent(new Event('input')));
+  }).catch(() => {});
+
+  for (const { st, i } of branchSteps) {
+    const id = `mvnAskBranch${i}`;
+    const label = document.createElement('label');
+    label.className = 'settings-label';
+    label.htmlFor = id;
+    label.textContent = branchSteps.length > 1 ? `New branch at step ${i + 1}, from origin/${st.base}` : `New branch, from origin/${st.base}`;
+    const input = document.createElement('input');
+    input.id = id;
+    input.className = 'input mvn-ask-branch';
+    input.maxLength = 200;
+    input.spellcheck = false;
+    input.autocomplete = 'off';
+    input.placeholder = `feature/${ticketPrefix || 'ABC-'}123`;
+    input.value = `feature/${ticketPrefix}`;
+    const note = document.createElement('span');
+    note.className = 'mvn-ask-note';
+    input.addEventListener('input', () => {
+      const t = input.value.trim();
+      $('#mvnAskError').textContent = '';
+      note.className = 'mvn-ask-note';
+      if (!t) note.textContent = '';
+      else if (!macroBranchOk(t)) {
+        note.textContent = 'Not a valid branch name';
+        note.classList.add('bad');
+      } else note.textContent = local.has(t) ? 'Exists already: the macro switches to it' : '';
+      renderMacroAskSteps(macro, names, body);
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        submitMacroAsk(macro, names, body);
+      }
+    });
+    const chips = branchPrefixChips(input);
+    chips.addEventListener('click', () => input.dispatchEvent(new Event('input'))); // after the chip filled it in
+    const row = document.createElement('div');
+    row.className = 'mvn-ask-row';
+    row.append(chips, note);
+    body.append(label, input, row);
+    names.set(i, input);
+  }
+
+  if (status) {
+    const files = status.entries.map((e) => e.file);
+    const title = document.createElement('div');
+    title.className = 'settings-label';
+    title.textContent = `${files.length} local change${files.length === 1 ? '' : 's'}${branch ? ` on ${branch}` : ''}`;
+    const list = document.createElement('div');
+    list.className = 'mvn-ask-files';
+    list.textContent = files.slice(0, 4).join(', ') + (files.length > 4 ? `, and ${files.length - 4} more` : '');
+    list.title = files.join('\n');
+    const back = macro.steps.findIndex((st) => st.kind === 'unstash');
+    const choices = [
+      ['stash', 'Stash them', back === -1 ? 'Kept in the Stash tab, with the new files' : `Kept in the Stash tab, and brought back at step ${back + 1}`],
+      ['discard', 'Discard them', 'Every change and new file is lost: this cannot be undone'],
+      ['stop', 'Stop the macro', 'Nothing runs: commit or stash them yourself first'],
+    ];
+    const group = document.createElement('div');
+    group.className = 'mvn-ask-choices';
+    group.setAttribute('role', 'radiogroup');
+    group.setAttribute('aria-label', 'What to do with the local changes');
+    const chosen = changesStep.policy === 'discard' ? 'discard' : 'stash';
+    for (const [value, text, hint] of choices) {
+      const label = document.createElement('label');
+      label.className = `mvn-ask-choice${value === 'discard' ? ' danger' : ''}`;
+      const radio = document.createElement('input');
+      radio.type = 'radio';
+      radio.name = 'mvnAskChanges';
+      radio.value = value;
+      radio.checked = value === chosen;
+      radio.addEventListener('change', () => renderMacroAskSteps(macro, names, body));
+      const words = document.createElement('span');
+      const strong = document.createElement('strong');
+      strong.textContent = text;
+      const small = document.createElement('small');
+      small.textContent = hint;
+      words.append(strong, small);
+      label.append(radio, words);
+      group.appendChild(label);
+    }
+    body.append(title, list, group);
+  }
+  renderMacroAskSteps(macro, names, body);
+  $('#mvnAskModal').classList.remove('hidden');
+  const first = names.values().next().value || body.querySelector('input:checked');
+  if (first) {
+    first.focus();
+    if (first.type !== 'radio') first.setSelectionRange(first.value.length, first.value.length);
+  } else $('#mvnAskRun').focus();
+}
+
+// What it runs, as the answers stand: the new branch's name and the choice for the local changes in their steps.
+function renderMacroAskSteps(macro, names, body) {
+  const choice = body.querySelector('input[name="mvnAskChanges"]:checked');
+  const changes = { stash: 'stash them', discard: 'discard them', stop: 'stop the macro' };
+  $('#mvnAskSteps').replaceChildren(
+    ...macro.steps.map((st, i) => {
+      const li = document.createElement('li');
+      let text = macroStepText(st);
+      if (st.kind === 'branch') text = `New branch ${(names.get(i) && names.get(i).value.trim()) || '...'} from origin/${st.base}`;
+      else if (st.kind === 'changes' && (st.policy === 'ask' || st.policy === 'discard')) text = choice ? `Local changes: ${changes[choice.value]}` : 'Local changes: none now';
+      li.textContent = text;
+      if (MACRO_GIT_KINDS.has(st.kind)) li.className = 'git';
+      return li;
+    })
+  );
+}
+
+function submitMacroAsk(macro, names, body) {
+  const branches = {};
+  for (const [i, input] of names) {
+    const t = input.value.trim();
+    const fail = (text) => {
+      $('#mvnAskError').textContent = text;
+      input.focus();
+    };
+    if (!t) return fail('Type a name for the new branch.');
+    if (ticketPrefix && t.endsWith(ticketPrefix)) return fail('Complete the name after the ticket prefix.');
+    if (!macroBranchOk(t)) return fail(`"${t}" is not a valid branch name.`);
+    branches[i] = t;
+  }
+  const choice = body.querySelector('input[name="mvnAskChanges"]:checked');
+  closeMacroAsk({ branches, ...(choice ? { changes: choice.value } : {}) });
+}
+
+function setupMacroAsk() {
+  const modal = $('#mvnAskModal');
+  $('#mvnAskCancel').addEventListener('click', () => closeMacroAsk(null));
+  $('#mvnAskRun').addEventListener('click', () => {
+    const ask = macroAsk;
+    if (ask) submitMacroAsk(ask.macro, ask.names, $('#mvnAskBody'));
+  });
+  modal.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      closeMacroAsk(null);
+    }
+  });
+  modal.addEventListener('mousedown', (e) => {
+    if (e.target === modal) closeMacroAsk(null);
+  });
+}
+
 async function runMvnMacro(macro) {
   if (!mvnRepo) return;
-  const r = await window.maven.runMacro(mvnRepo, macro.id);
+  const repo = mvnRepo;
+  const answers = await askMacroAnswers(macro, repo);
+  if (!answers || repo !== mvnRepo) return;
+  const r = await window.maven.runMacro(repo, macro.id, answers, await mvnValuesRequest());
   if (r.error) {
     toast(r.error, 'error', { plain: true });
     return;
   }
-  mvnRun = { command: r.command, running: true, startedAt: r.startedAt, exitCode: null, macro: r.macro, stepCommand: null };
+  mvnRun = { id: r.id, written: r.written, command: r.command, running: true, startedAt: r.startedAt, exitCode: null, macro: r.macro, stepCommand: null };
   setMvnOutput(r.log);
   renderMvnStatus();
 }
 
 // -- the macro editor --
 let macroDraft = null;
-const MACRO_EXAMPLE = () => ({
-  name: 'Rebuild and restart',
-  steps: [{ kind: 'stop' }, { kind: 'preset', preset: 'spotless-apply', extra: '' }, { kind: 'preset', preset: 'install-skip-tests', extra: '' }, { kind: 'preset', preset: 'start', extra: '' }],
-});
+// What a new macro starts from (the first one unless another is picked): its name and steps, changed at will.
+const MACRO_TEMPLATES = [
+  {
+    id: 'task',
+    label: 'Start a task',
+    title: 'Local changes (asked when it runs), switch to develop, pull, a new branch from it, build, start the app',
+    make: () => ({
+      name: 'Start a task',
+      steps: [
+        { kind: 'changes', policy: 'ask' },
+        { kind: 'checkout', branch: 'develop' },
+        { kind: 'pull', from: '' },
+        { kind: 'branch', base: 'develop' },
+        { kind: 'preset', preset: 'install-skip-tests', extra: '' },
+        { kind: 'preset', preset: 'start', extra: '' },
+      ],
+    }),
+  },
+  {
+    id: 'update',
+    label: 'Update and build',
+    title: 'Stash the local changes, pull, bring them back, build',
+    make: () => ({
+      name: 'Update and build',
+      steps: [{ kind: 'changes', policy: 'stash' }, { kind: 'pull', from: '' }, { kind: 'unstash' }, { kind: 'preset', preset: 'install-skip-tests', extra: '' }],
+    }),
+  },
+  {
+    id: 'restart',
+    label: 'Rebuild and restart',
+    title: 'Stop the app, format, build, start it again',
+    make: () => ({
+      name: 'Rebuild and restart',
+      steps: [{ kind: 'stop' }, { kind: 'preset', preset: 'spotless-apply', extra: '' }, { kind: 'preset', preset: 'install-skip-tests', extra: '' }, { kind: 'preset', preset: 'start', extra: '' }],
+    }),
+  },
+  { id: 'empty', label: 'Empty', title: 'No steps: add them yourself', make: () => ({ name: '', steps: [] }) },
+];
+// A new step as the "+ Add a step..." list makes it.
+const NEW_STEPS = {
+  'git:changes': () => ({ kind: 'changes', policy: 'ask' }),
+  'git:fetch': () => ({ kind: 'fetch' }),
+  'git:checkout': () => ({ kind: 'checkout', branch: 'develop' }),
+  'git:branch': () => ({ kind: 'branch', base: 'develop' }),
+  'git:pull': () => ({ kind: 'pull', from: '' }),
+  'git:unstash': () => ({ kind: 'unstash' }),
+  custom: () => ({ kind: 'custom', goals: '' }),
+  stop: () => ({ kind: 'stop' }),
+};
 // the commands of the list (not Custom), as a step runs them: Start is mvn spring-boot:run
 const macroPresets = () =>
   [...$('#mvnCommand').children]
@@ -656,17 +1162,69 @@ const macroPresets = () =>
     .map((o) => [o.value, `mvn ${(mvnPortsView && mvnPortsView.presets && mvnPortsView.presets[o.value]) || o.textContent}`]);
 
 function openMacroEditor(macro) {
-  macroDraft = macro ? JSON.parse(JSON.stringify(macro)) : MACRO_EXAMPLE();
+  macroDraft = macro ? JSON.parse(JSON.stringify(macro)) : MACRO_TEMPLATES[0].make();
   $('#mvnMacroTitle').textContent = macro ? 'Edit macro' : 'New macro';
   $('#mvnMacroName').value = macroDraft.name;
   $('#mvnMacroDelete').classList.toggle('hidden', !macro);
   $('#mvnMacroError').textContent = '';
+  renderMacroTemplates(macro ? null : MACRO_TEMPLATES[0].id);
   const add = $('#mvnMacroAdd');
-  add.replaceChildren(new Option('+ Add a step...', ''), ...macroPresets().map(([v, t]) => new Option(t, `preset:${v}`)), new Option('Custom goals...', 'custom'), new Option('Stop what is running', 'stop'));
+  const placeholder = new Option('+ Add a step...', '');
+  placeholder.hidden = true; // what the dropdown says, not one of its entries
+  const group = (label, options) => {
+    const g = document.createElement('optgroup');
+    g.label = label;
+    g.append(...options);
+    return g;
+  };
+  const opt = (text, value, title) => Object.assign(new Option(text, value), { title });
+  add.replaceChildren(
+    placeholder,
+    group('Git', [
+      opt('Local changes: stash, discard or ask', 'git:changes', 'What to do when there are changes not committed: asked when the macro runs, or always the same'),
+      opt('Fetch from origin', 'git:fetch', 'git fetch --all --prune --tags'),
+      opt('Switch to a branch', 'git:checkout', 'git checkout <branch>'),
+      opt('New branch from origin/...', 'git:branch', 'Its name is asked when the macro runs; the branch it starts from is fetched first'),
+      opt('Pull', 'git:pull', 'git pull: the branch from its own on origin, or another branch merged into it'),
+      opt('Bring back the stashed changes', 'git:unstash', 'git stash pop of what the Local changes step stashed'),
+    ]),
+    group('Maven', [...macroPresets().map(([v, t]) => new Option(t, `preset:${v}`)), new Option('Custom goals...', 'custom')]),
+    group('Other', [new Option('Stop what is running', 'stop')])
+  );
   renderMacroSteps();
   $('#mvnMacroModal').classList.remove('hidden');
   $('#mvnMacroName').focus();
   $('#mvnMacroName').select();
+}
+
+// "Start from": a new macro's name and steps from one of the templates (the one picked is pressed).
+function renderMacroTemplates(current) {
+  const row = $('#mvnMacroTemplates');
+  row.classList.toggle('hidden', !current);
+  if (!current) return;
+  const chips = MACRO_TEMPLATES.map((t) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'tag-chip mvn-macro-template';
+    b.textContent = t.label;
+    b.title = t.title;
+    b.setAttribute('aria-pressed', String(t.id === current));
+    b.addEventListener('click', () => {
+      const next = t.make();
+      macroDraft.name = next.name;
+      macroDraft.steps = next.steps;
+      $('#mvnMacroName').value = next.name;
+      $('#mvnMacroError').textContent = '';
+      renderMacroTemplates(t.id);
+      renderMacroSteps();
+      row.querySelector(`[aria-pressed="true"]`).focus();
+    });
+    return b;
+  });
+  const label = document.createElement('span');
+  label.className = 'mvn-macro-templates-label';
+  label.textContent = 'Start from';
+  row.replaceChildren(label, ...chips);
 }
 
 function closeMacroEditor() {
@@ -683,6 +1241,68 @@ function macroIconButton(icon, label, onClick) {
   b.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${ACTION_ICONS[icon] || ''}</svg>`;
   b.addEventListener('click', onClick);
   return b;
+}
+
+// A git step in the editor: a "git" tag, what it does, and its field (a branch, or what to do with local changes).
+// Returns what takes the focus first, if anything.
+function macroGitStepBody(step, i, body) {
+  const tag = document.createElement('span');
+  tag.className = 'mvn-macro-tag';
+  tag.textContent = 'git';
+  const words = (text) => {
+    const t = document.createElement('span');
+    t.className = 'mvn-macro-words';
+    t.textContent = text;
+    return t;
+  };
+  const field = (prop, placeholder, title, aria) => {
+    const input = document.createElement('input');
+    input.className = 'input mvn-macro-branch';
+    input.placeholder = placeholder;
+    input.title = title;
+    input.maxLength = 200;
+    input.spellcheck = false;
+    input.autocomplete = 'off';
+    input.value = step[prop] || '';
+    input.setAttribute('aria-label', `Step ${i + 1}: ${aria}`);
+    input.addEventListener('input', () => (step[prop] = input.value.trim()));
+    return input;
+  };
+  body.appendChild(tag);
+  if (step.kind === 'changes') {
+    const sel = document.createElement('select');
+    sel.className = 'input mvn-macro-preset';
+    sel.setAttribute('aria-label', `Step ${i + 1}: what to do with local changes`);
+    sel.append(...CHANGES_CHOICES.map(([v, t]) => new Option(t, v)));
+    sel.value = step.policy || 'ask';
+    sel.addEventListener('change', () => (step.policy = sel.value));
+    body.append(words('Local changes:'), sel);
+    return sel;
+  }
+  if (step.kind === 'fetch') {
+    body.append(words('Fetch every branch and tag from origin'));
+    return null;
+  }
+  if (step.kind === 'unstash') {
+    body.append(words('Bring back the changes the Local changes step stashed'));
+    return null;
+  }
+  if (step.kind === 'checkout') {
+    const input = field('branch', 'develop', 'The branch to switch to (one only on origin is made here, following it)', 'branch to switch to');
+    body.append(words('Switch to'), input);
+    return input;
+  }
+  if (step.kind === 'branch') {
+    const input = field('base', 'develop', 'The branch on origin the new one starts from; it is fetched first, so it is up to date', 'branch on origin it starts from');
+    const note = document.createElement('span');
+    note.className = 'mvn-macro-note';
+    note.textContent = 'name asked when it runs';
+    body.append(words('New branch from origin/'), input, note);
+    return input;
+  }
+  const input = field('from', 'its own branch on origin', 'Empty: the branch is updated from its own branch on origin. A name (e.g. develop): origin/develop is merged into it.', 'branch to pull from');
+  body.append(words('Pull from'), input);
+  return input;
 }
 
 function renderMacroSteps(focusIndex = -1) {
@@ -718,6 +1338,8 @@ function renderMacroSteps(focusIndex = -1) {
       extra.addEventListener('input', () => (step.extra = extra.value));
       body.append(sel, extra);
       first = sel;
+    } else if (MACRO_GIT_KINDS.has(step.kind)) {
+      first = macroGitStepBody(step, i, body);
     } else {
       const pre = document.createElement('span');
       pre.className = 'mvn-macro-prefix';
@@ -778,13 +1400,132 @@ async function saveMacroDraft() {
 
 async function deleteMacroDraft() {
   const macro = mvnMacros.find((m) => m.id === macroDraft.id);
-  if (!macro || !(await window.git.confirm(`Delete the macro "${macro.name}"?`))) return;
+  if (!macro || !(await askConfirm(`Delete the macro "${macro.name}"?`))) return;
   const r = await window.maven.deleteMacro(macro.id);
   mvnMacros = r.macros || [];
   closeMacroEditor();
   renderMacroOptions();
   if (mvnChoice() === `macro:${macro.id}` || !macroOf(mvnChoice())) chooseMvnCommand(mvnChoice().startsWith('macro:') ? 'clean-install' : mvnChoice());
   toast(`Macro ${macro.name} deleted`, 'info', { plain: true });
+}
+
+// -- The list of commands, drawn by the app (the same on Windows and on a Mac), not by the system: the commands, then
+// the macros, each with a pencil to change it, and New macro... The select stays as what is chosen (its value and its
+// change event), so a click or a key on it opens this list instead of the system one. --
+function closeMvnCommandMenu(refocus = false) {
+  const menu = $('#mvnCmdMenu');
+  if (!menu) return;
+  document.removeEventListener('mousedown', menu.onOutside, true);
+  menu.remove();
+  if (refocus) $('#mvnCommand').focus();
+}
+
+function openMvnCommandMenu() {
+  const select = $('#mvnCommand');
+  if ($('#mvnCmdMenu')) {
+    closeMvnCommandMenu(true);
+    return;
+  }
+  if (select.disabled) return;
+  const menu = document.createElement('div');
+  menu.id = 'mvnCmdMenu';
+  menu.className = 'clip-menu mvn-cmd-menu';
+  menu.setAttribute('role', 'listbox');
+  menu.setAttribute('aria-label', 'Maven command');
+  const pick = (value) => {
+    closeMvnCommandMenu(true);
+    if (value === select.value) return;
+    select.value = value;
+    select.dispatchEvent(new Event('change'));
+  };
+  const icon = (paths) => `<svg viewBox="0 0 24 24" aria-hidden="true">${paths}</svg>`;
+  const item = (label, value, title) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    const on = value === select.value;
+    b.className = `clip-menu-item mvn-cmd-item${on ? ' current' : ''}`;
+    b.setAttribute('role', 'option');
+    b.setAttribute('aria-selected', String(on));
+    if (title) b.title = title;
+    b.innerHTML = '<svg class="mvn-cmd-check" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>';
+    const text = document.createElement('span');
+    text.className = 'mvn-cmd-label';
+    text.textContent = label;
+    b.appendChild(text);
+    b.addEventListener('click', () => pick(value));
+    return b;
+  };
+  for (const o of select.children) {
+    if (o.tagName === 'OPTION') {
+      menu.appendChild(item(o.textContent, o.value, o.title));
+      continue;
+    }
+    // the macros: a pencil each, then New macro...
+    const head = document.createElement('div');
+    head.className = 'mvn-cmd-group';
+    head.textContent = mvnMacros.length ? `Macros (${mvnMacros.length})` : 'Macros';
+    head.title = 'Several commands under a name, run one after the other, for every repository';
+    menu.appendChild(head);
+    for (const m of mvnMacros) {
+      const row = document.createElement('div');
+      row.className = 'mvn-cmd-macro';
+      const b = item(m.name, `macro:${m.id}`, m.steps.map(macroStepText).join('\n'));
+      const steps = document.createElement('span');
+      steps.className = 'mvn-cmd-steps';
+      steps.textContent = `${m.steps.length} step${m.steps.length === 1 ? '' : 's'}`;
+      b.appendChild(steps);
+      const edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'icon-action mvn-cmd-edit';
+      edit.title = `Change ${m.name}: its name and steps, or delete it`;
+      edit.setAttribute('aria-label', `Edit ${m.name}`);
+      edit.innerHTML = icon(ACTION_ICONS.edit);
+      edit.addEventListener('click', () => {
+        closeMvnCommandMenu();
+        openMacroEditor(m);
+      });
+      row.append(b, edit);
+      menu.appendChild(row);
+    }
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'clip-menu-item mvn-cmd-new';
+    add.title = 'Several commands under a name, run one after the other (for example: stop, build, start)';
+    add.innerHTML = icon(ACTION_ICONS.plus);
+    add.append('New macro...');
+    add.addEventListener('click', () => {
+      closeMvnCommandMenu();
+      openMacroEditor(null);
+    });
+    menu.appendChild(add);
+  }
+  menu.addEventListener('keydown', (e) => {
+    const all = [...menu.querySelectorAll('button')];
+    const i = all.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      all[(i + (e.key === 'ArrowDown' ? 1 : -1) + all.length) % all.length].focus();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      closeMvnCommandMenu(true);
+    } else if (e.key === 'Tab') {
+      closeMvnCommandMenu();
+    }
+  });
+  menu.onOutside = (e) => {
+    if (!menu.contains(e.target) && e.target !== select) closeMvnCommandMenu();
+  };
+  document.addEventListener('mousedown', menu.onOutside, true);
+  document.body.appendChild(menu);
+  // under the list, its left edges lined up, as tall as the window allows
+  const a = select.getBoundingClientRect();
+  const m = menu.getBoundingClientRect();
+  const top = a.bottom + 4;
+  menu.style.left = `${Math.round(Math.max(8, Math.min(a.left, window.innerWidth - m.width - 8)))}px`;
+  menu.style.top = `${Math.round(top)}px`;
+  menu.style.maxHeight = `${Math.max(160, window.innerHeight - top - 12)}px`;
+  (menu.querySelector('.mvn-cmd-item.current') || menu.querySelector('button')).focus();
 }
 
 // A command or macro of the list chosen (and remembered).
@@ -811,7 +1552,7 @@ function setupMacroEditor() {
       $('#mvnMacroError').textContent = 'A macro has 15 steps at most';
       return;
     }
-    const step = v === 'stop' ? { kind: 'stop' } : v === 'custom' ? { kind: 'custom', goals: '' } : { kind: 'preset', preset: v.slice(7), extra: '' };
+    const step = NEW_STEPS[v] ? NEW_STEPS[v]() : { kind: 'preset', preset: v.slice(7), extra: '' };
     macroDraft.steps.push(step);
     renderMacroSteps(macroDraft.steps.length - 1);
   });
@@ -835,8 +1576,19 @@ function setupMacroEditor() {
   });
 }
 
+// After a git step of a macro (the next step began, or the macro ended): the repository's line in the list, and the
+// Git half of its page when it is the one open (branch, changes, log), without reading the Maven output again.
+const gitStepping = new Set(); // repositories whose macro is on a git step
+function afterGitStep(repo) {
+  if (!gitStepping.delete(repo)) return;
+  refreshSummaries([repo]);
+  if (repo !== currentRepo || shownRepo !== repo) return;
+  [refreshStatus, refreshLog, refreshStash, refreshPush, refreshCmpRefs].forEach((f) => Promise.resolve().then(f).catch(() => {}));
+}
+
 function setupMaven() {
   if (CARD_ID) return;
+  setupMvnValues();
   const select = $('#mvnCommand');
   let saved = null;
   try {
@@ -850,6 +1602,20 @@ function setupMaven() {
   loadMvnMacros().then(() => {
     if (saved && saved.startsWith('macro:') && macroOf(saved)) chooseMvnCommand(saved);
   });
+  // the app's own list, not the system's
+  select.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    select.focus();
+    openMvnCommandMenu();
+  });
+  select.addEventListener('keydown', (e) => {
+    if ([' ', 'Enter', 'ArrowDown', 'ArrowUp', 'F4'].includes(e.key)) {
+      e.preventDefault();
+      openMvnCommandMenu();
+    }
+  });
+  window.addEventListener('blur', () => closeMvnCommandMenu());
   select.addEventListener('change', () => {
     if (select.value === 'new-macro') {
       select.value = mvnLastChoice;
@@ -866,23 +1632,30 @@ function setupMaven() {
     else runMaven({ ...(mvnChoice() === 'custom' ? { custom: $('#mvnCustom').value } : { preset: mvnChoice() }), ...chosenMvnOptions() });
   };
   setupMacroEditor();
+  setupMacroAsk();
   $('#mvnFolder').addEventListener('change', (e) => setMvnFolder(e.target.value));
   $('#mvnOptionsBtn').addEventListener('click', openMvnOptions);
-  $('#mvnRunBtn').addEventListener('click', runChosen);
+  // Run, or Stop while something runs here
+  $('#mvnRunBtn').addEventListener('click', async () => {
+    if (!(mvnRun && mvnRun.running)) {
+      runChosen();
+      return;
+    }
+    mvnStopping = true;
+    updateMvnRunButton();
+    const r = await window.maven.stop(mvnRepo);
+    if (r.error) {
+      mvnStopping = false;
+      updateMvnRunButton();
+      toast(r.error, 'error');
+    }
+  });
+  $('#mvnRestartBtn').addEventListener('click', runChosen);
+  setupMvnFind();
   $('#mvnCustom').addEventListener('input', renderMvnPreview);
   $('#mvnCustom').addEventListener('keydown', (e) => e.key === 'Enter' && runChosen());
   renderMvnPreview();
-  ['#mvnDebugPort', '#mvnServerPort'].forEach((sel) => {
-    const input = $(sel);
-    input.addEventListener('change', saveMvnPorts);
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') input.blur();
-    });
-  });
-  $('#mvnStopBtn').addEventListener('click', async () => {
-    const r = await window.maven.stop(mvnRepo);
-    if (r.error) toast(r.error, 'error');
-  });
+  setupMvnPorts();
   $('#mvnClearBtn').addEventListener('click', async () => {
     await window.maven.clear(mvnRepo);
     mvnRun = null;
@@ -891,12 +1664,23 @@ function setupMaven() {
   });
   window.maven.onRunning(setMavenRunning);
   window.maven.running().then(setMavenRunning).catch(() => {});
-  window.maven.onOutput(({ repo, text }) => {
-    if (repo === mvnRepo) appendMvnOutput(text);
+  // what the output does not have yet: the start of a run is in what Run gets back too, which may come first
+  window.maven.onOutput(({ repo, text, id, end }) => {
+    if (repo !== mvnRepo) return;
+    if (!mvnRun || mvnRun.id !== id || !Number.isFinite(end)) {
+      appendMvnOutput(text);
+      return;
+    }
+    const have = mvnRun.written || 0;
+    if (end <= have) return;
+    mvnRun.written = end;
+    appendMvnOutput(end - have < text.length ? text.slice(text.length - (end - have)) : text);
   });
-  window.maven.onExit(({ repo, exitCode, endedAt, failedStep, stopped }) => {
+  window.maven.onExit(({ repo, exitCode, endedAt, failedStep, failedGit, stopped, marks }) => {
+    afterGitStep(repo);
     if (repo !== mvnRepo || !mvnRun) return;
-    Object.assign(mvnRun, { running: false, exitCode, endedAt, failedStep, stopped });
+    Object.assign(mvnRun, { running: false, exitCode, endedAt, failedStep, failedGit, stopped });
+    if (mvnRun.macro && marks) mvnRun.macro.marks = marks;
     finishMvnModules(exitCode, stopped);
     // a macro's steps have their exit codes in the output already
     if (!mvnRun.macro) appendMvnOutput(`\n[exit code ${exitCode}]\n`);
@@ -910,9 +1694,13 @@ function setupMaven() {
   }
   setMvnModulesFolded(folded);
   $('#mvnModFold').addEventListener('click', () => setMvnModulesFolded(!$('#mvnModules').classList.contains('folded')));
-  window.maven.onStep(({ repo, step, command }) => {
+  $('#mvnStepFold').addEventListener('click', () => setMvnModulesFolded(!$('#mvnSteps').classList.contains('folded')));
+  window.maven.onStep(({ repo, step, command, git, marks }) => {
+    afterGitStep(repo);
+    if (git) gitStepping.add(repo);
     if (repo !== mvnRepo || !mvnRun || !mvnRun.macro) return;
     mvnRun.macro.step = step;
+    if (marks) mvnRun.macro.marks = marks;
     mvnRun.stepCommand = command;
     renderMvnStatus();
   });

@@ -65,7 +65,7 @@ async function setTaskDone(t, done) {
 }
 
 async function deleteTask(t) {
-  if (!(await window.git.confirm(`Delete "${t.title}"?`))) return false;
+  if (!(await askConfirm(`Delete "${t.title}"?`))) return false;
   const r = await window.todos.remove(t.id);
   if (r.error) toast(r.error, 'error');
   await refreshTodos();

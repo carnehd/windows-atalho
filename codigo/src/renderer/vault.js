@@ -221,8 +221,8 @@ function renderEnvList() {
     b.addEventListener('click', () => setViewEnv(id));
     box.appendChild(b);
   };
-  chip('all', 'All');
   for (const env of vaultData.environments) chip(env.id, env.name, env);
+  chip('all', 'All');
   if (!vaultData.environments.length) box.appendChild(vEl('span', 'vd-legend-none', 'No environments: everything is the same for all'));
 }
 
@@ -293,8 +293,9 @@ function visibleVariables(type = typeFilter) {
   return { rows, searching: Boolean(q) };
 }
 
-// -- The page: the environment shown on top (or all of them), then a section per kind: the users as a table, the
-// links, the databases, the notes. A row opens the variable on the right, with a tab per environment it has. --
+// -- The page: the environment shown on top (or all of them), then a section per kind: the links, the users as a
+// table, the databases, the notes. A row opens the variable on the right, with a tab per environment it has. The
+// general links and users (for every environment, or of GERAL) show with any environment, first. --
 const VIEW_ENV_KEY = 'vaultViewEnv';
 const DEFAULT_ENV_NAME = 'geral'; // the environment the Vault opens on, when there is one by that name
 let vaultViewEnv = 'all';
@@ -306,12 +307,12 @@ let shownRows = [];
 let shownSearching = false;
 const quickOpen = { credential: false, link: false };
 let qaRefs = null;
-// By type: credentials, links, databases, endpoints, notes.
-const TYPE_ORDER = ['credential', 'link', 'db', 'endpoint', 'note'];
+// By type: links, credentials, databases, endpoints, notes.
+const TYPE_ORDER = ['link', 'credential', 'db', 'endpoint', 'note'];
 const sortKey = () => 'type';
 const SECTIONS = [
-  { type: 'credential', title: 'Users', one: 'user', add: '+ User', quick: 'credential' },
   { type: 'link', title: 'Links', one: 'link', add: '+ Link', quick: 'link' },
+  { type: 'credential', title: 'Users', one: 'user', add: '+ User', quick: 'credential' },
   { type: 'endpoint', title: 'Endpoints', one: 'endpoint' },
   { type: 'db', title: 'Databases', one: 'database', add: '+ Database' },
   { type: 'note', title: 'Notes', one: 'note', add: '+ Note' },
@@ -320,6 +321,22 @@ const SECTIONS = [
 const viewEnv = () => (vaultViewEnv === 'all' ? null : envById(vaultViewEnv) || null);
 // The values of a variable in an environment: its own there, else the ones for no environment (the same for all).
 const entryIn = (v, env) => v.entries.find((e) => e.env.id === env.id) || v.entries.find((e) => e.env.generic) || null;
+// A general link or user: one for every environment, or one of GERAL. It is there with any environment shown, first,
+// tagged GERAL; with another environment shown (not GERAL), the rows of that one have its colour, faintly.
+const GENERAL_TYPES = ['link', 'credential'];
+const isGeralEnv = (env) => Boolean(env && !env.generic && env.name.trim().toLowerCase() === DEFAULT_ENV_NAME);
+const isGeneralEnv = (env) => Boolean(env && (env.generic || isGeralEnv(env)));
+const geralEntry = (v) => v.entries.find((e) => e.env.generic) || v.entries.find((e) => isGeralEnv(e.env)) || null;
+// what a section lists with an environment shown: what has values there, and the general links and users
+const entryShown = (v, env) => entryIn(v, env) || (GENERAL_TYPES.includes(v.type) ? geralEntry(v) : null);
+// general where it is shown: the values shown are the general ones (with every environment shown: it has some)
+const isGeneralRow = (v, env) => GENERAL_TYPES.includes(v.type) && (env ? isGeneralEnv((entryShown(v, env) || {}).env) : Boolean(geralEntry(v)));
+// the rows of the environment shown, when it is not GERAL: its colour, faintly
+function tintOwn(tr, e, env) {
+  if (!env || isGeralEnv(env) || !e || e.env.id !== env.id) return;
+  tr.classList.add('vd-tr-own');
+  tr.style.setProperty('--vd-env', envColour(env));
+}
 // what + fills in for another environment: its name, or its username when it has no label
 const prefillOf = (v) => {
   const from = shownEntry(v).item;
@@ -351,8 +368,10 @@ function renderItems() {
   const env = viewEnv();
   const sections = vEl('div', 'vd-sections');
   for (const sec of SECTIONS) {
-    // with an environment shown, only what has values there (its own, or the ones for every environment)
-    const list = shownRows.filter((v) => v.type === sec.type && (!env || entryIn(v, env)));
+    // with an environment shown, only what has values there (its own, or the ones for every environment), and the
+    // general links and users; those first
+    const list = shownRows.filter((v) => v.type === sec.type && (!env || entryShown(v, env)));
+    if (GENERAL_TYPES.includes(sec.type)) list.sort((a, b) => Number(isGeneralRow(b, env)) - Number(isGeneralRow(a, env)));
     // users, links and notes are always there to add to; the others only when there are some (or a search finds them)
     if (!list.length && (searching || !['credential', 'link', 'note'].includes(sec.type))) continue;
     sections.appendChild(sectionEl(sec, list, env));
@@ -433,7 +452,7 @@ function sectionEl(sec, list, env) {
   if (sec.quick) {
     const quick = qaRefs[sec.quick];
     quick.classList.toggle('hidden', !quickOpen[sec.quick]);
-    quick.querySelector('.type-pill').textContent = env ? `New in ${env.name}` : 'New for all';
+    fillQuickEnv(quick.querySelector('.vault-quick-env'));
     section.appendChild(quick);
   }
   return section;
@@ -460,24 +479,30 @@ async function deleteSection(sec, list, env) {
   const ids = sectionItemIds(list, env);
   if (!ids.length) return;
   const lines = [`${deleteSectionText(sec, list, env)}? This cannot be undone.`];
-  if (env && list.some((v) => v.entries.some((e) => e.env.generic))) lines.push('The ones for all environments stay.');
-  if (!(await window.git.confirm(lines.join('\n')))) return;
+  if (env && list.some((v) => v.entries.some((e) => e.env.generic || (isGeralEnv(e.env) && e.env.id !== env.id)))) lines.push('The ones for all environments stay.');
+  if (!(await askConfirm(lines.join('\n')))) return;
   const r = await window.vault.deleteItems(ids);
   if (r.error) toast(r.error, 'error', { plain: true });
   else toast(`${r.deleted} deleted`, 'info', { plain: true });
   await refreshVault();
 }
 
+// The name; a general link or user (not with GERAL shown) tagged GERAL, at the right of the cell.
 function nameCell(v, e, env) {
   const td = vEl('td', 'vd-td-name');
-  td.appendChild(vEl('span', 'vd-row-name', v.name));
+  const wrap = td.appendChild(vEl('div', 'vd-name-wrap'));
+  wrap.appendChild(vEl('span', 'vd-row-name', v.name));
   if (isFavorite(v)) {
     const star = vEl('span', 'vd-fav');
     star.title = 'Favorite';
     star.innerHTML = `<svg viewBox="0 0 16 16" aria-hidden="true">${ICONS.star}</svg>`;
-    td.appendChild(star);
+    wrap.appendChild(star);
   }
-  if (env && e && e.env.generic) td.appendChild(vEl('span', 'vd-tag-all', 'all'));
+  if (!isGeralEnv(env) && isGeneralRow(v, env)) {
+    const from = env ? e.env : geralEntry(v).env;
+    const tag = wrap.appendChild(vEl('span', 'vd-tag-geral', 'GERAL'));
+    tag.title = from.generic ? 'The same for every environment' : `Of ${from.name}: shown with every environment`;
+  } else if (env && e && e.env.generic) wrap.appendChild(vEl('span', 'vd-tag-all', 'all'));
   return td;
 }
 
@@ -520,9 +545,10 @@ function usersTable(list, env) {
   for (const h of ['Name', 'Username', 'Password', '']) head.appendChild(vEl('th', '', h));
   const body = table.createTBody();
   for (const v of list) {
-    const e = entryIn(v, env);
+    const e = entryShown(v, env);
     const tr = body.insertRow();
     tr.className = `vd-tr${v.key === detailKey ? ' selected' : ''}`;
+    tintOwn(tr, e, env);
     tr.appendChild(nameCell(v, e, env));
     const item = e.item;
     const user = vEl('td', 'vd-td-mono', item.username || '—');
@@ -589,9 +615,10 @@ function linksTable(list, env) {
   for (const h of env ? ['Name', 'Link', ''] : ['Name', 'Link', 'Environments', '']) head.appendChild(vEl('th', '', h));
   const body = table.createTBody();
   for (const v of list) {
-    const e = env ? entryIn(v, env) : shownEntry(v);
+    const e = env ? entryShown(v, env) : shownEntry(v);
     const tr = body.insertRow();
     tr.className = `vd-tr${v.key === detailKey ? ' selected' : ''}`;
+    tintOwn(tr, e, env);
     tr.appendChild(nameCell(v, e, env));
     const url = e.item.url || '';
     const link = vEl('td', 'vd-td-mono vd-td-link', url || '\u2014');
@@ -815,8 +842,8 @@ function openAddEnvMenu(v, anchor) {
 }
 
 
-// The chosen item in full: its name and actions on top, a tab per environment, every field as a block that copies on a
-// click (the password with its eye), then Sign in and Open in the browser.
+// The chosen item in full: its name on top, a tab per environment, every field as a block that copies on a click (the
+// password with its eye), then Sign in and Open in the browser; at the bottom what can be done with it.
 function detailPanel(env, item, v) {
   const panel = vEl('div', 'vd-detail');
   panel.setAttribute('role', 'region');
@@ -828,12 +855,6 @@ function detailPanel(env, item, v) {
   title.append(typeIcon(item.type), name);
   head.append(title, vEl('span', `type-pill type-${item.type}`, TYPE_LABELS[item.type]));
   head.appendChild(vEl('span', 'vd-head-space'));
-  const star = vIconBtn('star', item.favorite ? 'Remove from favorites' : 'Add to favorites (they come first)', () => toggleItemFavorite(item), `vd-star${item.favorite ? ' on' : ''}`);
-  star.setAttribute('aria-pressed', String(Boolean(item.favorite)));
-  head.appendChild(star);
-  const pop = popoutButton(item);
-  if (pop) head.appendChild(pop);
-  head.append(...itemActions(env, item));
   if (v) head.appendChild(vIconBtn('close', 'Close (Esc)', () => closeDetail(), 'vd-close'));
   panel.appendChild(head);
   if (v) panel.appendChild(envTabs(v, env));
@@ -879,7 +900,46 @@ function detailPanel(env, item, v) {
   if (!fields.children.length) fields.appendChild(vEl('span', 'vault-tile-empty', 'Nothing to copy'));
   panel.appendChild(fields);
   if (buttons.children.length) panel.appendChild(buttons);
+  panel.appendChild(detailActions(env, item, v));
   return panel;
+}
+
+// At the bottom of the details, its icons a little bigger: favorite, a window of its own, duplicate to another
+// environment, edit; delete on the right.
+function detailActions(env, item, v) {
+  const bar = vEl('div', 'vd-actions');
+  const star = vIconBtn('star', item.favorite ? 'Remove from favorites' : 'Add to favorites (they come first)', () => toggleItemFavorite(item), `vd-star${item.favorite ? ' on' : ''}`);
+  star.setAttribute('aria-pressed', String(Boolean(item.favorite)));
+  bar.appendChild(star);
+  const pop = popoutButton(item);
+  if (pop) bar.appendChild(pop);
+  if (v) bar.appendChild(vIconBtn('copy', 'Duplicate to another environment...', (ev) => openDuplicateMenu(v, item, ev.currentTarget), 'vd-dup'));
+  const [edit, del] = itemActions(env, item);
+  bar.append(edit, vEl('span', 'vd-head-space'), del);
+  return bar;
+}
+
+// Duplicate to: the environments it is not in (and no environment, when it is not there), each a copy with all its
+// values, the password too; the copy opens on its tab.
+function openDuplicateMenu(v, item, anchor) {
+  const has = new Set(v.entries.map((e) => e.env.id));
+  const items = vaultData.environments
+    .filter((env) => !has.has(env.id))
+    .map((env) => ({ icon: 'copy', label: env.name, hint: `${v.name} with the same values in ${env.name}`, run: () => duplicateTo(v, item, env) }));
+  if (!v.entries.some((e) => e.env.generic)) items.push({ icon: 'copy', label: 'No environment (all)', hint: `${v.name} with the same values for every environment without its own`, run: () => duplicateTo(v, item, null) });
+  if (!items.length) items.push({ note: `${v.name} is in every environment already` });
+  openActionMenu({ anchor, title: `Duplicate ${v.name} to`, items });
+}
+
+async function duplicateTo(v, item, env) {
+  const r = await window.vault.copyItem(item.id, env ? env.id : '');
+  if (r.error) {
+    toast(r.error, 'error', { plain: true });
+    return;
+  }
+  toast(`${v.name} duplicated to ${env ? env.name : 'no environment'}`, 'success', { plain: true });
+  selectedEnvId = env ? env.id : NO_ENV_ID;
+  await refreshVault();
 }
 
 // -- Import users: the file is chosen and read (by the app, which keeps its passwords), then this popup shows what it
@@ -1064,7 +1124,7 @@ function itemActions(env, item) {
   return [
     vIconBtn('edit', 'Edit', () => openItemDialog(item.type, env, item)),
     vIconBtn('trash', 'Delete', async () => {
-      if (!(await window.git.confirm(`Delete "${item.title || item.username || 'this item'}"?`))) return;
+      if (!(await askConfirm(`Delete "${item.title || item.username || 'this item'}"?`))) return;
       const r = await window.vault.deleteItem(item.id);
       if (r.error) toast(r.error, 'error');
       else toast('Deleted', 'info');
@@ -1464,7 +1524,7 @@ function setupVault() {
     const env = envById(envDialogId);
     if (!env) return;
     const n = env.items.length;
-    if (!(await window.git.confirm(`Delete environment "${env.name}" and its ${n} item${n !== 1 ? 's' : ''}? This cannot be undone.`))) return;
+    if (!(await askConfirm(`Delete environment "${env.name}" and its ${n} item${n !== 1 ? 's' : ''}? This cannot be undone.`))) return;
     const r = await window.vault.deleteEnv(env.id);
     if (r.error) toast(r.error, 'error');
     else toast('Environment deleted', 'info');
@@ -1537,16 +1597,33 @@ function hostOf(url) {
   }
 }
 
-// The quick rows add to the environment shown, or for no environment (the same for all) when all are shown.
-async function quickSave(item, inputs) {
-  const env = viewEnv();
+// The quick rows add to the environment chosen at their right: the one shown, until another is chosen (no environment,
+// the same for all, when all are shown). The choice stays while the same environment is shown.
+function fillQuickEnv(select) {
+  const options = [...vaultData.environments.map((e) => [e.id, e.name]), ['', 'No environment (all)']];
+  const sig = JSON.stringify(options);
+  if (select.dataset.sig !== sig) {
+    const was = select.value;
+    select.replaceChildren(...options.map(([id, name]) => new Option(name, id)));
+    select.dataset.sig = sig;
+    if (options.some(([id]) => id === was)) select.value = was;
+  }
+  if (select.dataset.view !== vaultViewEnv) {
+    select.dataset.view = vaultViewEnv;
+    const env = viewEnv();
+    select.value = env ? env.id : '';
+  }
+}
+
+async function quickSave(item, inputs, select) {
+  const env = envById(select.value) || null;
   const r = await window.vault.saveItem({ envId: env ? env.id : '', ...item });
   if (r.error) {
     toast(r.error, 'error');
     return;
   }
   inputs.forEach((i) => (i.value = ''));
-  toast('Saved', 'success');
+  toast(`Saved in ${env ? env.name : 'no environment (all)'}`, 'success');
   await refreshVault();
   inputs[0].focus();
 }
@@ -1554,14 +1631,14 @@ async function quickSave(item, inputs) {
 function setupQuickAdd() {
   const cred = [$('#qaCredTitle'), $('#qaCredUser'), $('#qaCredPass')];
   const addCred = () =>
-    quickSave({ type: 'credential', title: cred[0].value, username: cred[1].value, password: cred[2].value }, cred);
+    quickSave({ type: 'credential', title: cred[0].value, username: cred[1].value, password: cred[2].value }, cred, $('#qaCredEnv'));
   $('#qaCredAdd').addEventListener('click', addCred);
   cred.forEach((i) => i.addEventListener('keydown', (e) => e.key === 'Enter' && addCred()));
 
   const link = [$('#qaLinkTitle'), $('#qaLinkUrl')];
   const addLink = () => {
     const url = link[1].value.trim();
-    quickSave({ type: 'link', title: link[0].value.trim() || hostOf(url) || url, url }, link);
+    quickSave({ type: 'link', title: link[0].value.trim() || hostOf(url) || url, url }, link, $('#qaLinkEnv'));
   };
   $('#qaLinkAdd').addEventListener('click', addLink);
   link.forEach((i) => i.addEventListener('keydown', (e) => e.key === 'Enter' && addLink()));

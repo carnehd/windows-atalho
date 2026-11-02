@@ -24,6 +24,9 @@ contextBridge.exposeInMainWorld('git', {
   resetWindowSize: () => ipcRenderer.invoke('win-size-reset'),
   setPinned: (value) => ipcRenderer.invoke('set-pinned', value),
   openFolder: (path) => ipcRenderer.invoke('open-folder', path),
+  // the editors found on this computer, and a repository opened in one of them
+  listIdes: () => ipcRenderer.invoke('ide-list'),
+  openWithIde: (path, id) => ipcRenderer.invoke('ide-open', path, id),
   toggleFavorite: (path) => ipcRenderer.invoke('toggle-favorite-repo', path),
   renameRepo: (path, name) => ipcRenderer.invoke('rename-repo', path, name),
   getRepoGroups: () => ipcRenderer.invoke('repo-groups-get'),
@@ -33,10 +36,17 @@ contextBridge.exposeInMainWorld('git', {
   moveRepoGroup: (id, delta) => ipcRenderer.invoke('repo-group-move', id, delta),
   collapseRepoGroup: (id, collapsed) => ipcRenderer.invoke('repo-group-collapse', id, collapsed),
   setRepoGroup: (path, id) => ipcRenderer.invoke('repo-group-assign', path, id),
-  getRepoSummaries: () => ipcRenderer.invoke('get-repo-summaries'),
+  getRepoSummaries: (only) => ipcRenderer.invoke('get-repo-summaries', only),
   onWindowShown: (cb) => ipcRenderer.on('window-shown', (_, mode, ide) => cb(mode, ide)),
+  // the Git panel: every git command the app runs
+  repoChanges: (paths) => ipcRenderer.invoke('repo-changes', paths),
+  commandLog: () => ipcRenderer.invoke('git-log-list'),
+  clearCommandLog: () => ipcRenderer.invoke('git-log-clear'),
+  copyCommandLog: () => ipcRenderer.invoke('git-log-copy'),
+  onCommandLog: (cb) => ipcRenderer.on('git-log', (_, batch) => cb(batch)),
   addRepoPath: (folder) => ipcRenderer.invoke('add-repo-path', folder),
   removeRepo: (path) => ipcRenderer.invoke('remove-repo', path),
+  removeRepos: (paths) => ipcRenderer.invoke('remove-repos', paths),
   getStatus: (path) => ipcRenderer.invoke('get-status', path),
   getBranches: (path) => ipcRenderer.invoke('get-branches', path),
   checkoutBranch: (path, branch) => ipcRenderer.invoke('checkout-branch', path, branch),
@@ -80,7 +90,6 @@ contextBridge.exposeInMainWorld('git', {
   setTheme: (theme) => ipcRenderer.invoke('set-theme', theme),
   getHotkeys: () => ipcRenderer.invoke('get-hotkeys'),
   setHotkey: (name, accelerator) => ipcRenderer.invoke('set-hotkey', name, accelerator),
-  confirm: (message) => ipcRenderer.invoke('confirm', message),
   closeWindow: () => ipcRenderer.invoke('close-window'),
   deleteBranch: (path, branch) => ipcRenderer.invoke('delete-branch', path, branch),
   fetch: (path) => ipcRenderer.invoke('fetch', path),
@@ -91,6 +100,7 @@ contextBridge.exposeInMainWorld('git', {
   abortOperation: (path) => ipcRenderer.invoke('abort-operation', path),
   logPage: (path, options) => ipcRenderer.invoke('log-page', path, options),
   compareRefs: (path) => ipcRenderer.invoke('compare-refs', path),
+  syncState: (path) => ipcRenderer.invoke('sync-state', path),
   compareCommits: (path, side, count) => ipcRenderer.invoke('compare-commits', path, side, count),
   compare: (path, from, to, options) => ipcRenderer.invoke('compare', path, from, to, options),
   listTags: (path) => ipcRenderer.invoke('list-tags', path),
@@ -117,6 +127,7 @@ contextBridge.exposeInMainWorld('vault', {
   deleteEnv: (id) => ipcRenderer.invoke('vault-delete-env', id),
   saveItem: (item) => ipcRenderer.invoke('vault-save-item', item),
   deleteItem: (id) => ipcRenderer.invoke('vault-delete-item', id),
+  copyItem: (id, envId) => ipcRenderer.invoke('vault-copy-item', id, envId),
   deleteItems: (ids) => ipcRenderer.invoke('vault-delete-items', ids),
   setFavorite: (id, on) => ipcRenderer.invoke('vault-set-favorite', id, on),
   importPick: () => ipcRenderer.invoke('vault-import-pick'),
@@ -148,6 +159,19 @@ contextBridge.exposeInMainWorld('todos', {
   move: (id, status) => ipcRenderer.invoke('todo-move', id, status),
 });
 
+// The Database page: PostgreSQL connections and their data, read only (db/)
+contextBridge.exposeInMainWorld('database', {
+  connections: () => ipcRenderer.invoke('db-connections'),
+  save: (connection) => ipcRenderer.invoke('db-save', connection),
+  remove: (id) => ipcRenderer.invoke('db-delete', id),
+  test: (connection) => ipcRenderer.invoke('db-test', connection),
+  schemas: (id) => ipcRenderer.invoke('db-schemas', id),
+  tables: (id, schema) => ipcRenderer.invoke('db-tables', id, schema),
+  columns: (id, schema, table) => ipcRenderer.invoke('db-columns', id, schema, table),
+  rows: (id, schema, table, opts) => ipcRenderer.invoke('db-rows', id, schema, table, opts),
+  query: (id, sql) => ipcRenderer.invoke('db-query', id, sql),
+});
+
 contextBridge.exposeInMainWorld('maven', {
   info: (repo) => ipcRenderer.invoke('mvn-info', repo),
   run: (repo, request) => ipcRenderer.invoke('mvn-run', repo, request),
@@ -158,12 +182,31 @@ contextBridge.exposeInMainWorld('maven', {
   macros: () => ipcRenderer.invoke('mvn-macros'),
   saveMacro: (macro) => ipcRenderer.invoke('mvn-macro-save', macro),
   deleteMacro: (id) => ipcRenderer.invoke('mvn-macro-delete', id),
-  runMacro: (repo, id) => ipcRenderer.invoke('mvn-macro-run', repo, id),
+  runMacro: (repo, id, answers, values) => ipcRenderer.invoke('mvn-macro-run', repo, id, answers, values),
+  envValues: (repo) => ipcRenderer.invoke('mvn-env-values', repo),
   onStep: (cb) => ipcRenderer.on('mvn-step', (_, data) => cb(data)),
   onOutput: (cb) => ipcRenderer.on('mvn-output', (_, data) => cb(data)),
   onExit: (cb) => ipcRenderer.on('mvn-exit', (_, data) => cb(data)),
   running: () => ipcRenderer.invoke('mvn-running'),
   onRunning: (cb) => ipcRenderer.on('mvn-running', (_, list) => cb(list)),
+});
+
+contextBridge.exposeInMainWorld('bruno', {
+  collections: (repo) => ipcRenderer.invoke('bruno-collections', repo),
+  read: (repo, dir) => ipcRenderer.invoke('bruno-read', repo, dir),
+  request: (repo, dir, rel) => ipcRenderer.invoke('bruno-request', repo, dir, rel),
+  saveRequest: (repo, dir, rel, edit, stamp) => ipcRenderer.invoke('bruno-save-request', repo, dir, rel, edit, stamp),
+  requestOp: (repo, dir, kind, rel, arg) => ipcRenderer.invoke('bruno-request-op', repo, dir, kind, rel, arg),
+  savedFolder: () => ipcRenderer.invoke('bruno-saved-folder'),
+  saveEnv: (repo, dir, env) => ipcRenderer.invoke('bruno-save-env', repo, dir, env),
+  deleteEnv: (repo, dir, name) => ipcRenderer.invoke('bruno-delete-env', repo, dir, name),
+  cli: (again) => ipcRenderer.invoke('bruno-cli', again),
+  run: (repo, dir, request) => ipcRenderer.invoke('bruno-run', repo, dir, request),
+  stop: (id) => ipcRenderer.invoke('bruno-stop', id),
+  clearVars: (repo, dir) => ipcRenderer.invoke('bruno-clear-vars', repo, dir),
+  onResult: (cb) => ipcRenderer.on('bruno-result', (_, data) => cb(data)),
+  onOutput: (cb) => ipcRenderer.on('bruno-output', (_, data) => cb(data)),
+  onDone: (cb) => ipcRenderer.on('bruno-done', (_, data) => cb(data)),
 });
 
 contextBridge.exposeInMainWorld('analysis', {
@@ -179,10 +222,15 @@ contextBridge.exposeInMainWorld('search', {
   names: (paths) => ipcRenderer.invoke('search-names', paths),
   open: (repo, rel) => ipcRenderer.invoke('search-open', repo, rel),
   reveal: (repo, rel) => ipcRenderer.invoke('search-reveal', repo, rel),
+  context: (repo, rel, line, rev) => ipcRenderer.invoke('search-context', repo, rel, line, rev),
 });
 
 contextBridge.exposeInMainWorld('tools', {
   hash: (text, key) => ipcRenderer.invoke('tools-hash', text, key),
+  signJwt: (header, payload, key, keyBase64) => ipcRenderer.invoke('tools-jwt-sign', header, payload, key, keyBase64),
+  apiOpen: () => ipcRenderer.invoke('tools-api-open'),
+  apiFetch: (url) => ipcRenderer.invoke('tools-api-fetch', url),
+  apiCompare: (before, after) => ipcRenderer.invoke('tools-api-compare', before, after),
   convertConfig: (text, from, to) => ipcRenderer.invoke('tools-config', text, from, to),
   ports: (port) => ipcRenderer.invoke('tools-ports', port),
   endProcess: (pid) => ipcRenderer.invoke('tools-end-process', pid),
@@ -218,6 +266,11 @@ contextBridge.exposeInMainWorld('terminal', {
   external: (cwd, command) => ipcRenderer.invoke('term-external', cwd, command),
   onOutput: (cb) => ipcRenderer.on('term-output', (_, data) => cb(data)),
   onExit: (cb) => ipcRenderer.on('term-exit', (_, data) => cb(data)),
+  // a git command typed at the foot of the Git panel
+  git: (cwd, command) => ipcRenderer.invoke('term-git-run', cwd, command),
+  gitStop: () => ipcRenderer.invoke('term-git-stop'),
+  onGitOutput: (cb) => ipcRenderer.on('term-git-output', (_, data) => cb(data)),
+  onGitExit: (cb) => ipcRenderer.on('term-git-exit', (_, data) => cb(data)),
 });
 
 contextBridge.exposeInMainWorld('logs', {

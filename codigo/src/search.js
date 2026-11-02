@@ -17,6 +17,10 @@ const MAX_WALK_FILES = 50000;
 const MAX_DEPTH = 20;
 const NAMES_TTL_MS = 60 * 1000;
 const GREP_TIMEOUT_MS = 2 * 60 * 1000;
+// the popup of a line found: the lines around it, from a file up to this size; a very long line is cut
+const PEEK_AROUND = 200;
+const PEEK_MAX_BYTES = 5 * 1024 * 1024;
+const PEEK_MAX_LINE = 2000;
 
 async function mapLimit(items, limit, fn) {
   let next = 0;
@@ -362,6 +366,38 @@ function registerSearch({ listRepos, isKnownRepo, openPath, revealPath }) {
     try {
       const error = await openPath(listedFile(repoPath, rel));
       return error ? { error } : { success: true };
+    } catch (e) {
+      return { error: e.message };
+    }
+  });
+  // The lines around one a search found, for the popup a click on it opens: from the working copy, or (for a search
+  // on origin) from that branch with git show. Only files of the repositories of the list.
+  ipcMain.handle('search-context', async (_, repoPath, rel, line, rev) => {
+    try {
+      let text;
+      if (rev) {
+        if (!isKnownRepo(repoPath)) throw new Error('Unknown repository');
+        const ref = String(rev);
+        const file = String(rel || '');
+        if (!/^origin\/[\w./-]+$/.test(ref) || ref.includes('..') || !file || file.startsWith('-') || file.split('/').includes('..')) throw new Error('File not found');
+        const r = await git(['show', `${ref}:${file}`], String(repoPath));
+        if (r.error) throw new Error(`${file} is not on ${ref}`);
+        text = r.stdout;
+      } else {
+        const file = listedFile(repoPath, rel);
+        const { size } = await fs.promises.stat(file);
+        if (size > PEEK_MAX_BYTES) throw new Error('This file is too big to show here: open it');
+        const buf = await fs.promises.readFile(file);
+        if (buf.subarray(0, 8000).includes(0)) throw new Error('A binary file: open it to see it');
+        text = buf.toString('utf8');
+      }
+      const lines = text.split(/\r?\n/);
+      if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+      const at = Math.min(Math.max(1, Math.round(Number(line)) || 1), lines.length);
+      const from = Math.max(1, at - PEEK_AROUND);
+      const to = Math.min(lines.length, at + PEEK_AROUND);
+      const cut = (l) => (l.length > PEEK_MAX_LINE ? `${l.slice(0, PEEK_MAX_LINE)}…` : l);
+      return { from, total: lines.length, lines: lines.slice(from - 1, to).map(cut) };
     } catch (e) {
       return { error: e.message };
     }

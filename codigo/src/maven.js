@@ -5,6 +5,8 @@ const path = require('path');
 const { ipcMain } = require('electron');
 const shell = require('./shell');
 const { SKIP } = require('./analysis');
+const GitService = require('./git-service');
+const envValues = require('./env-values');
 
 const { IS_WIN, psQuote } = shell;
 // The Maven wrapper a project may carry: mvnw.cmd on Windows, the mvnw shell script elsewhere.
@@ -135,11 +137,23 @@ function pomFolders(root, maxDepth = 6) {
   return found.sort((a, b) => a.split('/').length - b.split('/').length || a.localeCompare(b));
 }
 
-// -- Macros: several commands saved under a name, for every microservice, run one after the other --
+// -- Macros: several commands saved under a name, for every microservice, run one after the other: Maven commands in
+// the microservice's folder, and git steps in its repository (what to do with local changes, switch or create a
+// branch, pull) --
 const MACRO_LIMITS = { count: 30, steps: 15, name: 60, text: 400 };
 const SERVER_GOALS = /(^|\s)spring-boot:run(\s|$)/;
+// Under the command: the values the application gets over its files (the Values button), and where they come from.
+const valuesLine = (values, note) => (values ? `  SPRING_APPLICATION_JSON: ${String(note || `${Object.keys(values).length} values`).slice(0, 300)}\n` : '');
 // A step that starts the application does not end by itself, so it can only be the last one.
 const keepsRunning = (step) => (step.kind === 'preset' && ['start', 'debug'].includes(step.preset)) || (step.kind === 'custom' && SERVER_GOALS.test(step.goals));
+const GIT_KINDS = new Set(['changes', 'fetch', 'checkout', 'branch', 'pull', 'unstash']);
+const MAVEN_KINDS = new Set(['preset', 'custom']);
+// Local changes: asked when the macro runs (stash, discard or stop), or always the same answer.
+const CHANGES_POLICIES = ['ask', 'stash', 'discard', 'stop'];
+// A branch a step names: only the characters branch names use, never an option or a range. Git has the last word
+// (check-ref-format) when the step runs.
+const branchText = (v) => String(v || '').trim().slice(0, 200);
+const isBranchName = (t) => /^[\w./-]+$/.test(t) && !t.startsWith('-') && !t.startsWith('/') && !t.endsWith('/') && !t.endsWith('.') && !t.endsWith('.lock') && !t.includes('..') && !t.includes('//');
 
 function cleanMacro(input = {}) {
   const name = String(input.name || '').trim().slice(0, MACRO_LIMITS.name);
@@ -152,9 +166,19 @@ function cleanMacro(input = {}) {
     if (UNSAFE_CHARS.test(t)) throw new Error(`Step ${i + 1}: only Maven arguments are allowed (no ; | & \` $ < >)`);
     return t;
   };
+  const branch = (v, i, what, required) => {
+    const t = branchText(v);
+    if (!t && required) throw new Error(`Step ${i + 1}: type ${what}`);
+    if (t && !isBranchName(t)) throw new Error(`Step ${i + 1}: "${t}" is not a branch name`);
+    return t;
+  };
   const steps = raw.map((step, i) => {
     const kind = step && step.kind;
-    if (kind === 'stop') return { kind };
+    if (kind === 'stop' || kind === 'fetch' || kind === 'unstash') return { kind };
+    if (kind === 'changes') return { kind, policy: CHANGES_POLICIES.includes(step.policy) ? step.policy : 'ask' };
+    if (kind === 'checkout') return { kind, branch: branch(step.branch, i, 'the branch to switch to, e.g. develop', true) };
+    if (kind === 'branch') return { kind, base: branch(step.base, i, 'the branch on origin it starts from, e.g. develop', true) };
+    if (kind === 'pull') return { kind, from: branch(step.from, i, '', false) };
     if (kind === 'preset') {
       if (!Object.prototype.hasOwnProperty.call(PRESETS, step.preset)) throw new Error(`Step ${i + 1}: unknown command`);
       return { kind, preset: step.preset, extra: text(step.extra, i) };
@@ -168,8 +192,53 @@ function cleanMacro(input = {}) {
   });
   const early = steps.findIndex((st, i) => keepsRunning(st) && i < steps.length - 1);
   if (early !== -1) throw new Error(`Step ${early + 1} starts the app, which keeps running: it has to be the last step`);
+  const unstash = steps.findIndex((st, i) => st.kind === 'unstash' && !steps.slice(0, i).some((s) => s.kind === 'changes'));
+  if (unstash !== -1) throw new Error(`Step ${unstash + 1} brings back the changes a Local changes step stashed: put one before it`);
   const id = typeof input.id === 'string' && /^[\w-]{1,64}$/.test(input.id) ? input.id : crypto.randomUUID();
   return { id, name, steps };
+}
+
+// What to do with the local changes when a macro runs: the answer given when it started (for a step that asks, or
+// that discards them, which is never done without saying so), else the step's own. A step that asks and got no answer
+// stops the macro when there are changes.
+const changesPolicy = (step, answers) => {
+  if (step.policy === 'ask' || step.policy === 'discard') return answers.changes || (step.policy === 'ask' ? 'stop' : 'discard');
+  return step.policy;
+};
+const CHANGES_LABELS = { stash: 'stash them', discard: 'discard them', stop: 'stop if there are any' };
+
+// A git step as the output and the status show it.
+function gitStepLabel(step, answers, i) {
+  switch (step.kind) {
+    case 'changes':
+      return `Local changes: ${CHANGES_LABELS[changesPolicy(step, answers)]}`;
+    case 'fetch':
+      return 'git fetch --all --prune --tags';
+    case 'checkout':
+      return `git checkout ${step.branch}`;
+    case 'branch':
+      return `New branch ${answers.branches[i]} from origin/${step.base}`;
+    case 'pull':
+      return step.from ? `git pull origin ${step.from}` : 'git pull';
+    default:
+      return 'Bring back the stashed changes (git stash pop)';
+  }
+}
+
+// What is asked when a macro starts: the name of each new branch (by the step's place) and, when there are local
+// changes, what to do with them.
+function cleanAnswers(macro, input = {}) {
+  const typed = input && typeof input.branches === 'object' && input.branches ? input.branches : {};
+  const branches = {};
+  macro.steps.forEach((st, i) => {
+    if (st.kind !== 'branch') return;
+    const name = branchText(typed[i]);
+    if (!name) throw new Error(`Step ${i + 1}: type the name of the new branch`);
+    if (!isBranchName(name)) throw new Error(`"${name}" is not a valid branch name`);
+    branches[i] = name;
+  });
+  const changes = ['stash', 'discard', 'stop'].includes(input && input.changes) ? input.changes : null;
+  return { branches, changes };
 }
 
 // Windows: mvn and mvnw are .cmd files, which only a shell can start, so they run through PowerShell (which also gives
@@ -190,7 +259,7 @@ function buildScript(dir, args, wrapper = findWrapper(dir)) {
 // (through sh, so it works even without the executable bit a Windows checkout leaves off) or mvn, in its own process
 // group so Stop can end Maven and the Java it started together.
 function startMaven(dir, args, env, wrapper = findWrapper(dir)) {
-  if (IS_WIN) return spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', buildScript(dir, args, wrapper)], { cwd: dir, windowsHide: true });
+  if (IS_WIN) return spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', buildScript(dir, args, wrapper)], { cwd: dir, windowsHide: true, ...(env ? { env } : {}) });
   if (wrapper) return spawn('/bin/sh', [wrapperCall(dir, wrapper), ...args], { cwd: dir, env, detached: true });
   return spawn('mvn', args, { cwd: dir, env, detached: true });
 }
@@ -246,15 +315,19 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
   const announce = () => send('mvn-running', runningRepos());
 
   // A run: one command, or the steps of a macro one after the other. active until its last step ends; muted once another
-  // run of the same repository takes its place (a macro that stops it first), so their output does not mix.
+  // run of the same repository takes its place (a macro that stops it first), so their output does not mix. written
+  // counts what its output has had so far: the window, which gets the output both as it comes and whole (when the run
+  // starts, when the page is read again), adds only what it does not have yet.
+  let lastRunId = 0;
   function newRun(repoPath, command, header, extra = {}) {
-    const run = { child: null, active: true, cancelled: false, muted: false, repo: repoPath, command, log: header, exitCode: null, startedAt: Date.now(), endedAt: null, ...extra };
+    const run = { id: ++lastRunId, child: null, active: true, cancelled: false, muted: false, repo: repoPath, command, log: header, written: header.length, exitCode: null, startedAt: Date.now(), endedAt: null, ...extra };
     run.done = new Promise((resolve) => (run.resolveDone = resolve));
     return run;
   }
   const write = (run, text) => {
     run.log = (run.log + text).slice(-MAX_LOG_CHARS);
-    if (!run.muted) send('mvn-output', { repo: run.repo, text });
+    run.written += text.length;
+    if (!run.muted) send('mvn-output', { repo: run.repo, text, id: run.id, end: run.written });
   };
 
   // Maven once, its output added to the run's log; resolves with the exit code.
@@ -286,7 +359,7 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
   function finishRun(run, exitCode, extra = {}) {
     Object.assign(run, { active: false, child: null, exitCode, endedAt: Date.now() }, extra);
     run.resolveDone();
-    if (runs.get(key(run.repo)) === run) send('mvn-exit', { repo: run.repo, exitCode, endedAt: run.endedAt, failedStep: run.failedStep || null, stopped: run.cancelled });
+    if (runs.get(key(run.repo)) === run) send('mvn-exit', { repo: run.repo, exitCode, endedAt: run.endedAt, failedStep: run.failedStep || null, failedGit: Boolean(run.failedGit), stopped: run.cancelled, marks: run.macro ? run.macro.marks : null });
     announce();
   }
 
@@ -308,6 +381,125 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
   // What a step of a macro runs, with the ports saved for the repository; a Stop step runs nothing.
   const stepArgs = (step, ports) => (step.kind === 'preset' ? [...PRESETS[step.preset].args(ports), ...tokenize(step.extra || '')] : tokenize(step.goals));
 
+  // A git step of a macro, in the repository's root, what it did written to the output. Resolves with 0, or 1 when it
+  // failed (the macro ends there). ctx holds the answers given when it started and the stash it made.
+  async function runGitStep(run, step, i, ctx) {
+    const service = new GitService(run.repo);
+    const git = service.git;
+    const say = (text) => write(run, `${text}\n`);
+    const fail = (text) => {
+      say(GitService.cleanError(text).replace(/^(error|fatal): /gm, ''));
+      return 1;
+    };
+    const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+    try {
+      switch (step.kind) {
+        case 'changes': {
+          const status = await git.status();
+          if (!status.files.length) {
+            say('No local changes.');
+            return 0;
+          }
+          const what = `${plural(status.files.length, 'file')} changed on ${status.current}`;
+          const policy = changesPolicy(step, ctx.answers);
+          if (policy === 'stop') return fail(`${what}: the macro stops here. Commit, stash or revert them, or run it again and choose what to do with them.`);
+          if (policy === 'stash') {
+            const message = `${run.macro.name} ${new Date().toLocaleString()}`;
+            const r = await service.stashPush(message, null, true);
+            if (r.error) return fail(`Could not stash them: ${r.error}`);
+            ctx.stash = (await git.revparse(['refs/stash'])).trim();
+            say(`${what}: stashed as "${message}" (with the new files). They are in the Stash tab.`);
+            return 0;
+          }
+          // every changed path, a renamed file's old one too: what the Changes tab's Revert takes back
+          const files = [...new Set(status.files.flatMap((f) => [f.path, f.from]).filter(Boolean))];
+          const r = await service.revertFiles(files);
+          if (r.error) return fail(`Could not discard them: ${r.error}`);
+          say(`${what}: discarded.`);
+          return 0;
+        }
+        case 'fetch': {
+          const r = await service.fetch();
+          if (r.error) return fail(`Could not fetch: ${r.error}`);
+          say(r.warning || 'Fetched every branch and tag from origin.');
+          return 0;
+        }
+        case 'checkout': {
+          if ((await git.status()).current === step.branch) {
+            say(`Already on ${step.branch}.`);
+            return 0;
+          }
+          const r = await service.checkout(step.branch);
+          if (r.error) return fail(`Could not switch to ${step.branch}: ${r.error}`);
+          say(`Switched to ${step.branch}.`);
+          return 0;
+        }
+        case 'branch': {
+          const name = ctx.answers.branches[i];
+          // one made before (the same task again): the macro goes on from it
+          if (await service.refExists(`refs/heads/${name}`)) {
+            const r = await service.checkout(name);
+            if (r.error) return fail(`${name} already exists, and switching to it failed: ${r.error}`);
+            say(`${name} already exists: switched to it.`);
+            return 0;
+          }
+          const r = await service.createBranchFrom(name, step.base);
+          if (r.error) return fail(`Could not create ${name}: ${r.error}`);
+          say(`Created ${name} from origin/${step.base} (fetched first, so it is up to date) and switched to it.`);
+          return 0;
+        }
+        case 'pull': {
+          const status = await git.status();
+          if (status.detached || !status.current) return fail('Not on a branch (detached HEAD): nothing to pull into.');
+          const before = await git.revparse(['HEAD']).catch(() => '');
+          let r;
+          if (step.from) {
+            try {
+              await git.raw(['pull', '--no-rebase', 'origin', step.from]);
+              r = (await service.stoppedOnConflicts('pull')) || { success: true };
+            } catch (e) {
+              r = (await service.stoppedOnConflicts('pull')) || { error: e.message };
+            }
+          } else if (!status.tracking) {
+            say(`${status.current} is not on origin yet: nothing to pull.`);
+            return 0;
+          } else r = await service.pull();
+          if (r.error) return fail(r.conflict ? `${r.error}\nResolve them in the Changes tab.` : `Could not pull: ${r.error}`);
+          const after = await git.revparse(['HEAD']).catch(() => '');
+          if (before && before.trim() === after.trim()) say('Already up to date.');
+          else {
+            const stat = before ? (await git.raw(['diff', '--shortstat', before.trim(), 'HEAD']).catch(() => '')).trim() : '';
+            say(`Pulled${step.from ? ` origin/${step.from} into ${status.current}` : ''}${stat ? `: ${stat}` : ''}.`);
+          }
+          return 0;
+        }
+        default: {
+          if (!ctx.stash) {
+            say('Nothing was stashed: nothing to bring back.');
+            return 0;
+          }
+          const list = (await git.raw(['stash', 'list', '--format=%H'])).split('\n').map((l) => l.trim());
+          const at = list.indexOf(ctx.stash);
+          if (at === -1) {
+            say('The stash it made is gone: nothing to bring back.');
+            return 0;
+          }
+          try {
+            await git.raw(['stash', 'pop', `stash@{${at}}`]);
+          } catch (e) {
+            const conflict = await service.stoppedOnConflicts('stash pop');
+            return fail(conflict ? `${conflict.error}\nThe changes are also kept in the Stash tab.` : `Could not bring them back: ${e.message}\nThey are still in the Stash tab.`);
+          }
+          ctx.stash = null;
+          say('Brought back the changes it stashed.');
+          return 0;
+        }
+      }
+    } catch (e) {
+      return fail(e.message);
+    }
+  }
+
   function infoFor(repoPath) {
     const run = runs.get(key(repoPath));
     const ports = portsFor(repoPath);
@@ -322,11 +514,15 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
       wrapperDir: wrapper ? relOf(repoPath, path.dirname(wrapper)) : null,
       options: OPTIONS.map(({ id, args, label }) => ({ id, flag: args.join(' '), label })),
       profiles: pomProfiles(dir),
+      // the environments with an application-<env> file: Start and Debug can take their values (the Values button)
+      valueEnvs: envValues.listEnvs(dir),
       ports,
       ...presetView(ports),
       run: run && {
+        id: run.id,
         command: run.command,
         log: run.log,
+        written: run.written,
         running: run.active,
         exitCode: run.exitCode,
         startedAt: run.startedAt,
@@ -334,6 +530,7 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
         macro: run.macro || null,
         stepCommand: run.stepCommand || null,
         failedStep: run.failedStep || null,
+        failedGit: Boolean(run.failedGit),
         stopped: run.cancelled,
       },
     };
@@ -342,6 +539,13 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
   ipcMain.handle('mvn-info', (_, repoPath) => {
     if (!isKnownRepo(repoPath)) return { error: 'Unknown repository' };
     return infoFor(repoPath);
+  });
+
+  // The values of each environment, from the application*.properties / .yml of the folder the commands run in.
+  ipcMain.handle('mvn-env-values', (_, repoPath) => {
+    if (!isKnownRepo(repoPath)) return { error: 'Unknown repository' };
+    const { dir, rel } = chosenDir(repoPath);
+    return { dir: rel, ...envValues.readEnvValues(dir) };
   });
 
   // Saved per repository; used the next time Start or Debug runs.
@@ -380,7 +584,9 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
     try {
       const args = resolveArgs(repoPath, request);
       const { dir, rel } = chosenDir(repoPath);
-      const env = IS_WIN || request.external ? null : await shell.loginShellEnv();
+      // the values chosen per environment go to the application only: a build or the tests run with the files
+      const values = SERVER_GOALS.test(args.join(' ')) ? envValues.cleanValues(request.values) : null;
+      const env = envValues.withValues(IS_WIN || request.external ? null : await shell.loginShellEnv(), values);
       const k = key(repoPath);
       const current = runs.get(k);
       if (current && current.active) throw new Error('A command is already running in this repository. Stop it first.');
@@ -389,14 +595,14 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
       if (request.external) {
         shell.openInTerminal(dir, mavenArgv(dir, args, findWrapper(dir, repoPath)), 'maven');
         shell.stepBack();
-        return { success: true, external: true, command };
+        return { success: true, external: true, command, valuesLeft: Boolean(values) };
       }
 
-      const run = newRun(repoPath, command, `> ${command}${rel ? `   (in ${rel}/)` : ''}\n`);
+      const run = newRun(repoPath, command, `> ${command}${rel ? `   (in ${rel}/)` : ''}\n${valuesLine(values, request.valuesNote)}`);
       runs.set(k, run);
       announce();
       runStep(run, dir, args, env).then((code) => finishRun(run, code));
-      return { success: true, command, startedAt: run.startedAt, log: run.log };
+      return { success: true, command, startedAt: run.startedAt, log: run.log, id: run.id, written: run.written };
     } catch (e) {
       return { error: e.message };
     }
@@ -424,25 +630,34 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
     return { macros: next };
   });
 
-  // The steps of a macro in the repository's folder, one after the other; the first that fails ends it. A Stop step
-  // ends what was running in the repository when the macro began (the app started before, or the same macro), so a
-  // macro can stop the app, build and start it again.
-  ipcMain.handle('mvn-macro-run', async (_, repoPath, id) => {
+  // The steps of a macro one after the other, Maven's in the microservice's folder and git's in its repository; the
+  // first that fails ends it. A Stop step ends what was running in the repository when the macro began (the app started
+  // before, or the same macro), so a macro can stop the app, build and start it again. answers: what was asked when it
+  // started (the names of new branches, what to do with local changes).
+  ipcMain.handle('mvn-macro-run', async (_, repoPath, id, answers, valuesRequest = {}) => {
     try {
       if (!isKnownRepo(repoPath)) throw new Error('Unknown repository');
       const macro = macroList().find((m) => m.id === String(id));
       if (!macro) throw new Error('That macro is gone');
       const { dir, rel } = chosenDir(repoPath);
-      if (!fs.existsSync(path.join(dir, 'pom.xml'))) throw new Error('No pom.xml in this repository');
+      if (macro.steps.some((st) => MAVEN_KINDS.has(st.kind)) && !fs.existsSync(path.join(dir, 'pom.xml'))) throw new Error('No pom.xml in this repository');
+      const ctx = { answers: cleanAnswers(macro, answers), stash: null };
+      if (macro.steps.some((st) => GIT_KINDS.has(st.kind)) && !(await new GitService(repoPath).isGitRepo())) throw new Error('This folder has no Git, and the macro has git steps');
       const k = key(repoPath);
       const previous = runs.get(k);
       const busy = Boolean(previous && previous.active);
       if (busy && !macro.steps.some((st) => st.kind === 'stop')) throw new Error('Something is running in this repository. Stop it first, or begin the macro with a Stop step.');
       const ports = portsFor(repoPath);
-      const plan = macro.steps.map((st) => (st.kind === 'stop' ? { stop: true, label: 'Stop what is running' } : { args: stepArgs(st, ports), label: `mvn ${stepArgs(st, ports).join(' ')}` }));
+      const plan = macro.steps.map((st, i) => {
+        if (st.kind === 'stop') return { stop: true, label: 'Stop what is running' };
+        if (GIT_KINDS.has(st.kind)) return { git: st, label: gitStepLabel(st, ctx.answers, i) };
+        return { args: stepArgs(st, ports), label: `mvn ${stepArgs(st, ports).join(' ')}` };
+      });
       const env = IS_WIN ? null : await shell.loginShellEnv();
+      const values = envValues.cleanValues(valuesRequest && valuesRequest.values);
       const run = newRun(repoPath, macro.name, `> macro ${macro.name}: ${plan.length} step${plan.length === 1 ? '' : 's'}${rel ? `   (in ${rel}/)` : ''}\n`, {
-        macro: { id: macro.id, name: macro.name, step: 0, total: plan.length, steps: plan.map((p) => p.label) },
+        // marks: when each step began, and how long it took once it ended (for the list of steps by the output)
+        macro: { id: macro.id, name: macro.name, step: 0, total: plan.length, steps: plan.map((p) => p.label), marks: [] },
       });
       if (busy) previous.muted = true;
       runs.set(k, run);
@@ -453,8 +668,10 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
         for (let i = 0; i < plan.length && !run.cancelled; i++) {
           const p = plan[i];
           run.macro.step = i + 1;
+          run.macro.marks[i] = { at: Date.now() };
+          const ended = () => (run.macro.marks[i].ms = Date.now() - run.macro.marks[i].at);
           run.stepCommand = p.label;
-          send('mvn-step', { repo: repoPath, step: i + 1, total: plan.length, command: p.label });
+          send('mvn-step', { repo: repoPath, step: i + 1, total: plan.length, command: p.label, git: Boolean(p.git), marks: run.macro.marks });
           announce();
           write(run, `\n▶ ${i + 1}/${plan.length}  ${p.label}\n`);
           if (p.stop) {
@@ -465,18 +682,27 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
               await Promise.race([previous.done, new Promise((r) => setTimeout(r, 15000))]);
               write(run, 'Stopped.\n');
             } else write(run, 'Nothing was running.\n');
+            ended();
             continue;
           }
-          code = await runStep(run, dir, p.args, env);
-          write(run, `[exit code ${code}]\n`);
+          if (p.git) code = await runGitStep(run, p.git, i, ctx);
+          else {
+            // the step that starts the application gets the values chosen per environment; the others, the files
+            const starts = values && SERVER_GOALS.test(p.args.join(' '));
+            if (starts) write(run, valuesLine(values, valuesRequest.valuesNote));
+            code = await runStep(run, dir, p.args, starts ? envValues.withValues(env, values) : env);
+            write(run, `[exit code ${code}]\n`);
+          }
+          ended();
           if (code !== 0) {
-            failedStep = i + 1;
+            // stopped is not failed: Stop ends the step with the code the kill gives it
+            if (!run.cancelled) failedStep = i + 1;
             break;
           }
         }
-        finishRun(run, code, { failedStep });
+        finishRun(run, code, { failedStep, failedGit: Boolean(failedStep && plan[failedStep - 1].git) });
       })();
-      return { success: true, command: macro.name, startedAt: run.startedAt, log: run.log, macro: run.macro };
+      return { success: true, command: macro.name, startedAt: run.startedAt, log: run.log, id: run.id, written: run.written, macro: run.macro };
     } catch (e) {
       return { error: e.message };
     }

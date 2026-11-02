@@ -201,6 +201,7 @@ async function init() {
   setupSidebarResize();
   setupWindowResize();
   setupTextSize();
+  setupGitConsole();
   await setupTicketPrefix();
   const saved = (await window.git.getUiState()) || {};
   if (saved.repo) currentRepo = saved.repo;
@@ -212,9 +213,12 @@ async function init() {
   restoreLogsState(saved);
   // before 1.5.1 Maven was a tab of the Git page
   if (saved.gitView === 'maven' || saved.gitTab === 'maven') gitViewChoice = 'maven';
-  await loadRepos();
+  else if (saved.gitView === 'bruno') gitViewChoice = 'bruno';
+  await loadRepos({ git: !saved.mode || saved.mode === 'git' });
   setupTabs();
   $$('.view-switch-btn').forEach((b) => b.addEventListener('click', () => setGitView(b.dataset.view)));
+  // the tabs get their size once the page shows (and again with the font): the line follows
+  new ResizeObserver(() => placeViewLine()).observe($('.view-switch'));
   applyGitView();
   const savedTab = saved.gitTab && $(`#gitView .tab[data-tab="${saved.gitTab}"]`);
   if (savedTab) savedTab.click();
@@ -301,6 +305,7 @@ function openSyncReposMenu() {
       { icon: 'scan', label: 'Look for new repositories', hint: reposRootPath ? `In ${reposRootPath}, and update the list` : 'Asks for the microservices folder first', run: refreshRepoList },
       { icon: 'pull', label: 'Pull several...', hint: 'Choose repositories and pull them one after the other', run: () => openPullMany() },
       { icon: 'fetchAll', label: 'Fetch several...', hint: 'Choose repositories and see what is new on origin for each, without changing any file', disabled: !git || fetchingMany, run: () => openPullMany(null, 'fetch') },
+      { icon: 'listRemove', label: 'Remove several...', hint: 'Choose repositories to take out of the list; their folders stay on disk', disabled: !repos.length, run: () => openPullMany(null, 'remove') },
       { icon: 'folder', label: 'Microservices folder...', hint: reposRootPath || 'Not chosen yet', run: openReposRootMenu },
     ],
   });
@@ -386,7 +391,9 @@ let repoGroups = [];
 let editingGroup = null;
 const REPO_DRAG_TYPE = 'application/x-git-quick-repo';
 
-async function loadRepos() {
+// git: whether to ask git now (the branch and changes of each repository, and the one open); not when the app starts
+// on another page, where they are not seen: the Git page asks when it shows.
+async function loadRepos({ git = true } = {}) {
   const [list, groups] = await Promise.all([window.git.getRepos(), window.git.getRepoGroups()]);
   repoGroups = groups.groups || [];
   const previous = new Map(repos.map((r) => [r.path, r]));
@@ -405,22 +412,66 @@ async function loadRepos() {
     currentRepo = repos[0].path;
   }
   renderSidebar();
-  refreshSummaries();
+  if (!git) return;
+  refreshChangedSummaries(currentRepo); // the open one comes with its page
   await refresh();
 }
 
-async function refreshSummaries() {
+// -- What git said last, and when: each repository's count of changes on disk (watched by the app, no git) when git
+// was last asked about it, for its line in the list and for the page. The same count now: nothing changed since, so
+// showing the window again or coming back to the Git page asks git nothing. -1: not watched, always asked. --
+const repoSeen = { summary: new Map(), page: new Map() };
+
+async function repoChanges(paths = repos.filter((r) => r.isGit !== false).map((r) => r.path)) {
+  try {
+    return await window.git.repoChanges(paths);
+  } catch {
+    return {};
+  }
+}
+
+function changedRepos(seen, counts) {
+  return Object.keys(counts).filter((p) => counts[p] === -1 || seen.get(p) !== counts[p]);
+}
+
+// The lines of the repositories that changed on disk since git was last asked about them (but this one).
+async function refreshChangedSummaries(except) {
+  await refreshSummaries(changedRepos(repoSeen.summary, await repoChanges()).filter((p) => p !== except));
+}
+
+// The branch and changes of each repository in the list, or of these ones only (none: nothing to ask).
+async function refreshSummaries(only) {
+  if (Array.isArray(only) && !only.length) return;
+  const counts = await repoChanges(only);
   let summaries;
   try {
-    summaries = await window.git.getRepoSummaries();
+    summaries = await window.git.getRepoSummaries(only);
   } catch {
     return;
   }
   repos.forEach((r) => {
     const s = summaries[r.path];
-    if (s) Object.assign(r, { branch: s.branch, changes: s.changes, ahead: s.ahead, behind: s.behind, error: s.error });
+    if (!s) return;
+    Object.assign(r, { branch: s.branch, changes: s.changes, ahead: s.ahead, behind: s.behind, error: s.error });
+    if (counts[r.path] !== undefined) repoSeen.summary.set(r.path, counts[r.path]);
   });
   renderSidebar();
+}
+
+// The window shown again, or the Git page again: git is asked only about what changed on disk since it last was -
+// the line of each repository in the list, and the one open. Asked again a moment later, as an editor may save its
+// files just then (IntelliJ saves when it loses the focus to this window).
+let recheckTimer = 0;
+
+async function refreshIfChanged({ again = true } = {}) {
+  clearTimeout(recheckTimer);
+  if (again) recheckTimer = setTimeout(() => refreshIfChanged({ again: false }), 1200);
+  if (!repos.length || currentMode !== 'git') return;
+  const counts = await repoChanges();
+  refreshSummaries(changedRepos(repoSeen.summary, counts).filter((p) => p !== currentRepo));
+  if (!currentRepo) return;
+  const isGit = (repos.find((r) => r.path === currentRepo) || {}).isGit !== false;
+  if (shownRepo !== currentRepo || !isGit || changedRepos(repoSeen.page, { [currentRepo]: counts[currentRepo] ?? -1 }).length) await refresh();
 }
 
 function updateRepoSummary(repoPath, status) {
@@ -442,12 +493,21 @@ function displayName(r) {
 const REPO_ICONS = {
   open: '<path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h2.8l1.4 1.5h4.8A1.5 1.5 0 0 1 14 6v6a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 12V4.5z"/>',
   edit: '<path d="M11.5 2.5l2 2L5.5 12.5l-3 .8.8-3 8.2-7.8z"/>',
+  ide: '<path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5"/>',
   remove: '<path d="M4 4l8 8M12 4l-8 8"/>',
+  removeMany: '<path d="M2.5 4h10M2.5 8h6M2.5 12h4"/><path d="M10 10l3.5 3.5M13.5 10l-3.5 3.5"/>',
   star: '<path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z"/>',
   more: '<circle cx="3.5" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="12.5" cy="8" r="1.4"/>',
   group: '<path d="M8 2.5l5.5 2.8L8 8 2.5 5.3z"/><path d="M2.5 8L8 10.8 13.5 8"/><path d="M2.5 10.7L8 13.5l5.5-2.8"/>',
   chevron: '<path d="M4.5 6.5L8 10l3.5-3.5"/>',
 };
+
+// The repository in an editor found on this computer (IntelliJ opens it as a project).
+async function openWithIde(r, ide) {
+  const result = await window.git.openWithIde(r.path, ide.id);
+  if (result.error) toast(result.error, 'error', { title: `Couldn't open ${ide.name}` });
+  else toast(`Opening ${displayName(r)} in ${result.name}`, 'success', { plain: true });
+}
 
 async function toggleFavorite(r) {
   const result = await window.git.toggleFavorite(r.path);
@@ -498,7 +558,8 @@ function openRepoMenu(anchor, r, nameEl) {
   menu.className = 'clip-menu repo-menu';
   menu.setAttribute('role', 'menu');
   menu.anchor = anchor;
-  const add = (icon, label, run, extraClass = '') => {
+  // keep: the menu stays open after it (Open with shows its editors in it)
+  const add = (icon, label, run, extraClass = '', keep = false) => {
     const item = document.createElement('button');
     item.type = 'button';
     item.className = `clip-menu-item repo-menu-item ${extraClass}`.trim();
@@ -509,18 +570,63 @@ function openRepoMenu(anchor, r, nameEl) {
       e.stopPropagation();
       // Run first: a rename has to start before the list may be drawn again.
       run();
-      closeRepoMenu();
+      if (!keep) closeRepoMenu();
     });
     menu.appendChild(item);
+    return item;
   };
   add('star', r.favorite ? 'Remove from favorites' : 'Add to favorites', () => toggleFavorite(r), r.favorite ? 'favorite' : '');
   add('open', IS_MAC ? 'Open in Finder' : 'Open in Explorer', async () => {
     const result = await window.git.openFolder(r.path);
     if (result.error) toast(result.error, 'error');
   });
+  // Open with: the editors found on this computer (asked as the menu opens), shown under it on a click or the right
+  // arrow; none found, it says so
+  const ides = window.git.listIdes().catch(() => []);
+  const openWith = add('ide', 'Open with', () => toggleOpenWith(), 'repo-menu-openwith', true);
+  openWith.setAttribute('aria-haspopup', 'true');
+  openWith.setAttribute('aria-expanded', 'false');
+  openWith.insertAdjacentHTML('beforeend', `<svg class="repo-menu-caret" viewBox="0 0 16 16" aria-hidden="true">${REPO_ICONS.chevron}</svg>`);
+  const toggleOpenWith = async (focusFirst = false) => {
+    const shown = [...menu.querySelectorAll('.repo-menu-sub')];
+    if (shown.length) {
+      shown.forEach((n) => n.remove());
+      openWith.setAttribute('aria-expanded', 'false');
+      return;
+    }
+    const list = await ides;
+    if (!menu.isConnected || menu.querySelector('.repo-menu-sub')) return;
+    const nodes = list.map((ide) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'clip-menu-item repo-menu-item repo-menu-sub';
+      b.setAttribute('role', 'menuitem');
+      b.title = `Open ${displayName(r)} in ${ide.name}`;
+      b.textContent = ide.name;
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeRepoMenu();
+        openWithIde(r, ide);
+      });
+      return b;
+    });
+    if (!nodes.length) {
+      const note = document.createElement('div');
+      note.className = 'repo-menu-sub repo-menu-note';
+      note.textContent = 'No IntelliJ IDEA or Visual Studio found on this computer';
+      nodes.push(note);
+    }
+    openWith.after(...nodes);
+    openWith.setAttribute('aria-expanded', 'true');
+    // taller now: up, if it no longer fits under the button
+    const box = menu.getBoundingClientRect();
+    if (box.bottom > window.innerHeight - 8) menu.style.top = `${Math.round(Math.max(8, window.innerHeight - box.height - 8))}px`;
+    if (focusFirst) (menu.querySelector('button.repo-menu-sub') || openWith).focus();
+  };
   add('edit', 'Rename', () => startRename(r, nameEl));
   add('group', 'Move to group...', () => openMoveToGroup(r, anchor.getBoundingClientRect()));
   add('remove', 'Remove from list', () => removeRepo(r.path), 'danger');
+  add('removeMany', 'Remove several...', () => openPullMany([r.path], 'remove'), 'danger');
 
   menu.addEventListener('keydown', (e) => {
     const items = [...menu.querySelectorAll('button')];
@@ -528,6 +634,14 @@ function openRepoMenu(anchor, r, nameEl) {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus();
+    } else if (e.key === 'ArrowRight' && document.activeElement === openWith) {
+      e.preventDefault();
+      if (openWith.getAttribute('aria-expanded') === 'true') (menu.querySelector('button.repo-menu-sub') || openWith).focus();
+      else toggleOpenWith(true);
+    } else if (e.key === 'ArrowLeft' && document.activeElement.classList.contains('repo-menu-sub')) {
+      e.preventDefault();
+      toggleOpenWith();
+      openWith.focus();
     } else if (e.key === 'Escape') {
       e.stopPropagation();
       closeRepoMenu(true);
@@ -707,7 +821,7 @@ function repoRow(r) {
 
   const actions = document.createElement('div');
   actions.className = 'repo-item-actions';
-  const more = repoIconButton('more', 'Actions: favorite, open folder, rename, group, remove', 'repo-more', () => openRepoMenu(more, r, name));
+  const more = repoIconButton('more', 'Actions: favorite, open folder, open with an editor, rename, group, remove', 'repo-more', () => openRepoMenu(more, r, name));
   more.setAttribute('aria-haspopup', 'menu');
   more.setAttribute('aria-expanded', 'false');
   actions.append(more);
@@ -920,6 +1034,7 @@ function openGroupMenu(g, { anchor = null, x = 0, y = 0 }) {
       { icon: 'up', label: 'Move up', disabled: i <= 0, run: () => move(-1) },
       { icon: 'down', label: 'Move down', disabled: i >= repoGroups.length - 1, run: () => move(1) },
       { icon: 'pull', label: 'Pull this group...', hint: 'Choose which of its repositories to pull', run: () => openPullMany(repos.filter((r) => r.group === g.id).map((r) => r.path)) },
+      { icon: 'listRemove', label: 'Remove its repositories...', hint: 'Choose which of them to take out of the list; their folders stay on disk', disabled: !repos.some((r) => r.group === g.id), run: () => openPullMany(repos.filter((r) => r.group === g.id).map((r) => r.path), 'remove') },
       { icon: 'plus', label: 'New group...', run: () => newGroupForm((anchor || nameEl() || $('#repoList')).getBoundingClientRect()) },
       { icon: 'group', label: 'Manage groups...', hint: 'Every group side by side, to drag the microservices between them', run: openGroupsBoard },
       { icon: 'delete', label: 'Delete group', danger: true, hint: 'Its repositories stay in the list, under Other', run: () => deleteGroup(g) },
@@ -933,7 +1048,7 @@ async function deleteGroup(g) {
   const message = count
     ? `Delete the group "${g.name}"? Its ${count === 1 ? 'repository stays' : `${count} repositories stay`} in the list, under Other.`
     : `Delete the group "${g.name}"?`;
-  if (!(await window.git.confirm(message))) return;
+  if (!(await askConfirm(message))) return;
   const result = await window.git.deleteRepoGroup(g.id);
   if (result.error) return toast(result.error, 'error');
   repoGroups = repoGroups.filter((x) => x.id !== g.id);
@@ -1017,7 +1132,7 @@ function startRename(r, nameEl) {
 
 async function removeRepo(repoPath) {
   const target = repos.find((r) => r.path === repoPath);
-  if (!(await window.git.confirm(`Remove "${target ? displayName(target) : repoName(repoPath)}" from the list?`))) return;
+  if (!(await askConfirm(`Remove "${target ? displayName(target) : repoName(repoPath)}" from the list?`))) return;
   await window.git.removeRepo(repoPath);
   if (repoPath === currentRepo) currentRepo = null;
   await loadRepos();
@@ -1036,7 +1151,8 @@ function renderRepoLoading() {
   const main = $('#mainContent');
   const pending = repoLoading && repoLoading.repo === currentRepo ? repoLoading.pending : null;
   const tab = $('#gitView .tab.active');
-  const shown = effectiveGitView() === 'maven' ? 'maven' : tab ? tab.dataset.tab : 'changes';
+  const view = effectiveGitView();
+  const shown = view !== 'git' ? view : tab ? tab.dataset.tab : 'changes';
   const on = Boolean(pending && pending.has(TAB_PART[shown] || shown));
   if (on) {
     main.style.setProperty('--repo-loading-top', `${$(`#tab-${shown}`).offsetTop}px`);
@@ -1056,8 +1172,10 @@ async function refresh() {
   const isGit = !entry || entry.isGit !== false;
   setFolderMode(!isGit);
   const parts = isGit
-    ? { status: refreshStatus, branches: refreshBranches, log: refreshLog, stash: refreshStash, push: refreshPush, maven: refreshMaven, ignored: refreshIgnored, refs: refreshCmpRefs }
-    : { maven: refreshMaven };
+    ? { status: refreshStatus, log: refreshLog, stash: refreshStash, push: refreshPush, maven: refreshMaven, ignored: refreshIgnored, refs: refreshCmpRefs, bruno: refreshBruno }
+    : { maven: refreshMaven, bruno: refreshBruno };
+  // the count of changes on disk now (asked before any git command of this refresh): what it shows is as of it
+  const seenAt = isGit ? repoChanges([repoPath]) : null;
   // A second refresh while it loads (the timer, a focus) keeps the parts already here. Until every part has come the
   // page shows no repository in full, so going back to the last one is a switch too.
   const switching = repoPath !== shownRepo;
@@ -1082,20 +1200,29 @@ async function refresh() {
       }
     })
   );
+  if (seenAt) {
+    const count = (await seenAt)[repoPath];
+    repoSeen.page.set(repoPath, count);
+    repoSeen.summary.set(repoPath, count); // its status came with it
+  }
 }
 
-// -- Git or Maven: the repository page shows one of them, chosen with the switch on its left --
-// A folder without Git only has Maven; the choice comes back with the next repository.
+// -- Git, Maven or Bruno: the repository page shows one of them, chosen with the switch on its left --
+// A folder without Git has Maven (and Bruno); Bruno only shows for a repository with a Bruno collection. The choice
+// comes back with the next repository that has it.
 let gitViewChoice = 'git';
 
 function effectiveGitView() {
-  return $('#gitView').classList.contains('folder-mode') ? 'maven' : gitViewChoice;
+  if (gitViewChoice === 'bruno' && brunoAvailable()) return 'bruno';
+  if ($('#gitView').classList.contains('folder-mode')) return 'maven';
+  return gitViewChoice === 'bruno' ? 'git' : gitViewChoice;
 }
 
 function applyGitView() {
   const page = $('#gitView');
   const view = effectiveGitView();
   page.classList.toggle('maven-view', view === 'maven');
+  page.classList.toggle('bruno-view', view === 'bruno');
   $$('.view-switch-btn').forEach((b) => {
     const on = b.dataset.view === view;
     b.classList.toggle('active', on);
@@ -1104,15 +1231,34 @@ function applyGitView() {
   const folder = page.classList.contains('folder-mode');
   $('#viewGitBtn').disabled = folder;
   $('#viewGitBtn').title = folder ? 'This folder has no Git' : 'Git: changes, branches and history';
-  if (view === 'maven') closeBranchMenu();
+  if (view !== 'git') closeBranchMenu();
+  if (view === 'bruno') showBrunoView();
+  // Bruno folds the repositories away; Git and Maven show them (bruno/sidebar.js)
+  if (typeof brunoSidebar === 'function') brunoSidebar(view);
   renderViewRunState();
   renderRepoLoading();
   updateCrumb();
 }
 
+// The line under the view on show: as wide as its tab, slid to it. Placed at once the first time (and while the page
+// is hidden, when the tabs have no size yet); from then on it slides.
+function placeViewLine() {
+  const box = $('.view-switch');
+  const line = $('#viewSwitchLine');
+  const on = box && box.querySelector('.view-switch-btn.active');
+  if (!on || !on.offsetWidth) return;
+  line.style.width = `${on.offsetWidth}px`;
+  line.style.transform = `translateX(${on.offsetLeft}px)`;
+  // on the bar's bottom border, wherever the tabs sit in it
+  const bar = box.closest('.branch-bar');
+  if (bar) line.style.bottom = `${Math.round(box.getBoundingClientRect().bottom - bar.getBoundingClientRect().bottom)}px`;
+  line.dataset.view = on.dataset.view;
+  if (!box.classList.contains('ready')) requestAnimationFrame(() => box.classList.add('ready'));
+}
+
 function setGitView(view) {
   if (view === gitViewChoice && view === effectiveGitView()) return;
-  gitViewChoice = view === 'maven' ? 'maven' : 'git';
+  gitViewChoice = view === 'maven' || view === 'bruno' ? view : 'git';
   applyGitView();
   saveUiState();
 }
@@ -1125,6 +1271,7 @@ function renderViewRunState() {
   btn.title = command
     ? `Maven: ${SERVE_GOALS.test(command) ? 'running' : 'build running'} (${command})`
     : 'Maven: build, start and debug';
+  placeViewLine(); // the dot makes the Maven tab wider
 }
 
 function setFolderMode(on) {
@@ -1176,13 +1323,14 @@ function renderGitStatusLine(status) {
   const behind = status.behind || 0;
   const upstream = status.tracking || '';
   const detached = !status.branch || status.branch === 'HEAD';
-  if (detached) part('muted', 'Not on a branch (detached HEAD)');
-  else if (!upstream) part('muted', `${status.branch} is not on origin yet`, 'Push creates it there');
-  else if (!ahead && !behind) part('ok', `Up to date with ${upstream}`);
+  // next to the button, so it says why: the branch is already named on the left
+  if (detached) part('muted', 'Not on a branch', 'Detached HEAD: a commit is checked out, not a branch');
+  else if (!upstream) part('muted', 'Not on origin yet', `${status.branch} is not on origin yet: Push creates it there`);
+  else if (!ahead && !behind) part('ok', `Up to date with ${upstream}`, `${status.branch} has everything ${upstream} has, and nothing to push`);
   else {
-    part('upstream', `${upstream}:`);
-    if (behind) part('behind', `↓${behind} to pull`, `${plural(behind, 'commit')} on ${upstream} not here yet`);
-    if (ahead) part('ahead', `↑${ahead} to push`, `${plural(ahead, 'commit')} here not on ${upstream} yet`);
+    if (behind) part('behind', `↓${behind}`, `${plural(behind, 'commit')} on ${upstream} not here yet`);
+    if (ahead) part('ahead', `↑${ahead}`, `${plural(ahead, 'commit')} here not on ${upstream} yet`);
+    part('upstream', behind && ahead ? `with ${upstream}` : behind ? `new on ${upstream}` : `not on ${upstream} yet`);
   }
   if (upstream) part('gsl-fetched', '');
 
@@ -1212,31 +1360,72 @@ function renderGitStatusLine(status) {
 
 async function gitFetch() {
   if (!currentRepo) return;
-  showLoading();
-  const result = await window.git.fetch(currentRepo);
-  hideLoading();
+  const repoPath = currentRepo;
+  // the page as git last showed it, with nothing changed on disk since: then the fetch is all that changes
+  const before = (await repoChanges([repoPath]))[repoPath];
+  const pageUpToDate = shownRepo === repoPath && before !== -1 && before !== undefined && repoSeen.page.get(repoPath) === before;
+  // the card over the page (sync-card.js): a fetch only looks, the branch stays as it is
+  const ends = syncCardEnds();
+  showSyncCard('fetch', { ...ends, text: `Fetching from ${ends.remote}\u2026` });
+  const result = await window.git.fetch(repoPath);
   if (result.error) {
+    hideSyncCard();
     toast(result.error, 'error', { title: 'Fetch failed' });
   } else {
-    if (result.warning) toast(result.warning, 'info', { title: 'Fetched, but some tags did not come' });
-    else toast('Fetched', 'success');
-    await refresh();
+    if (result.warning) toast(result.warning, 'info', { title: 'Fetched, but some tags did not come', plain: true });
+    await (pageUpToDate && repoPath === currentRepo ? refreshAfterFetch(repoPath) : refresh()).catch((e) => {
+      hideSyncCard();
+      throw e;
+    });
+    const news = repoPath === currentRepo && gitLine ? gitLine.behind : 0;
+    doneSyncCard(news ? `${plural(news, 'new commit')} on ${ends.remote} \u00b7 ${ends.branch} unchanged` : `Nothing new on ${ends.remote}`);
   }
+}
+
+// After a fetch, only what a fetch can change: the line under the header (ahead, behind, when), the Log (the branches
+// on each commit, which origin has), Push, and the branches of the pickers. Not the files, the stashes or Maven.
+async function refreshAfterFetch(repoPath) {
+  const seenAt = repoChanges([repoPath]);
+  await Promise.all([refreshSyncLine(), refreshLog({ light: true }), refreshPush(), refreshCmpRefs()]);
+  const count = (await seenAt)[repoPath];
+  repoSeen.page.set(repoPath, count);
+  repoSeen.summary.set(repoPath, count);
+}
+
+// The line under the header and the repository's line in the list, from one git command; the files stay as they are.
+async function refreshSyncLine() {
+  const repoPath = currentRepo;
+  const s = await window.git.syncState(repoPath);
+  if (s.error || !s.branch) {
+    await refreshStatus(); // no branch (or no commit yet): the whole status, as before
+    return;
+  }
+  const entry = repos.find((r) => r.path === repoPath);
+  updateRepoSummary(repoPath, { ...s, changes: entry ? entry.changes : 0 });
+  if (repoPath === currentRepo) renderGitStatusLine(s);
 }
 
 // Returns true when the pull went through.
 async function gitPull() {
   if (!currentRepo) return false;
-  showLoading();
+  // the card over the page (sync-card.js): the commits the button counted come into this branch
+  const coming = gitLine ? gitLine.behind : 0;
+  const ends = syncCardEnds();
+  showSyncCard('pull', { ...ends, text: coming ? `Pulling ${plural(coming, 'commit')} from ${ends.remote}\u2026` : `Pulling from ${ends.remote}\u2026` });
   const result = await window.git.pull(currentRepo);
-  hideLoading();
   if (result.error) {
+    hideSyncCard();
     toast(result.error, 'error', result.conflict ? {} : { title: 'Pull failed' });
     if (result.conflict) await refresh(); // the files in conflict show in Changes
     return false;
   }
-  toast('Pulled successfully', 'success');
-  await refresh();
+  await refresh().catch((e) => {
+    hideSyncCard();
+    throw e;
+  });
+  const files = (result.summary && result.summary.changes) || 0;
+  const changed = files ? ` \u00b7 ${plural(files, 'file')} updated` : '';
+  doneSyncCard(coming ? `${plural(coming, 'commit')} added to ${ends.branch}${changed}` : files ? `Pulled into ${ends.branch}${changed}` : `${ends.branch} is up to date with ${ends.remote}`);
   return true;
 }
 
@@ -1385,11 +1574,199 @@ function changesHead() {
 
 function renderFileList() {
   const list = $('#fileList');
+  // the row with the focus (or its box) keeps it as the list is drawn again (a folder opened or closed, a refresh)
+  const focused = list.contains(document.activeElement) ? document.activeElement : null;
+  const row = focused && focused.closest('.file-item, .file-dir');
+  const had = row ? { dir: row.dataset.dir, file: row.dataset.file, box: focused.classList.contains('file-check') } : null;
   list.innerHTML = '';
   if (currentEntries.length === 0) list.appendChild(noteEl('Working tree clean'));
   else list.appendChild(changesHead());
-  sortedEntries().forEach((entry) => addFileItem(list, entry));
+  if (changesGrouped && currentEntries.length) renderChangesTree(list, changesTree(sortedEntries()), 0);
+  else sortedEntries().forEach((entry) => addFileItem(list, entry));
+  if (had) {
+    const back = had.dir !== undefined ? [...list.querySelectorAll('.file-dir')].find((r) => r.dataset.dir === had.dir) : [...list.querySelectorAll('.file-item')].find((r) => r.dataset.file === had.file);
+    if (back) (had.box ? back.querySelector('.file-check') : back).focus();
+  }
+  renderGroupBtn();
   updateSelectionInfo();
+}
+
+// -- Group by folder: the changes as a tree of their folders, as IntelliJ shows them. A folder with only one folder in
+// it (and no file) shares its line ("src/main/java"); folders come first, by name, then the files, in the order of the
+// list (a column sort still applies). A folder's box chooses all its files; a click (or Enter, or the arrows) opens or
+// closes it. On or off is kept on this PC; which folders are closed, per repository until the app closes. --
+const CHANGES_GROUP_KEY = 'changesGroupByFolder';
+let changesGrouped = (() => {
+  try {
+    return localStorage.getItem(CHANGES_GROUP_KEY) === '1';
+  } catch {
+    return false;
+  }
+})();
+const closedDirsByRepo = new Map();
+
+function closedDirs(repo = currentRepo) {
+  if (!closedDirsByRepo.has(repo)) closedDirsByRepo.set(repo, new Set());
+  return closedDirsByRepo.get(repo);
+}
+
+function setChangesGrouped(on) {
+  changesGrouped = on;
+  try {
+    localStorage.setItem(CHANGES_GROUP_KEY, on ? '1' : '0');
+  } catch {
+    // only for this session
+  }
+  renderFileList();
+}
+
+function renderGroupBtn() {
+  const btn = $('#groupFoldersBtn');
+  btn.setAttribute('aria-pressed', String(changesGrouped));
+  btn.title = changesGrouped ? 'Show the files as a list' : 'Group the files by folder, as a tree';
+  btn.classList.toggle('hidden', currentEntries.length === 0);
+}
+
+function changesTree(entries) {
+  const root = { name: '', path: '', dirs: new Map(), files: [] };
+  for (const e of entries) {
+    const parts = e.file.split('/');
+    parts.pop();
+    let node = root;
+    let at = '';
+    for (const part of parts) {
+      at = at ? `${at}/${part}` : part;
+      if (!node.dirs.has(part)) node.dirs.set(part, { name: part, path: at, dirs: new Map(), files: [] });
+      node = node.dirs.get(part);
+    }
+    node.files.push(e);
+  }
+  const compact = (node) => {
+    const out = new Map();
+    for (let d of node.dirs.values()) {
+      while (d.dirs.size === 1 && d.files.length === 0) {
+        const only = [...d.dirs.values()][0];
+        d = { ...only, name: `${d.name}/${only.name}` };
+      }
+      compact(d);
+      out.set(d.name, d);
+    }
+    node.dirs = out;
+  };
+  compact(root);
+  return root;
+}
+
+const filesUnder = (dir) => [...dir.files, ...[...dir.dirs.values()].flatMap(filesUnder)];
+
+function renderChangesTree(list, node, depth) {
+  const dirs = [...node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+  for (const d of dirs) {
+    addDirItem(list, d, depth);
+    if (!closedDirs().has(d.path)) renderChangesTree(list, d, depth + 1);
+  }
+  for (const e of node.files) addFileItem(list, e, depth);
+}
+
+// Up and down between the rows of the list, files and folders; with a diff open, it follows to a file.
+function moveInFileList(row, down) {
+  let next = down ? row.nextElementSibling : row.previousElementSibling;
+  while (next && !next.matches('.file-item, .file-dir')) next = down ? next.nextElementSibling : next.previousElementSibling;
+  if (!next) return false;
+  next.focus();
+  if (diffFile && next.classList.contains('file-item')) next.click();
+  return true;
+}
+
+// The folder a row is in (the closest folder row above it, one level up), for Left.
+function parentDirRow(row) {
+  const depth = Number(row.dataset.depth);
+  for (let r = row.previousElementSibling; r; r = r.previousElementSibling) {
+    if (r.classList.contains('file-dir') && Number(r.dataset.depth) < depth) return r;
+  }
+  return null;
+}
+
+// The folder boxes follow their files: ticked when all are chosen, a dash when only some are.
+function syncDirBoxes() {
+  const off = deselectedFiles();
+  for (const row of $$('#fileList .file-dir')) {
+    const inside = currentEntries.filter((e) => e.file.startsWith(`${row.dataset.dir}/`));
+    const chosen = inside.filter((e) => !off.has(e.file)).length;
+    const box = row.querySelector('.file-check');
+    box.checked = chosen === inside.length;
+    box.indeterminate = chosen > 0 && chosen < inside.length;
+  }
+}
+
+function addDirItem(container, dir, depth) {
+  const files = filesUnder(dir);
+  const open = !closedDirs().has(dir.path);
+  const row = document.createElement('div');
+  row.className = `file-dir${open ? ' open' : ''}`;
+  row.dataset.dir = dir.path;
+  row.dataset.depth = String(depth);
+  row.tabIndex = 0;
+  row.setAttribute('aria-expanded', String(open));
+  row.title = `${dir.path}/: ${plural(files.length, 'file')}. Click to ${open ? 'close' : 'open'} it`;
+  const toggle = () => {
+    if (open) closedDirs().add(dir.path);
+    else closedDirs().delete(dir.path);
+    renderFileList();
+  };
+  row.addEventListener('click', toggle);
+  row.addEventListener('keydown', (e) => {
+    if (e.target !== row) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggle();
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      if (!open) toggle();
+      else moveInFileList(row, true);
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      if (open) toggle();
+      else {
+        const up = parentDirRow(row);
+        if (up) up.focus();
+      }
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (moveInFileList(row, e.key === 'ArrowDown')) e.preventDefault();
+    }
+  });
+
+  const box = document.createElement('input');
+  box.type = 'checkbox';
+  box.className = 'file-check';
+  box.title = 'Include every file of this folder in the commit';
+  box.addEventListener('click', (e) => e.stopPropagation());
+  box.addEventListener('change', () => {
+    const off = deselectedFiles();
+    const names = new Set(files.map((e) => e.file));
+    for (const name of names) {
+      if (box.checked) off.delete(name);
+      else off.add(name);
+    }
+    for (const item of $$('#fileList .file-item')) if (names.has(item.dataset.file)) item.querySelector('.file-check').checked = box.checked;
+    updateSelectionInfo();
+  });
+
+  const name = document.createElement('span');
+  name.className = 'file-path dir-name';
+  name.style.setProperty('--depth', String(depth));
+  name.innerHTML = '<svg class="dir-caret" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg><svg class="dir-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h2.8l1.4 1.5h4.8A1.5 1.5 0 0 1 14 6v6a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 12V4.5z"/></svg>';
+  name.append(diffSpan('dir-label', dir.name), diffSpan('dir-count', plural(files.length, 'file')));
+
+  // its lines changed, all its files together
+  const counts = document.createElement('span');
+  counts.className = 'file-counts';
+  const add = files.reduce((n, e) => n + (e.binary || e.add === undefined ? 0 : e.add), 0);
+  const del = files.reduce((n, e) => n + (e.binary || e.del === undefined ? 0 : e.del), 0);
+  if (add || del) counts.append(diffSpan('add', `+${add}`), diffSpan('del', `−${del}`));
+
+  row.append(box, document.createElement('span'), name, document.createElement('span'), counts);
+  container.appendChild(row);
 }
 
 function updateSelectionInfo() {
@@ -1410,14 +1787,17 @@ function updateSelectionInfo() {
     $(id).classList.toggle('hidden', selected === 0);
   }
   $('#revertBtn .btn-label').textContent = selected > 0 && selected < total ? `Revert ${selected}...` : 'Revert...';
+  syncDirBoxes();
   updateCommitBtn();
 }
 
-// The checkbox chooses the file for the commit; a click anywhere else on the row shows its diff in a popup.
-function addFileItem(container, entry) {
+// The checkbox chooses the file for the commit; a click anywhere else on the row shows its diff in a popup. depth: its
+// place in the tree of folders (Group by folder), where only its name shows.
+function addFileItem(container, entry, depth = null) {
   const div = document.createElement('div');
-  div.className = `file-item${entry.file === diffFile ? ' selected' : ''}`;
+  div.className = `file-item${entry.file === diffFile ? ' selected' : ''}${depth !== null ? ' in-tree' : ''}`;
   div.dataset.file = entry.file;
+  if (depth !== null) div.dataset.depth = String(depth);
   div.tabIndex = 0;
   div.title = 'Click to see what changed';
   div.addEventListener('click', () => openDiff(entry));
@@ -1427,12 +1807,13 @@ function addFileItem(container, entry) {
       e.preventDefault();
       openDiff(entry);
     } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      // Up and down move through the files; with the diff open, it follows.
-      const next = e.key === 'ArrowDown' ? div.nextElementSibling : div.previousElementSibling;
-      if (next && next.classList.contains('file-item')) {
+      // Up and down move through the rows; with the diff open, it follows.
+      if (moveInFileList(div, e.key === 'ArrowDown')) e.preventDefault();
+    } else if (e.key === 'ArrowLeft' && depth !== null) {
+      const up = parentDirRow(div);
+      if (up) {
         e.preventDefault();
-        next.focus();
-        if (diffFile) next.click();
+        up.focus();
       }
     }
   });
@@ -1454,13 +1835,28 @@ function addFileItem(container, entry) {
   letter.textContent = entry.letter;
   letter.title = LETTER_TITLES[entry.letter] || entry.letter;
 
-  // The whole path, with the folders in grey so the file name stands out; a rename shows where it came from.
+  // The whole path, with the folders in grey so the file name stands out; a rename shows where it came from. In the
+  // tree, the folders are the rows above it: only the name; renamed in its folder, the old name before it; moved from
+  // another folder, where it was after it.
   const slash = entry.file.lastIndexOf('/');
+  const base = entry.file.slice(slash + 1);
   const where = document.createElement('span');
   where.className = 'file-path';
-  const dir = `${entry.from ? `${entry.from} \u2192 ` : ''}${entry.file.slice(0, slash + 1)}`;
-  if (dir) where.append(diffSpan('fp-dir', dir));
-  where.append(diffSpan('fp-base', entry.file.slice(slash + 1)));
+  let moved = '';
+  if (depth === null) {
+    const dir = `${entry.from ? `${entry.from} \u2192 ` : ''}${entry.file.slice(0, slash + 1)}`;
+    if (dir) where.append(diffSpan('fp-dir', dir));
+  } else {
+    where.style.setProperty('--depth', String(depth));
+    if (entry.from) {
+      const oldDir = entry.from.slice(0, entry.from.lastIndexOf('/') + 1);
+      const oldBase = entry.from.slice(oldDir.length);
+      if (oldDir === entry.file.slice(0, slash + 1)) where.append(diffSpan('fp-dir', `${oldBase} \u2192 `));
+      else moved = oldBase === base ? `moved from ${oldDir || 'the top folder'}` : `moved from ${entry.from}`;
+    }
+  }
+  where.append(diffSpan('fp-base', base));
+  if (moved) where.append(diffSpan('fp-moved', moved));
   where.title = `${entry.from ? `${entry.from} -> ${entry.file}` : entry.file}\nClick to see what changed`;
 
   // When the file last changed on disk; a deleted file has no date.
@@ -1999,7 +2395,7 @@ function setupSplitTools(body, getTarget) {
 async function useWholeSide(target, from, label) {
   const to = from === 'left' ? 'right' : 'left';
   if (!target || !target.writable[to]) return;
-  if (!(await window.git.confirm(`Replace ${target.names[to]} with ${target.names[from]} (${label})? Its differences are lost.`))) return;
+  if (!(await askConfirm(`Replace ${target.names[to]} with ${target.names[from]} (${label})? Its differences are lost.`))) return;
   const read = await window.git.sideRead(currentRepo, target.sides[from]);
   if (read.error) {
     toast(read.error, 'error');
@@ -2287,12 +2683,17 @@ function setupDiff() {
 }
 
 // The branches on origin: where Push can go, and what a new branch can copy.
+// Asked when they are needed (the branch menu opens, the Push to field is clicked), not on each refresh.
 async function refreshBranches() {
   if (!currentRepo) return;
   const repoPath = currentRepo;
   const data = await window.git.getBranches(repoPath);
   if (data.error || repoPath !== currentRepo) return;
-  // Only branches on origin: new branches copy one of them and pushes go to origin.
+  setOriginBranches(data);
+}
+
+// Only branches on origin: new branches copy one of them and pushes go to origin.
+function setOriginBranches(data) {
   remoteBranchNames = data.remote.filter((b) => b.fullName.startsWith('remotes/origin/')).map((b) => b.name);
   renderPushTargetOptions();
 }
@@ -2436,6 +2837,7 @@ async function openBranchMenu() {
     list.appendChild(noteEl(data.error));
     return;
   }
+  setOriginBranches(data); // for New branch..., below
   // A detached HEAD is listed as "(HEAD detached at ...)", which is not a branch to switch to.
   const localNames = new Set(data.local.map((b) => b.name));
   const onBranch = data.local.some((b) => b.current && !b.name.startsWith('(')) ? data.current : null;
@@ -2462,7 +2864,7 @@ async function openBranchMenu() {
 // A tag from the branch list: its commit, on no branch (detached HEAD), after a confirmation.
 async function checkoutTagFromMenu(name) {
   const lines = [`Go to tag ${name}?`, 'You will be on its commit without a branch (detached HEAD): new commits there belong to no branch. To work on it, right-click the tag and create a branch from it.'];
-  if (!(await window.git.confirm(lines.join('\n')))) return;
+  if (!(await askConfirm(lines.join('\n'), { confirm: 'Go to tag' }))) return;
   showLoading();
   const result = await window.git.checkoutTag(currentRepo, name);
   hideLoading();
@@ -2498,6 +2900,7 @@ const ACTION_ICONS = {
   log: '<path d="M4 16l6 -7l5 5l5 -6"/><path d="M14 14a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/><path d="M9 9a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/><path d="M3 16a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/><path d="M19 8a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/>',
   merge: '<path d="M5 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M5 6a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M15 12a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M7 8v8"/><path d="M7 8a4 4 0 0 0 4 4h4"/>',
   create: '<path d="M10 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M5 6a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M15 6a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M7 8v2a2 2 0 0 0 2 2h6a2 2 0 0 0 2 -2v-2"/><path d="M12 12v4"/>',
+  listRemove: '<path d="M19 8h-14"/><path d="M5 12h9"/><path d="M11 16h-6"/><path d="M15 16l4 4"/><path d="M19 16l-4 4"/>',
   delete: '<path d="M4 7h16"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12"/><path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3"/>',
   group: '<path d="M12 4l-8 4l8 4l8 -4l-8 -4"/><path d="M4 12l8 4l8 -4"/><path d="M4 16l8 4l8 -4"/>',
   ungroup: '<path d="M12 4l-8 4l8 4l8 -4l-8 -4"/><path d="M4 12l8 4l8 -4"/><path d="M15 18h6"/>',
@@ -2572,7 +2975,7 @@ function openBranchActions(menu, anchor, b, x, y) {
 async function mergeIntoCurrent(b) {
   const current = b.onBranch;
   closeBranchMenu();
-  if (!(await window.git.confirm(`Merge ${b.label} into ${current}?\nIts commits that ${current} does not have are added to ${current}.`))) return;
+  if (!(await askConfirm(`Merge ${b.label} into ${current}?\nIts commits that ${current} does not have are added to ${current}.`))) return;
   showLoading();
   const result = await window.git.mergeBranch(currentRepo, b.ref);
   hideLoading();
@@ -2590,7 +2993,7 @@ async function deleteBranchFromMenu(b) {
   }
   const lines = [`Delete branch "${b.name}"?`];
   if (only.count > 0) lines.push(`It has ${plural(only.count, 'commit')} that no other branch has; they will be lost.`);
-  if (!(await window.git.confirm(lines.join('\n')))) return;
+  if (!(await askConfirm(lines.join('\n')))) return;
   showLoading();
   const result = await window.git.deleteBranch(currentRepo, b.name);
   hideLoading();
@@ -2778,7 +3181,7 @@ async function deleteRemoteFromMenu(b) {
   }
   const lines = [`Delete ${b.label} on origin (GitHub)?`, 'It is gone for everyone; a branch on your PC with the same name stays.'];
   if (only.count > 0) lines.push(`It has ${plural(only.count, 'commit')} that no other branch or tag has; they will be lost.`);
-  if (!(await window.git.confirm(lines.join('\n')))) return;
+  if (!(await askConfirm(lines.join('\n')))) return;
   showLoading();
   const result = await window.git.deleteRemoteBranch(currentRepo, b.ref);
   hideLoading();
@@ -2870,8 +3273,88 @@ const GRAPH_ROW_LABELS = 52; // a commit with names on it: the message, then the
 const GRAPH_DOT_Y = 15; // the dot sits on the message line
 const GRAPH_LINK_ROW = 12;
 
-// One line of `git log --graph` drawn as lines and a dot, so the lanes join from row to row.
-function graphSvg(graph, height, { first = false, last = false, dotY = height / 2 } = {}) {
+const GRAPH_COLORS = 6; // .lane-0 to .lane-5
+
+// The colour of each character of `git log --graph`, row by row, so a line keeps one colour from its first commit
+// down to the commit it was made from, even where Git moves it to another column. A piece takes the colour of the
+// piece above that it carries on: a straight one the straight one, a slanted one the slanted one (where Git crosses
+// a line over another, both end on the same spot). A line with nothing above it (the newest commit of a branch, the
+// other parent of a merge) takes a colour that no line around it has. Returns, for each row, a colour (0-5) for each
+// of its characters, -1 for a space.
+function graphColors(rows) {
+  let above = new Map(); // where a piece of the row above ends → [{ kind, color }]; kind '|' straight, '/' or '\'
+  let next = 0;
+  return rows.map((g) => {
+    const colors = new Array(g.length).fill(-1);
+    const kind = (i) => (g[i] === '/' || g[i] === '\\' ? g[i] : '|');
+    const starts = new Map(); // where a piece of this row starts → the characters that start there
+    [...g].forEach((ch, i) => {
+      const at = ch === '|' || ch === '*' ? i : ch === '/' ? i + 1 : ch === '\\' ? i - 1 : null;
+      if (at === null) return;
+      if (!starts.has(at)) starts.set(at, []);
+      starts.get(at).push(i);
+    });
+    const fresh = [];
+    for (const [at, list] of starts) {
+      const from = [...(above.get(at) || [])];
+      const take = (i, k) => {
+        const n = from.findIndex((p) => p.kind === k);
+        if (n === -1) return false;
+        colors[i] = from.splice(n, 1)[0].color;
+        return true;
+      };
+      // the same kind first; then the straight one, then any; two starting where one ended: a merge, one is new
+      for (const i of list.filter((c) => !take(c, kind(c)))) {
+        if (take(i, '|')) continue;
+        if (from.length) colors[i] = from.shift().color;
+        else fresh.push(i);
+      }
+    }
+    for (const i of fresh) {
+      const near = new Set([...colors, ...[...above.values()].flat().map((p) => p.color)]);
+      let c = next;
+      for (let k = 0; k < GRAPH_COLORS && near.has(c); k++) c = (c + 1) % GRAPH_COLORS;
+      colors[i] = c;
+      next = (c + 1) % GRAPH_COLORS;
+    }
+    const below = new Map();
+    const end = (at, k, color) => {
+      if (!below.has(at)) below.set(at, []);
+      below.get(at).push({ kind: k, color });
+    };
+    [...g].forEach((ch, i) => {
+      if (ch === '|' || ch === '*') end(i, '|', colors[i]);
+      else if (ch === '/') end(i - 1, '/', colors[i]);
+      else if (ch === '\\') end(i + 1, '\\', colors[i]);
+    });
+    // a line Git moves more than one column: "_" along the bottom of the row, carrying on the "/" on its right
+    for (let i = g.length - 1; i >= 0; i--) {
+      if (g[i] !== '_') continue;
+      const list = below.get(i + 1) || [];
+      const n = list.findIndex((p) => p.kind === '/');
+      if (n === -1) continue;
+      const [p] = list.splice(n, 1);
+      colors[i] = p.color;
+      end(i - 1, '/', p.color);
+    }
+    // an octopus merge's "-": the colour of its commit
+    const dot = g.indexOf('*');
+    [...g].forEach((ch, i) => { if (ch === '-' && dot !== -1) colors[i] = colors[dot]; });
+    above = below;
+    return colors;
+  });
+}
+
+// The colour (0-5) of the commit's dot on a row of the graph, as graphSvg draws it: -1 on a row with no commit
+function graphDotColor(graph, colors) {
+  const i = graph.indexOf('*');
+  if (i === -1) return -1;
+  return colors && colors[i] >= 0 ? colors[i] : Math.round(i / 2) % GRAPH_COLORS;
+}
+
+// One line of `git log --graph` drawn as lines and a dot, so the lanes join from row to row; colors (graphColors)
+// gives each line its own colour, without it the colour is the column's.
+function graphSvg(graph, height, { first = false, last = false, dotY = height / 2, colors = null } = {}) {
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');
   const width = Math.max(1, graph.length) * GRAPH_CHAR + GRAPH_CHAR;
@@ -2879,7 +3362,7 @@ function graphSvg(graph, height, { first = false, last = false, dotY = height / 
   svg.setAttribute('height', height);
   svg.setAttribute('aria-hidden', 'true');
   const x = (i) => i * GRAPH_CHAR + GRAPH_CHAR / 2;
-  const lane = (i) => `lane-${Math.round(i / 2) % 6}`;
+  const lane = (i, column = i) => `lane-${colors && colors[i] >= 0 ? colors[i] : Math.round(column / 2) % GRAPH_COLORS}`;
   const line = (x1, y1, x2, y2, cls) => {
     const l = document.createElementNS(ns, 'line');
     l.setAttribute('x1', x1);
@@ -2891,8 +3374,8 @@ function graphSvg(graph, height, { first = false, last = false, dotY = height / 
   };
   [...graph].forEach((ch, i) => {
     if (ch === '|') line(x(i), 0, x(i), height, lane(i));
-    else if (ch === '/') line(x(i + 1), 0, x(i - 1), height, lane(i + 1));
-    else if (ch === '\\') line(x(i - 1), 0, x(i + 1), height, lane(i + 1));
+    else if (ch === '/') line(x(i + 1), 0, x(i - 1), height, lane(i, i + 1));
+    else if (ch === '\\') line(x(i - 1), 0, x(i + 1), height, lane(i, i + 1));
     else if (ch === '_') line(x(i - 1), height, x(i + 1), height, lane(i));
     else if (ch === '-') line(x(i - 1), dotY, x(i + 1), dotY, lane(i));
     else if (ch === '*') {
@@ -3027,6 +3510,7 @@ async function openBranchLog(ref, label) {
   const firstCommit = data.rows.findIndex((r) => r.hash);
   let lastCommit = -1;
   data.rows.forEach((r, i) => { if (r.hash) lastCommit = i; });
+  const colors = graphColors(data.rows.map((r) => r.graph));
   const table = document.createElement('div');
   table.className = 'branch-log-table';
   table.style.setProperty('--graph-width', `${width}px`);
@@ -3043,7 +3527,7 @@ async function openBranchLog(ref, label) {
     row.style.height = `${height}px`;
     const graph = document.createElement('span');
     graph.className = 'branch-log-graph';
-    graph.appendChild(graphSvg(r.graph, height, { first: i === firstCommit, last: i === lastCommit, dotY: GRAPH_DOT_Y }));
+    graph.appendChild(graphSvg(r.graph, height, { first: i === firstCommit, last: i === lastCommit, dotY: GRAPH_DOT_Y, colors: colors[i] }));
     row.appendChild(graph);
     if (r.hash) {
       const msg = document.createElement('span');
@@ -3056,7 +3540,7 @@ async function openBranchLog(ref, label) {
       author.title = r.author;
       const date = diffSpan('branch-log-date', formatDate(r.date));
       date.title = new Date(r.date).toLocaleString();
-      const hash = diffSpan('branch-log-hash copyable', r.short);
+      const hash = diffSpan(`branch-log-hash copyable hash-lane-${graphDotColor(r.graph, colors[i])}`, r.short);
       hash.title = `Click to copy ${r.hash}`;
       hash.addEventListener('click', () => copyText(r.hash, 'Commit hash'));
       row.append(msg, author, date, hash);
@@ -3203,9 +3687,20 @@ function setLogView(view) {
   renderLog();
 }
 
-async function refreshLog({ more = false } = {}) {
+// light (after a fetch): the same commits asked again only for the branches on each and which origin has; when the
+// list is not HEAD's own, has a search or is not here yet, the whole of it.
+async function refreshLog({ more = false, light = false } = {}) {
   if (!currentRepo) return;
   const repoPath = currentRepo;
+  if (light && logState.repo === repoPath && logState.key === 'HEAD' && logSpec(repoPath).key === 'HEAD' && !logQuery.commits && logState.commits.length && !logState.error) {
+    const page = await window.git.logPage(repoPath, { count: logState.commits.length, graph: true, light: true });
+    if (repoPath !== currentRepo || logState.repo !== repoPath || logSpec(repoPath).key !== 'HEAD' || logQuery.commits) return;
+    if (!page.error && page.commits.length === logState.commits.length && page.commits.every((c, i) => c.fullHash === logState.commits[i].fullHash)) {
+      logState = { ...logState, commits: page.commits };
+      renderLog();
+      return;
+    }
+  }
   // a branch or tag deleted since: back to your branch, or to no Compare
   const sides = logSides.get(repoPath);
   if (sides && cmpRefs && cmpRefs.repo === repoPath) {
@@ -3299,7 +3794,9 @@ function renderLog() {
     const byHash = new Map(commits.map((c) => [c.fullHash, c]));
     const width = Math.max(...graph.map((r) => r.graph.length), 1) * GRAPH_CHAR + GRAPH_CHAR;
     list.style.setProperty('--log-graph-width', `${width}px`);
-    const rows = graph.filter((r) => !r.hash || byHash.has(r.hash));
+    // the colours from the whole graph, so each line keeps its own
+    const colors = graphColors(graph.map((r) => r.graph));
+    const rows = graph.map((r, i) => ({ ...r, colors: colors[i] })).filter((r) => !r.hash || byHash.has(r.hash));
     const firstCommit = rows.findIndex((r) => r.hash);
     let lastCommit = -1;
     rows.forEach((r, i) => { if (r.hash) lastCommit = i; });
@@ -3307,12 +3804,14 @@ function renderLog() {
       if (!r.hash) {
         const link = document.createElement('div');
         link.className = 'log-graph-link branch-log-graph';
-        link.appendChild(graphSvg(r.graph, GRAPH_LINK_ROW));
+        link.appendChild(graphSvg(r.graph, GRAPH_LINK_ROW, { colors: r.colors }));
         list.appendChild(link);
         return;
       }
       const item = logItem(byHash.get(r.hash));
-      item.graphRow = { graph: r.graph, first: i === firstCommit, last: i === lastCommit && !logState.more };
+      item.graphRow = { graph: r.graph, colors: r.colors, first: i === firstCommit, last: i === lastCommit && !logState.more };
+      // its id in the colour of its line
+      item.querySelector('.log-item-head .log-hash').classList.add(`hash-lane-${graphDotColor(r.graph, r.colors)}`);
       list.appendChild(item);
     });
   } else for (const c of commits) list.appendChild(logItem(c));
@@ -3360,7 +3859,7 @@ function drawLogGraph(item) {
   const hash = item.querySelector('.log-item-head .log-hash');
   const dotY = hash ? Math.round(hash.offsetTop + hash.offsetHeight / 2) : GRAPH_DOT_Y;
   cell.textContent = '';
-  cell.appendChild(graphSvg(row.graph, height, { first: row.first, last: row.last, dotY }));
+  cell.appendChild(graphSvg(row.graph, height, { first: row.first, last: row.last, dotY, colors: row.colors }));
 }
 
 function drawLogGraphs() {
@@ -3506,7 +4005,7 @@ function openLogActions(c, anchor, x, y) {
 async function revertFromLog(c) {
   const lines = [`Revert ${c.hash} "${c.message}"?`, 'A new commit undoes its changes; the commit itself stays in the history.'];
   if (c.parents.length > 1) lines.push('It is a merge commit: what it brought in is undone, against the branch it was merged into.');
-  if (!(await window.git.confirm(lines.join('\n')))) return;
+  if (!(await askConfirm(lines.join('\n')))) return;
   showLoading();
   const result = await window.git.revertCommit(currentRepo, c.fullHash);
   hideLoading();
@@ -3602,7 +4101,7 @@ async function confirmAmend() {
 
 async function undoLastCommit(last) {
   const lines = [`Undo the last commit?`, `${last.short} ${last.message.split('\n')[0]}`, 'Its changes go back to Changes, ready to commit again. Nothing is lost.'];
-  if (!(await window.git.confirm(lines.join('\n')))) return;
+  if (!(await askConfirm(lines.join('\n')))) return;
   showLoading();
   const result = await window.git.undoCommit(currentRepo);
   hideLoading();
@@ -3648,7 +4147,7 @@ function showOperation(status) {
 
 async function abortOperation() {
   const op = $('#opAbortBtn').dataset.operation || 'merge';
-  if (!(await window.git.confirm(`Abort the ${op}?\nThe files go back to how they were before it; what you changed while fixing the conflicts is lost.`))) return;
+  if (!(await askConfirm(`Abort the ${op}?\nThe files go back to how they were before it; what you changed while fixing the conflicts is lost.`))) return;
   showLoading();
   const result = await window.git.abortOperation(currentRepo);
   hideLoading();
@@ -3720,7 +4219,7 @@ async function deleteTagFromLog(tag) {
     : onOrigin
       ? `Delete tag ${tag}?\nIt is also on origin (GitHub), and is deleted there too.`
       : `Delete tag ${tag}?\nIt is only on this PC.`;
-  if (!(await window.git.confirm(question))) return;
+  if (!(await askConfirm(question))) return;
   showLoading();
   const result = await window.git.deleteTag(currentRepo, tag, onOrigin);
   hideLoading();
@@ -3791,7 +4290,7 @@ async function initRepoHere() {
   if (!currentRepo) return;
   const entry = repos.find((r) => r.path === currentRepo);
   const name = (entry && entry.name) || currentRepo.split(/[\\/]/).pop();
-  if (!(await window.git.confirm(`Make "${name}" a Git repository?\nGit starts keeping its history there (in a .git folder), on a branch called main. Nothing is committed yet.`))) return;
+  if (!(await askConfirm(`Make "${name}" a Git repository?\nGit starts keeping its history there (in a .git folder), on a branch called main. Nothing is committed yet.`, { confirm: 'Initialize Git' }))) return;
   showLoading();
   const result = await window.git.initRepo(currentRepo);
   hideLoading();
@@ -3882,6 +4381,7 @@ function setupTabs() {
   $$('#gitView .tab').forEach((tab) => {
     tab.addEventListener('click', () => {
       if (tab.dataset.tab !== 'changes' || diffCommit) closeDiff();
+      closeCmpMenu(); // the Log's Base or Compare picker, also when the app changes the tab itself
       $$('#gitView .tab').forEach((t) => t.classList.remove('active'));
       $$('.tab-content').forEach((c) => c.classList.remove('active'));
       tab.classList.add('active');
@@ -3900,11 +4400,15 @@ function setupEvents() {
     if (menu && !menu.contains(e.target) && !(menu.anchor && menu.anchor.contains(e.target))) closeRepoMenu();
     const branches = $('#branchMenu');
     if (branches && !branches.contains(e.target) && !$('#branchSwitchBtn').contains(e.target)) closeBranchMenu();
+    // the Log's Base or Compare picker (View log / View commits is inside it); its own button toggles it
+    const picker = $('#cmpMenu');
+    if (picker && !picker.contains(e.target) && !picker.anchor.contains(e.target)) closeCmpMenu();
   });
   $('#repoList').addEventListener('scroll', () => closeRepoMenu());
   window.addEventListener('blur', () => {
     closeRepoMenu();
     closeBranchMenu();
+    closeCmpMenu();
   });
   $('#branchSwitchBtn').addEventListener('click', openBranchMenu);
 
@@ -4005,7 +4509,7 @@ function setupEvents() {
       'The changes in them are lost and cannot be undone.',
     ];
     if (created > 0) lines.push(`${plural(created, 'new file')} will be deleted.`);
-    if (!(await window.git.confirm(lines.join('\n')))) return;
+    if (!(await askConfirm(lines.join('\n')))) return;
     // A rename is reverted together with its old path, like a commit.
     const files = chosen.flatMap((e) => (e.from ? [e.from, e.file] : [e.file]));
     showLoading();
@@ -4138,7 +4642,7 @@ function createStashItem(s) {
   );
   addBtn('Drop', 'Delete the stash', async () => {
     const label = s.named ? s.message : s.message || 'this stash';
-    if (!(await window.git.confirm(`Delete stash "${label}"? This cannot be undone.`))) return;
+    if (!(await askConfirm(`Delete stash "${label}"? This cannot be undone.`))) return;
     await stashAction(() => window.git.stashDrop(currentRepo, s.index), 'Stash deleted');
   }, 'btn-danger');
 
@@ -4249,18 +4753,147 @@ function plural(n, word) {
   return `${n} ${word}${n !== 1 ? 's' : ''}`;
 }
 
+// The branches on origin came (or changed): the list under "Push to" shows them, if it is open.
 function renderPushTargetOptions() {
-  const list = $('#pushTargetOptions');
-  list.textContent = '';
-  remoteBranchNames.forEach((name) => {
-    const option = document.createElement('option');
-    option.value = name;
-    list.appendChild(option);
-  });
+  if ($('#pushTargetMenu')) renderPushTargetMenu();
 }
 
-// show: whether there is something to push (commits, or a branch origin does not have yet)
+// -- "Push to": the branches on origin in a list drawn by the app. All of them while the field is as it was when the
+// list opened; once a name is typed, the ones with it, and above them a new branch on origin when it is none of them
+// (the push creates it). The usual one comes first, the one chosen has a check. --
+let pushTargetTyped = false;
+let pushTargetActive = -1;
+let pushTargetSaving = null;
+const pushBranchOk = (t) => /^[\w./-]+$/.test(t) && !/^[-/.]|[/.]$|\.lock$|\.\.|\/\/|@\{/.test(t);
+
+function closePushTargetMenu() {
+  const menu = $('#pushTargetMenu');
+  if (menu) {
+    document.removeEventListener('mousedown', menu.onOutside, true);
+    menu.remove();
+  }
+  pushTargetActive = -1;
+  $('#pushTarget').setAttribute('aria-expanded', 'false');
+  $('#pushTarget').removeAttribute('aria-activedescendant');
+}
+
+// Saved for the repository (empty: the usual branch), then the list of what goes is worked out again for it. A name
+// that cannot be a branch (left in the field when it lost the focus) is not saved: the choice before it comes back.
+async function savePushTarget() {
+  const input = $('#pushTarget');
+  const value = input.value.trim();
+  if (!currentRepo || pushTargetSaving === value) return;
+  if (value && !pushBranchOk(value)) {
+    if (pushInfo) input.value = pushInfo.target;
+    toast(`"${value}" is not a valid branch name: the push still goes to origin/${pushInfo ? pushInfo.target : '...'}`, 'info', { plain: true });
+    return;
+  }
+  pushTargetSaving = value;
+  try {
+    const r = await window.git.setPushTarget(currentRepo, value);
+    if (r.error) {
+      toast(r.error, 'error');
+      return;
+    }
+    await refreshPush();
+  } finally {
+    pushTargetSaving = null;
+  }
+}
+
+function pickPushTarget(name) {
+  const input = $('#pushTarget');
+  closePushTargetMenu();
+  input.value = name;
+  input.blur();
+  savePushTarget();
+}
+
+function renderPushTargetMenu() {
+  const input = $('#pushTarget');
+  let menu = $('#pushTargetMenu');
+  if (!menu) {
+    menu = document.createElement('div');
+    menu.id = 'pushTargetMenu';
+    menu.className = 'clip-menu push-target-menu';
+    menu.setAttribute('role', 'listbox');
+    menu.setAttribute('aria-label', 'Branches on origin');
+    // a click in it keeps the cursor in the field
+    menu.addEventListener('mousedown', (e) => e.preventDefault());
+    menu.onOutside = (e) => {
+      if (!menu.contains(e.target) && !e.target.closest('.push-target-field')) closePushTargetMenu();
+    };
+    document.addEventListener('mousedown', menu.onOutside, true);
+    document.body.appendChild(menu);
+    input.setAttribute('aria-expanded', 'true');
+  }
+  const text = input.value.trim();
+  const q = pushTargetTyped ? text.toLowerCase() : '';
+  const usual = pushInfo ? pushInfo.upstream || pushInfo.current : '';
+  const chosen = pushInfo ? pushInfo.target : '';
+  const names = [...new Set(remoteBranchNames)].sort((a, b) => (a === usual ? -1 : b === usual ? 1 : a.localeCompare(b)));
+  const items = [];
+  if (pushTargetTyped && text && !names.includes(text)) {
+    items.push(pushBranchOk(text) ? { name: text, isNew: true } : { name: text, bad: true });
+  }
+  for (const n of names) if (!q || n.toLowerCase().includes(q)) items.push({ name: n });
+  menu.textContent = '';
+  items.forEach((it, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.id = `ptm-${i}`;
+    b.className = `clip-menu-item${it.isNew ? ' ptm-new' : ''}${it.bad ? ' ptm-bad' : ''}${!it.isNew && !it.bad && it.name === chosen ? ' current' : ''}${i === pushTargetActive ? ' active' : ''}`;
+    b.setAttribute('role', 'option');
+    b.setAttribute('aria-selected', String(i === pushTargetActive));
+    b.disabled = Boolean(it.bad);
+    b.innerHTML = it.isNew
+      ? '<svg class="ptm-check" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>'
+      : '<svg class="ptm-check" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>';
+    const name = document.createElement('span');
+    name.className = 'ptm-name';
+    name.textContent = it.isNew ? `New branch: origin/${it.name}` : it.bad ? `"${it.name}" is not a valid branch name` : it.name;
+    b.appendChild(name);
+    const hint = it.isNew ? 'the push creates it' : it.name === usual ? 'usual' : '';
+    if (hint) {
+      const h = document.createElement('span');
+      h.className = 'ptm-hint';
+      h.textContent = hint;
+      b.appendChild(h);
+    }
+    b.title = it.isNew ? `origin has no ${it.name}: the push creates it` : it.bad ? '' : `Push to origin/${it.name}`;
+    if (!it.bad) b.addEventListener('click', () => pickPushTarget(it.name));
+    menu.appendChild(b);
+  });
+  if (!items.length) {
+    const note = document.createElement('div');
+    note.className = 'ptm-note';
+    note.textContent = names.length ? 'No branch on origin has that name' : 'No branches on origin yet: Fetch to see them, or type a new name';
+    menu.appendChild(note);
+  }
+  if (pushTargetActive >= 0 && $(`#ptm-${pushTargetActive}`)) {
+    input.setAttribute('aria-activedescendant', `ptm-${pushTargetActive}`);
+    $(`#ptm-${pushTargetActive}`).scrollIntoView({ block: 'nearest' });
+  } else input.removeAttribute('aria-activedescendant');
+  // under the field, as wide as it, inside the window
+  const a = input.getBoundingClientRect();
+  menu.style.minWidth = `${Math.max(260, Math.round(a.width))}px`;
+  menu.style.left = `${Math.round(Math.max(8, Math.min(a.left, window.innerWidth - menu.offsetWidth - 8)))}px`;
+  menu.style.top = `${Math.round(a.bottom + 4)}px`;
+  menu.style.maxHeight = `${Math.max(140, Math.min(320, window.innerHeight - a.bottom - 16))}px`;
+}
+
+function openPushTargetMenu() {
+  pushTargetTyped = false;
+  pushTargetActive = -1;
+  renderPushTargetMenu();
+  // the branches of now: asked again each time it opens
+  refreshBranches();
+}
+
+// show: whether there is something to push (commits, or a branch origin does not have yet). Open, the tab stays even
+// with nothing to push (another branch can be chosen there).
 function setPushTabLabel(count, show = count > 0) {
+  show = show || $('#pushTab').classList.contains('active');
   $('#pushTab').textContent = count > 0 ? `Push (${count})` : 'Push';
   showTabIf($('#pushTab'), show);
 }
@@ -4303,7 +4936,9 @@ function renderPush(info) {
 
   // A new branch with no commits of its own: the push only creates it on origin, at the same commit.
   const createOnly = n === 0 && !info.targetExists && info.behind === 0;
-  setPushTabLabel(n, n > 0 || createOnly);
+  // pointed at another branch than the usual one, it stays too: else there would be no way back to change it
+  const chosen = info.target !== (info.upstream || info.current);
+  setPushTabLabel(n, n > 0 || createOnly || chosen);
   const parts = [];
   if (n === 0) {
     parts.push(
@@ -4402,40 +5037,80 @@ async function pushNow() {
   // An empty field means the usual branch, even if the list on screen was computed for another target.
   const usual = pushInfo.upstream || pushInfo.current;
   const target = $('#pushTarget').value.trim() || usual;
-  if (target !== usual && !(await window.git.confirm(`Push ${pushInfo.current} to origin/${target}?`))) return;
+  if (target !== usual && !(await askConfirm(`Push ${pushInfo.current} to origin/${target}?`))) return;
   const count = pushInfo.commits.length;
-  showLoading();
+  // the card over the page (sync-card.js): this branch's commits go to origin
+  const ends = syncCardEnds();
+  showSyncCard('push', { ...ends, branch: pushInfo.current, text: count ? `Pushing ${plural(count, 'commit')} to ${ends.remote}/${target}\u2026` : `Creating ${ends.remote}/${target}\u2026` });
   const result = await window.git.push(currentRepo, target);
-  hideLoading();
   if (result.error) {
+    hideSyncCard();
     toast(result.error, 'error', { title: 'Push failed' });
     return;
   }
-  toast(count ? `Pushed ${plural(count, 'commit')} to origin/${result.target}` : `Created origin/${result.target}`, 'success');
-  await refresh();
+  await refresh().catch((e) => {
+    hideSyncCard();
+    throw e;
+  });
+  doneSyncCard(count ? `${plural(count, 'commit')} pushed to ${ends.remote}/${result.target}` : `Created ${ends.remote}/${result.target}`);
 }
 
 function setupPush() {
   const input = $('#pushTarget');
-  // "change" fires when the field loses focus with a new value and when a suggestion is picked.
-  input.addEventListener('change', async () => {
-    if (!currentRepo) return;
-    const r = await window.git.setPushTarget(currentRepo, input.value);
-    if (r.error) {
-      toast(r.error, 'error');
+  // the list of the branches on origin opens with the field (all of them; typing narrows it)
+  input.addEventListener('focus', () => {
+    input.select();
+    openPushTargetMenu();
+  });
+  input.addEventListener('input', () => {
+    pushTargetTyped = true;
+    pushTargetActive = -1;
+    renderPushTargetMenu();
+  });
+  input.addEventListener('blur', () => setTimeout(() => {
+    if (document.activeElement !== input) closePushTargetMenu();
+  }));
+  // "change" fires when the field loses focus with a name typed and not picked
+  input.addEventListener('change', savePushTarget);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!$('#pushTargetMenu')) openPushTargetMenu();
+      const all = [...$$('#pushTargetMenu .clip-menu-item')];
+      if (!all.length) return;
+      let i = pushTargetActive;
+      do i = (i + (e.key === 'ArrowDown' ? 1 : -1) + all.length) % all.length;
+      while (all[i].disabled && i !== pushTargetActive);
+      pushTargetActive = i;
+      renderPushTargetMenu();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const active = $(`#ptm-${pushTargetActive}`);
+      const text = input.value.trim();
+      // the one chosen with the arrows; else what is typed (empty: the usual branch), when it can be a branch name
+      if ($('#pushTargetMenu') && active && !active.disabled) active.click();
+      else if (!text || pushBranchOk(text)) pickPushTarget(text);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (pushInfo) input.value = pushInfo.target;
+      closePushTargetMenu();
+      input.blur();
+    } else if (e.key === 'Tab') {
+      closePushTargetMenu();
+    }
+  });
+  // the arrow keeps the cursor in the field, so a second click closes the list
+  $('#pushTargetCaret').addEventListener('mousedown', (e) => e.preventDefault());
+  $('#pushTargetCaret').addEventListener('click', () => {
+    if ($('#pushTargetMenu')) {
+      closePushTargetMenu();
       return;
     }
-    await refreshPush();
+    if (document.activeElement !== input) input.focus();
+    openPushTargetMenu();
   });
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      input.blur();
-    } else if (e.key === 'Escape' && pushInfo) {
-      input.value = pushInfo.target;
-      input.blur();
-    }
-  });
+  window.addEventListener('resize', closePushTargetMenu);
   $('#pushNowBtn').addEventListener('click', pushNow);
 }
 
@@ -4767,7 +5442,7 @@ async function restoreIgnored() {
   if (!sel || !currentRepo) return;
   const entry = findIgnored(sel);
   const target = entry ? entry.original : sel.file;
-  if (!(await window.git.confirm(`Put ${sel.folder}/${sel.file} back in the project as ${target}? It counts as a change again.`))) return;
+  if (!(await askConfirm(`Put ${sel.folder}/${sel.file} back in the project as ${target}? It counts as a change again.`, { confirm: 'Put it back' }))) return;
   showLoading();
   let result;
   try {
@@ -4811,6 +5486,7 @@ function setupIgnored() {
 
 function setupPark() {
   $('#parkBtn').addEventListener('click', openParkModal);
+  $('#groupFoldersBtn').addEventListener('click', () => setChangesGrouped(!changesGrouped));
   $('#parkCancelBtn').addEventListener('click', closeParkModal);
   $('#parkConfirmBtn').addEventListener('click', confirmPark);
   $('#parkFolder').addEventListener('input', renderParkFiles);
@@ -4826,6 +5502,7 @@ function updateCrumb() {
   let ctx = '';
   if (currentMode === 'git') {
     if (effectiveGitView() === 'maven') mode = 'Maven';
+    else if (effectiveGitView() === 'bruno') mode = 'Bruno';
     const r = repos.find((x) => x.path === currentRepo);
     ctx = r ? displayName(r) : '';
   } else if (currentMode === 'vault') {
@@ -4833,6 +5510,9 @@ function updateCrumb() {
     ctx = vaultCrumb();
   } else if (currentMode === 'clip') {
     mode = 'Clipboard history';
+  } else if (currentMode === 'db') {
+    mode = 'Database';
+    ctx = dbConn() ? dbConn().name : '';
   } else if (currentMode === 'logs') {
     mode = 'Logs';
     ctx = logsCrumb();
@@ -4863,7 +5543,7 @@ function updateCrumb() {
 }
 
 function setMode(mode) {
-  currentMode = ['vault', 'todo', 'clip', 'help', 'logs', 'docker', 'tools', 'analysis', 'search'].includes(mode) ? mode : 'git';
+  currentMode = ['vault', 'todo', 'clip', 'help', 'logs', 'docker', 'tools', 'analysis', 'search', 'db'].includes(mode) ? mode : 'git';
   $('#gitView').classList.toggle('hidden', currentMode !== 'git');
   $('#vaultView').classList.toggle('hidden', currentMode !== 'vault');
   $('#todoView').classList.toggle('hidden', currentMode !== 'todo');
@@ -4874,6 +5554,7 @@ function setMode(mode) {
   $('#toolsView').classList.toggle('hidden', currentMode !== 'tools');
   $('#analysisView').classList.toggle('hidden', currentMode !== 'analysis');
   $('#searchView').classList.toggle('hidden', currentMode !== 'search');
+  $('#dbView').classList.toggle('hidden', currentMode !== 'db');
   $$('.mode-tab').forEach((t) => t.classList.toggle('active', t.dataset.mode === currentMode));
   updateHotkeyBadge();
   updateCrumb();
@@ -4938,17 +5619,53 @@ function activateMode(mode, ide) {
     showAnalysis(currentAnalysis);
   } else if (currentMode === 'search') {
     showSearch();
+  } else if (currentMode === 'db') {
+    refreshDb();
   } else if (currentMode === 'help') {
     renderTermFolders(); // the repositories may have changed
   } else {
-    refreshSummaries();
-    if (currentRepo) refresh();
+    refreshIfChanged();
   }
 }
 
 function setupModes() {
   $$('.mode-tab').forEach((t) => t.addEventListener('click', () => activateMode(t.dataset.mode)));
   setupRailOrder();
+  setupRailNames();
+}
+
+// -- The rail with the names of its pages: the G opens it wider, a name by each icon, and closes it; kept on this PC --
+const RAIL_OPEN_KEY = 'railOpen';
+
+function showRailNames(open) {
+  const logo = $('#railLogo');
+  const what = open ? 'Hide the names of the pages' : 'Show the names of the pages';
+  $('.rail').classList.toggle('open', open);
+  logo.setAttribute('aria-expanded', String(open));
+  logo.setAttribute('aria-label', what);
+  logo.title = what;
+}
+
+function setupRailNames() {
+  const rail = $('.rail');
+  let open = false;
+  try {
+    open = localStorage.getItem(RAIL_OPEN_KEY) === '1';
+  } catch {
+    // narrow then
+  }
+  rail.classList.add('no-anim');
+  showRailNames(open);
+  requestAnimationFrame(() => requestAnimationFrame(() => rail.classList.remove('no-anim')));
+  $('#railLogo').addEventListener('click', () => {
+    const now = !rail.classList.contains('open');
+    showRailNames(now);
+    try {
+      localStorage.setItem(RAIL_OPEN_KEY, now ? '1' : '0');
+    } catch {
+      // only for this session
+    }
+  });
 }
 
 // -- The rail: its icons can be put in another order by dragging them (or Alt+Up/Down); kept on this PC --
@@ -5358,6 +6075,102 @@ const MAX_TOAST_FILES = 6;
 
 // Every message has the same layout: an icon, a title, a sentence, the files and what to do. An error stays longer,
 // waits while the mouse is on it and has a close button.
+// -- The app's own confirmation, the same for every question, in place of the system's. The message reads as it always
+// did ("Delete branch "x"?\nWhat that means."): its question is the title (a name in quotes shows as a name), the
+// rest of its first line and the lines after it explain, and lines after an empty one are a list (of names). The first
+// word of the question names the button (Delete, Push, Merge...), unless opts.confirm does; one that loses something
+// (opts.danger, else known by that word or the text) is red, with the focus on Cancel. Esc, Cancel or a click beside it
+// answer no. A thin band at its top says how much it weighs: red for one that loses something, blue for the others.
+// Resolves with true or false. --
+const CONFIRM_DANGER = /^(Delete|Remove|Discard|Drop|Revert|Abort|Replace|End|Clear|Reset|Overwrite)$/i;
+let confirmOpen = null;
+
+function askConfirm(message, opts = {}) {
+  if (confirmOpen) confirmOpen(false); // one at a time: the one before is a no
+  const lines = String(message ?? '').replace(/\r/g, '').split('\n');
+  const first = lines.shift() || '';
+  const cut = first.indexOf('? ');
+  const title = cut === -1 ? first : first.slice(0, cut + 1);
+  const paragraphs = cut === -1 ? [] : [first.slice(cut + 2).trim()];
+  const list = [];
+  let afterBlank = false;
+  for (const line of lines) {
+    if (!line.trim()) afterBlank = true;
+    else if (afterBlank) list.push(line.trim());
+    else paragraphs.push(line.trim());
+  }
+  const verb = (/^([A-Z][a-z]+)\b/.exec(title) || [])[1] || '';
+  const danger = opts.danger ?? (CONFIRM_DANGER.test(verb) || /cannot be undone|will be lost|are lost/i.test(message));
+
+  const el = (tag, cls, text) => {
+    const node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text) node.textContent = text;
+    return node;
+  };
+  const overlay = el('div', 'confirm-overlay');
+  const card = el('div', `confirm-card${danger ? ' danger' : ''}`);
+  card.setAttribute('role', 'alertdialog');
+  card.setAttribute('aria-modal', 'true');
+  card.setAttribute('aria-labelledby', 'confirmTitle');
+  card.setAttribute('aria-describedby', 'confirmBody');
+  const head = el('h3', 'confirm-title');
+  head.id = 'confirmTitle';
+  // "Delete branch "feature/x"?": the name in quotes as a name
+  title.split(/"([^"]+)"/).forEach((part, i) => {
+    if (i % 2) head.appendChild(el('code', 'confirm-name', part));
+    else if (part) head.appendChild(document.createTextNode(part));
+  });
+  const body = el('div', 'confirm-body');
+  body.id = 'confirmBody';
+  paragraphs.filter(Boolean).forEach((p) => body.appendChild(el('p', '', p)));
+  if (list.length) {
+    const ul = el('ul', 'confirm-list');
+    list.forEach((item) => ul.appendChild(el('li', '', item)));
+    body.appendChild(ul);
+  }
+  const actions = el('div', 'confirm-actions');
+  const no = el('button', 'btn confirm-no', opts.cancel || 'Cancel');
+  const yes = el('button', `btn confirm-yes${danger ? ' danger' : ' btn-primary'}`, opts.confirm || verb || 'OK');
+  no.type = 'button';
+  yes.type = 'button';
+  actions.append(no, yes); // Cancel at the left edge, the answer at the right
+  card.append(head, body, actions);
+  overlay.appendChild(card);
+
+  const before = document.activeElement;
+  return new Promise((resolve) => {
+    const onKey = (e) => {
+      // nothing behind it hears the keys while it is open
+      e.stopPropagation();
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        answer(false);
+      } else if (e.key === 'Tab') {
+        e.preventDefault();
+        (document.activeElement === no ? yes : no).focus();
+      }
+    };
+    const answer = (value) => {
+      if (confirmOpen !== answer) return;
+      confirmOpen = null;
+      window.removeEventListener('keydown', onKey, true);
+      overlay.remove();
+      if (before && before.isConnected && typeof before.focus === 'function') before.focus();
+      resolve(value);
+    };
+    confirmOpen = answer;
+    no.addEventListener('click', () => answer(false));
+    yes.addEventListener('click', () => answer(true));
+    overlay.addEventListener('mousedown', (e) => {
+      if (e.target === overlay) answer(false);
+    });
+    window.addEventListener('keydown', onKey, true);
+    document.body.appendChild(overlay);
+    (danger ? no : yes).focus();
+  });
+}
+
 function toast(msg, type = 'info', opts = {}) {
   const el = $('#toast');
   // plain: the app's own text as it is (a list of names, say), not read for a known Git message
