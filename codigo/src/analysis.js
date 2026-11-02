@@ -1,5 +1,6 @@
-// Analysis page: looks across the microservices of the list. Swagger files: every .yaml / .yml inside a folder
-// named "swagger" (at any depth, any case) of each repository, with the title and version from its info: block.
+// Analysis page: looks across the microservices of the list. Swagger files: every .yaml / .yml inside the folders to
+// look in of each repository (named "swagger" unless the user chose others), with the title and version from its
+// info: block.
 const fs = require('fs');
 const path = require('path');
 const { ipcMain } = require('electron');
@@ -11,6 +12,10 @@ const MAX_DEPTH = 10;
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const MAX_FILES = 2000;
 const YAML_FILE = /\.ya?ml$/i;
+// where the swagger files are looked for: a folder name (at any depth, any case) or a path from the root of each
+// repository; the user may change them on the page
+const DEFAULT_FOLDERS = ['swagger'];
+const MAX_FOLDERS = 30;
 
 async function entries(dir) {
   try {
@@ -20,20 +25,54 @@ async function entries(dir) {
   }
 }
 
-// The folders named swagger under a repository (not inside another swagger folder: its files are taken with it).
-async function swaggerDirs(root) {
+// A folder to look in as the user wrote it: a name (swagger) or a path inside each repository (docs/api), with /.
+function cleanFolder(input) {
+  const t = String(input || '').trim().replace(/\\/g, '/').replace(/^(\.\/)+/, '').replace(/^\/+|\/+$/g, '');
+  if (!t) throw new Error('Type a folder name, like swagger, or a path, like docs/api');
+  if (t.length > 200) throw new Error('That folder is too long');
+  if (/^[a-z]:/i.test(t) || t.split('/').some((p) => !p || p === '.' || p === '..')) throw new Error(`"${t.slice(0, 60)}" is not a folder inside a repository`);
+  return t;
+}
+
+// The list as saved: each one clean, none twice (whatever the case), not too many. Wrong ones left out.
+function cleanFolders(list) {
+  const out = [];
+  for (const f of Array.isArray(list) ? list : []) {
+    try {
+      const c = cleanFolder(f);
+      if (!out.some((o) => o.toLowerCase() === c.toLowerCase())) out.push(c);
+    } catch {
+      // not a folder inside a repository
+    }
+  }
+  return out.slice(0, MAX_FOLDERS);
+}
+
+// The folders to look in under a repository: those with one of the names (at any depth; not inside another one: its
+// files are taken with it) and those at one of the paths. One inside another counts once.
+async function lookDirs(root, folders) {
+  const names = new Set(folders.filter((f) => !f.includes('/')).map((f) => f.toLowerCase()));
   const found = [];
+  for (const f of folders.filter((x) => x.includes('/'))) {
+    const dir = path.join(root, ...f.split('/'));
+    try {
+      if ((await fs.promises.stat(dir)).isDirectory()) found.push(dir);
+    } catch {
+      // not in this repository
+    }
+  }
   const walk = async (dir, depth) => {
     if (depth > MAX_DEPTH) return;
     for (const e of await entries(dir)) {
       if (!e.isDirectory() || SKIP.has(e.name)) continue;
       const full = path.join(dir, e.name);
-      if (e.name.toLowerCase() === 'swagger') found.push(full);
+      if (names.has(e.name.toLowerCase())) found.push(full);
       else await walk(full, depth + 1);
     }
   };
-  await walk(root, 0);
-  return found;
+  if (names.size) await walk(root, 0);
+  const sorted = [...new Set(found)].sort((a, b) => a.length - b.length);
+  return sorted.filter((d, i) => !sorted.slice(0, i).some((o) => d.startsWith(o + path.sep)));
 }
 
 async function yamlFiles(dir, out, depth = 0) {
@@ -72,20 +111,20 @@ async function describe(file, root) {
   }
 }
 
-async function scanSwagger(repos) {
+async function scanSwagger(repos, folders = DEFAULT_FOLDERS) {
   const services = [];
   for (const repo of repos) {
     if (!fs.existsSync(repo.path)) {
       services.push({ path: repo.path, name: repo.name, missing: true, dirs: [], files: [] });
       continue;
     }
-    const dirs = await swaggerDirs(repo.path);
+    const dirs = await lookDirs(repo.path, folders);
     const files = [];
     for (const dir of dirs) await yamlFiles(dir, files);
     const rows = [];
     for (const f of files.sort((a, b) => a.localeCompare(b))) {
       const row = await describe(f, repo.path);
-      // where it is inside its swagger folder: what a copy elsewhere is matched by
+      // where it is inside the folder it was found in: what a copy elsewhere is matched by
       const dir = dirs.find((d) => f.startsWith(d + path.sep));
       row.inner = path.relative(dir, f).split(path.sep).join('/');
       rows.push(row);
@@ -95,7 +134,11 @@ async function scanSwagger(repos) {
   return services;
 }
 
-function registerAnalysis({ listRepos, isKnownRepo, openPath }) {
+function registerAnalysis({ listRepos, isKnownRepo, openPath, loadFolders, saveFolders, pickDir }) {
+  const folders = () => {
+    const saved = loadFolders ? loadFolders() : null;
+    return Array.isArray(saved) ? cleanFolders(saved) : [...DEFAULT_FOLDERS];
+  };
   // a .yaml inside one of the repositories of the list, nowhere else
   const listedFile = (repoPath, rel) => {
     if (!isKnownRepo(repoPath)) throw new Error('Unknown repository');
@@ -107,8 +150,37 @@ function registerAnalysis({ listRepos, isKnownRepo, openPath }) {
   ipcMain.handle('an-swagger', async () => {
     try {
       const started = Date.now();
-      const services = await scanSwagger(listRepos());
-      return { services, took: Date.now() - started };
+      const looked = folders();
+      const services = await scanSwagger(listRepos(), looked);
+      return { services, folders: looked, took: Date.now() - started };
+    } catch (e) {
+      return { error: e.message };
+    }
+  });
+  // The folders to look in, and a new list of them (saved in the app's data).
+  ipcMain.handle('an-folders', () => ({ folders: folders() }));
+  ipcMain.handle('an-set-folders', (_, list) => {
+    try {
+      if (!Array.isArray(list)) throw new Error('Not a list of folders');
+      if (list.length > MAX_FOLDERS) throw new Error(`At most ${MAX_FOLDERS} folders`);
+      const clean = list.map(cleanFolder);
+      saveFolders(cleanFolders(clean));
+      return { folders: folders() };
+    } catch (e) {
+      return { error: e.message };
+    }
+  });
+  // A folder chosen in the system's window, inside one of the repositories of the list: its path from that root.
+  ipcMain.handle('an-pick-folder', async () => {
+    try {
+      const picked = await pickDir('Choose a folder with swagger files, inside one of your microservices');
+      if (!picked) return { canceled: true };
+      const full = path.resolve(picked);
+      const repo = listRepos().map((r) => ({ ...r, root: path.resolve(r.path) })).find((r) => full === r.root || full.startsWith(r.root + path.sep));
+      if (!repo) throw new Error('That folder is not inside any of the microservices of your list');
+      const rel = path.relative(repo.root, full).split(path.sep).join('/');
+      if (!rel) throw new Error(`That is the root of ${repo.name}: choose a folder inside it`);
+      return { folder: cleanFolder(rel), repo: repo.name };
     } catch (e) {
       return { error: e.message };
     }
@@ -135,4 +207,4 @@ function registerAnalysis({ listRepos, isKnownRepo, openPath }) {
   });
 }
 
-module.exports = { registerAnalysis, scanSwagger, describe, SKIP };
+module.exports = { registerAnalysis, scanSwagger, describe, cleanFolder, cleanFolders, SKIP, DEFAULT_FOLDERS };

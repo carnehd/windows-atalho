@@ -227,6 +227,9 @@ contextBridge.exposeInMainWorld('analysis', {
   swagger: () => ipcRenderer.invoke('an-swagger'),
   open: (repo, rel) => ipcRenderer.invoke('an-open', repo, rel),
   read: (repo, rel) => ipcRenderer.invoke('an-read', repo, rel),
+  folders: () => ipcRenderer.invoke('an-folders'),
+  setFolders: (list) => ipcRenderer.invoke('an-set-folders', list),
+  pickFolder: () => ipcRenderer.invoke('an-pick-folder'),
 });
 
 contextBridge.exposeInMainWorld('search', {

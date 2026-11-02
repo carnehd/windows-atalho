@@ -529,7 +529,18 @@ app.whenReady().then(() => {
     const names = store.get('repoNames', {});
     return getRepoList().map((p) => ({ path: p, name: names[pathKey(p)] || path.basename(p) }));
   };
-  registerAnalysis({ listRepos: listNamedRepos, isKnownRepo, openPath });
+  registerAnalysis({
+    listRepos: listNamedRepos,
+    isKnownRepo,
+    openPath,
+    // the folders the swagger files are looked for in (missing: the default, swagger)
+    loadFolders: () => store.get('swaggerFolders', null),
+    saveFolders: (list) => store.set('swaggerFolders', list),
+    pickDir: async (title) => {
+      const result = await withDialog(() => dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'], title }));
+      return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0];
+    },
+  });
   registerSearch({ listRepos: listNamedRepos, isKnownRepo, openPath, revealPath });
   terminal = registerTerminal({ isKnownRepo, getWindow: () => mainWindow });
   registerIdeOpen({ isKnownRepo });

@@ -1,5 +1,6 @@
 // Analysis page: looks across the microservices of the list, one analysis at a time (listed on the left).
-// Swagger files: every .yaml in a folder named swagger, per microservice, with name, path, title and version.
+// Swagger files: every .yaml in the folders to look in (swagger, unless others are chosen with Folders), per
+// microservice, with name, path, title and version.
 // Relies on helpers from app.js ($, $$, toast, repos, repoGroups, updateCrumb, CARD_ID) and tools.js (tEl, toolHead,
 // toolButton, toolInput, toolCopy, debounce).
 const ANALYSES = [
@@ -7,12 +8,13 @@ const ANALYSES = [
   { id: 'docs', title: 'Compare with documentation', sub: 'Versions next to the published copy', build: buildDocsAnalysis },
 ];
 
-// One scan of the swagger folders serves both analyses; Scan again in either reads them again, and so does a change
-// in the list of repositories.
+// One scan of the folders serves both analyses; Scan again in either reads them again, and so does a change in the
+// list of repositories or in the folders to look in.
 let anScan = null;
 let anScanList = '';
+const anReposKey = () => repos.map((r) => r.path).sort().join('\n');
 function swaggerScan(force = false) {
-  const list = repos.map((r) => r.path).sort().join('\n');
+  const list = anReposKey();
   if (!anScan || force || list !== anScanList) {
     anScanList = list;
     anScan = window.analysis.swagger().then((r) => {
@@ -31,6 +33,133 @@ function analysisTitle(id) {
   return a ? a.title : '';
 }
 
+// -- The folders to look in: names (swagger), found at any depth, and paths from the root of each repository (docs/api).
+// Saved in the app's data; a change scans again. --
+let anFolders = null; // as last read from the app
+const anFoldersText = (list) => (list && list.length ? list.join(', ') : 'none');
+
+function anFoldersModal() {
+  let modal = $('#anFoldersModal');
+  if (modal) return modal;
+  modal = document.createElement('div');
+  modal.id = 'anFoldersModal';
+  modal.className = 'settings-overlay hidden';
+  modal.innerHTML = `
+    <div class="settings-card af-card" role="dialog" aria-modal="true" aria-labelledby="afTitle">
+      <h3 id="afTitle">Where to look for swagger files</h3>
+      <p class="mv-sub">Every .yaml inside these folders, at any depth, in each microservice of your list. A name (swagger) is looked for anywhere in a repository; a path (docs/api) is taken from the root of each one.</p>
+      <ul id="afList" class="af-list" aria-label="Folders to look in"></ul>
+      <div class="af-add">
+        <input id="afInput" class="input af-input" maxlength="200" placeholder="swagger, or docs/api" autocomplete="off" spellcheck="false" aria-label="Folder name or path" />
+        <button id="afAddBtn" class="btn btn-sm" type="button">Add</button>
+        <button id="afPickBtn" class="btn btn-sm" type="button" title="Choose a folder inside one of your microservices: its path from the root is added">Choose a folder...</button>
+      </div>
+      <p id="afNote" class="me-note" aria-live="polite"></p>
+      <div class="action-row settings-actions"><span class="mv-gap"></span><button id="afDoneBtn" class="btn btn-primary" type="button">Done</button></div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('mousedown', (e) => {
+    if (e.target === modal) closeAnFolders();
+  });
+  modal.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      closeAnFolders();
+    }
+  });
+  $('#afDoneBtn').addEventListener('click', closeAnFolders);
+  $('#afAddBtn').addEventListener('click', () => addAnFolder($('#afInput').value));
+  $('#afInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addAnFolder($('#afInput').value);
+    }
+  });
+  $('#afInput').addEventListener('input', () => anFoldersNote(''));
+  $('#afPickBtn').addEventListener('click', async () => {
+    const r = await window.analysis.pickFolder();
+    if (r.canceled) return;
+    if (r.error) return anFoldersNote(r.error, true);
+    addAnFolder(r.folder, `${r.folder} (from ${r.repo})`);
+  });
+  return modal;
+}
+
+function anFoldersNote(text, error = false) {
+  const note = $('#afNote');
+  note.textContent = text;
+  note.classList.toggle('error', error);
+}
+
+function renderAnFolders() {
+  const list = $('#afList');
+  list.replaceChildren(
+    ...anFolders.map((f) => {
+      const li = tEl('li', 'af-item');
+      li.append(tEl('span', 'af-name', f), tEl('span', 'af-kind', f.includes('/') ? 'path from the root' : 'name, at any depth'));
+      const x = tEl('button', 'af-remove', '\u2715');
+      x.type = 'button';
+      x.title = `Stop looking in ${f}`;
+      x.setAttribute('aria-label', `Remove ${f}`);
+      x.addEventListener('click', async () => {
+        await saveAnFolders(anFolders.filter((o) => o !== f), `${f} removed`);
+        // its button is gone: the focus stays in the dialog (Esc still closes it)
+        $('#afInput').focus();
+      });
+      li.appendChild(x);
+      return li;
+    })
+  );
+  if (!anFolders.length) list.appendChild(tEl('li', 'af-empty', 'No folders: nothing is looked for. Add one below.'));
+}
+
+let anFoldersChanged = false;
+async function saveAnFolders(next, said) {
+  const r = await window.analysis.setFolders(next);
+  if (r.error) return anFoldersNote(r.error, true);
+  anFolders = r.folders;
+  anFoldersChanged = true;
+  renderAnFolders();
+  anFoldersNote(said);
+}
+
+function addAnFolder(text, said) {
+  const t = String(text || '').trim();
+  if (!t) return anFoldersNote('Type a folder name, like swagger, or a path, like docs/api', true);
+  if (anFolders.some((f) => f.toLowerCase() === t.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').toLowerCase())) return anFoldersNote(`${t} is in the list already`, true);
+  $('#afInput').value = '';
+  saveAnFolders([...anFolders, t], `${said || t} added`);
+}
+
+async function openAnFolders() {
+  const modal = anFoldersModal();
+  const r = await window.analysis.folders();
+  anFolders = r.folders || [];
+  anFoldersChanged = false;
+  renderAnFolders();
+  anFoldersNote('');
+  modal.classList.remove('hidden');
+  $('#afInput').focus();
+}
+
+// Closed: with the folders changed, the analysis on show reads them again (the other one when it is shown).
+function closeAnFolders() {
+  const modal = $('#anFoldersModal');
+  if (!modal || modal.classList.contains('hidden')) return;
+  modal.classList.add('hidden');
+  if (!anFoldersChanged) return;
+  anScan = null;
+  anScanList = '';
+  const built = builtAnalyses.get(currentAnalysis);
+  if (built && built.shown) built.shown(true);
+}
+
+function anFoldersButton() {
+  const b = toolButton('Folders', openAnFolders);
+  b.title = 'Where to look for the swagger files';
+  return b;
+}
+
 // -- Swagger files --
 function buildSwaggerAnalysis() {
   const box = tEl('div', 'tool an-tool');
@@ -43,12 +172,15 @@ function buildSwaggerAnalysis() {
   const state = tEl('span', 'tool-hint');
   const result = tEl('div', 'an-result');
   const row = tEl('div', 'tool-row');
-  const scan = async () => {
+  let seen = null; // the scan shown: another one (made by the other analysis) is shown when this one is
+  const scan = async (force = false) => {
     if (loading) return;
     loading = true;
     rescan.disabled = true;
     state.textContent = `Looking in ${repos.length} microservice${repos.length === 1 ? '' : 's'}...`;
-    const r = await swaggerScan(scanned);
+    const scanning = swaggerScan(force);
+    seen = scanning;
+    const r = await scanning;
     loading = false;
     rescan.disabled = false;
     if (r.error) {
@@ -60,11 +192,11 @@ function buildSwaggerAnalysis() {
     data = r;
     render();
   };
-  const rescan = toolButton('Scan again', scan);
-  rescan.title = 'Read the swagger folders again';
+  const rescan = toolButton('Scan again', () => scan(true));
+  rescan.title = 'Read the folders again';
   const copyTable = toolButton('Copy as table', () => toolCopy(tableText(), 'Table'));
   copyTable.title = 'Copy the files shown, as a table for Excel or a document';
-  row.append(query, group, rescan, copyTable, state);
+  row.append(query, group, anFoldersButton(), rescan, copyTable, state);
 
   const fillGroups = () => {
     const keep = group.value || 'all';
@@ -115,14 +247,19 @@ function buildSwaggerAnalysis() {
       result.appendChild(tEl('div', 'tool-hint', 'No microservices yet: add them in Git (+ Add or Refresh).'));
       return;
     }
-    if (!withFiles.length) result.appendChild(tEl('div', 'tool-hint an-empty', q ? 'Nothing matches the filter.' : 'No swagger folder with .yaml files in these microservices.'));
+    const looked = data.folders || [];
+    headText.textContent = `Every .yaml in the folders to look in (${anFoldersText(looked)}), in each microservice of your list, with the title and version from its info:. A click on a path opens the file.`;
+    if (!withFiles.length) {
+      const why = q ? 'Nothing matches the filter.' : looked.length ? `No .yaml files in ${looked.length === 1 ? 'a folder' : 'the folders'} ${anFoldersText(looked)} in these microservices. Folders chooses where to look.` : 'No folders to look in: add one with Folders.';
+      result.appendChild(tEl('div', 'tool-hint an-empty', why));
+    }
     for (const s of withFiles) {
       const block = tEl('section', 'an-service');
       const head = tEl('div', 'an-service-head');
-      head.append(tEl('h3', '', s.name), tEl('span', 'an-count', `${s.files.length} file${s.files.length === 1 ? '' : 's'}`));
-      const where = tEl('span', 'an-dirs', s.dirs.join(' · '));
-      where.title = s.path;
-      head.appendChild(where);
+      const name = tEl('h3', '', s.name);
+      // where it was found, on hover only
+      name.title = `${s.path}\nIn: ${s.dirs.join(', ')}`;
+      head.append(name, tEl('span', 'an-count', `${s.files.length} file${s.files.length === 1 ? '' : 's'}`));
       const grid = tEl('div', 'an-files');
       for (const h of ['Name', 'Path', 'Title', 'Version']) grid.appendChild(tEl('div', 'an-head', h));
       for (const f of s.files) {
@@ -162,7 +299,9 @@ function buildSwaggerAnalysis() {
     }
   });
   group.addEventListener('change', render);
-  box.append(toolHead('Swagger files', 'Every .yaml in a folder named swagger, in each microservice of your list, with the title and version from its info:. A click on a path opens the file.'), row, result);
+  const head = toolHead('Swagger files', 'Every .yaml in the folders to look in, in each microservice of your list, with the title and version from its info:. A click on a path opens the file.');
+  const headText = head.querySelector('p');
+  box.append(head, row, result);
   let scanned = false;
   return {
     el: box,
@@ -170,8 +309,8 @@ function buildSwaggerAnalysis() {
     shown(on) {
       if (!on) return;
       fillGroups();
-      if (!scanned || repos.map((r) => r.path).sort().join('\n') !== anScanList) {
-        scan();
+      if (!scanned || anReposKey() !== anScanList || seen !== anScan) {
+        scan(false);
         scanned = true;
       } else render();
     },
@@ -277,6 +416,7 @@ function buildDocsAnalysis() {
   let data = null;
   let loading = false;
   let onlyDiff = false;
+  let seen = null; // the scan shown, as in Swagger files
   const docSelect = tEl('select', 'input an-group an-doc');
   docSelect.setAttribute('aria-label', 'The technical documentation repository');
   const query = toolInput('Filter: microservice, file, title or version');
@@ -288,8 +428,10 @@ function buildDocsAnalysis() {
     if (loading) return;
     loading = true;
     rescan.disabled = true;
-    state.textContent = 'Reading the swagger folders...';
-    const r = await swaggerScan(force);
+    state.textContent = 'Reading the folders...';
+    const scanning = swaggerScan(force);
+    seen = scanning;
+    const r = await scanning;
     loading = false;
     rescan.disabled = false;
     if (r.error) {
@@ -308,7 +450,7 @@ function buildDocsAnalysis() {
   });
   const copyTable = toolButton('Copy as table', () => toolCopy(tableText(), 'Table'));
   const row1 = tEl('div', 'tool-row');
-  row1.append(tEl('span', 'tool-label', 'Documentation'), docSelect, rescan, copyTable, state);
+  row1.append(tEl('span', 'tool-label', 'Documentation'), docSelect, anFoldersButton(), rescan, copyTable, state);
   const row2 = tEl('div', 'tool-row');
   row2.append(query, only);
 
@@ -432,7 +574,7 @@ function buildDocsAnalysis() {
     render();
   });
   query.addEventListener('input', debounce(render, 120));
-  box.append(toolHead('Compare with documentation', 'Each microservice\'s swagger files next to their copy in the technical documentation (swagger/<microservice>/ in that repository): which side is behind, and what is missing on either side.'), row1, chips, row2, result);
+  box.append(toolHead('Compare with documentation', 'Each microservice\'s swagger files next to their copy in the technical documentation (in a folder named after the microservice, inside the folders to look in of that repository: Folders): which side is behind, and what is missing on either side.'), row1, chips, row2, result);
   let scanned = false;
   return {
     el: box,
@@ -440,7 +582,7 @@ function buildDocsAnalysis() {
     shown(on) {
       if (!on) return;
       fillRepos();
-      if (!scanned || repos.map((r) => r.path).sort().join('\n') !== anScanList) {
+      if (!scanned || anReposKey() !== anScanList || seen !== anScan) {
         scanned = true;
         scan(false);
       } else render();

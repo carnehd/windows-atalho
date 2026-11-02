@@ -9161,10 +9161,66 @@ label.file-item {
   color: var(--text-muted);
   font-size: var(--fs-small);
 }
-.an-dirs {
-  color: var(--text-dim);
+/* Folders: where the swagger files are looked for (analysis.js) */
+.af-card {
+  width: min(520px, 94vw);
+  max-width: none;
+}
+.af-list {
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.af-item,
+.af-empty {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 6px 6px 10px;
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-small);
+}
+.af-item:first-child,
+.af-empty:first-child {
+  border-top: none;
+}
+.af-empty {
+  color: var(--text-muted);
+}
+.af-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-family: var(--font-mono);
+}
+.af-kind {
+  flex: 1;
+  color: var(--text-muted);
   font-size: var(--fs-caption);
+}
+.af-remove {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.af-remove:hover {
+  background: var(--bg-hover);
+  color: var(--red);
+}
+.af-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.af-input {
+  flex: 1 1 180px;
+  min-width: 0;
 }
 .an-files {
   display: grid;
