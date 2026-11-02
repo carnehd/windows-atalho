@@ -100,8 +100,8 @@
         <input id="repoSearch" class="input" type="search" placeholder="Search repositories..." autocomplete="off" spellcheck="false" title="Filter by name, folder or branch. Enter opens the first match, Esc clears." />
       </div>
       <div class="sidebar-actions">
-        <button id="addRepoBtn" class="btn btn-sm btn-icon menu-btn" type="button" title="Add a folder, clone a repository or make a group" aria-haspopup="menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>Add<svg class="menu-caret" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button>
-        <button id="syncReposBtn" class="btn btn-sm btn-icon menu-btn" type="button" title="Look for new repositories, pull or fetch several, the microservices folder" aria-haspopup="menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v14"/><path d="M4 14l3 3l3 -3"/><path d="M17 21v-14"/><path d="M14 10l3 -3l3 3"/></svg><span id="syncReposLabel">Sync</span><svg class="menu-caret" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button>
+        <button id="foldersBtn" class="btn btn-sm btn-icon menu-btn" type="button" title="Add or clone a repository, groups, remove several, the microservices folder" aria-haspopup="menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.5 19h-7.5a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2h4l3 3h7a2 2 0 0 1 2 2v2.5"/><path d="M17 19a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M19 15.5v1.5"/><path d="M19 21v1.5"/><path d="M22.03 17.25l-1.3 .75"/><path d="M17.27 20l-1.3 .75"/><path d="M15.97 17.25l1.3 .75"/><path d="M20.73 20l1.3 .75"/></svg>Folders<svg class="menu-caret" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button>
+        <button id="syncReposBtn" class="btn btn-sm btn-icon menu-btn" type="button" title="Look for new repositories, pull or fetch several" aria-haspopup="menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v14"/><path d="M4 14l3 3l3 -3"/><path d="M17 21v-14"/><path d="M14 10l3 -3l3 3"/></svg><span id="syncReposLabel">Sync</span><svg class="menu-caret" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></button>
       </div>
       <div id="repoList" class="repo-list"></div>
       <!-- A pull of several repositories: how far it got; a click on the bar lists each one -->
@@ -132,6 +132,11 @@
 
     <!-- Main Content -->
     <div id="mainContent" class="main-content hidden">
+      <!-- No repository open (app.js renderRepoPick): git is asked about one only when it is opened -->
+      <div id="repoPick" class="repo-pick">
+        <p class="repo-pick-text">Click a repository in the list to open it. Git is asked about it then, and only then.</p>
+        <button id="repoPickOpen" class="btn btn-primary hidden" type="button"></button>
+      </div>
       <!-- Branch Info -->
       <div class="branch-bar">
         <div class="branch-info">
@@ -1186,6 +1191,7 @@
   <script src="bruno/kv.js"></script>
   <script src="bruno/editor.js"></script>
   <script src="bruno/snippets.js"></script>
+  <script src="bruno/var-pick.js"></script>
   <script src="bruno/split.js"></script>
   <script src="bruno/response.js"></script>
   <script src="bruno/pick.js"></script>

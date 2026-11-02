@@ -19,6 +19,7 @@ function setupBruno() {
   setupBrunoSplits();
   setupBrunoTabRows();
   setupBrunoPick();
+  setupBrunoVarPick();
   setupBrunoSidebar();
   document.addEventListener('mousedown', (e) => {
     if (!$('#bruVarsPop').classList.contains('hidden') && !e.target.closest('#bruVarsPop, #bruVarsBtn')) closeBrunoVars();

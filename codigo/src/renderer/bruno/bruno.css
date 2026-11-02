@@ -1284,3 +1284,11 @@ div.bru-field-label {
 .bru-env-lacking {
   color: var(--orange);
 }
+/* the list of variables a click on a {{variable}} opens (var-pick.js): the one clicked marked */
+.bru-varpick {
+  width: 380px;
+}
+.bru-varpick .bru-snip-item.current .bru-snip-code {
+  color: var(--accent);
+  font-weight: 600;
+}

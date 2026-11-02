@@ -405,7 +405,8 @@ async function finishPullMany() {
   const c = pmCounts();
   toast(pmSummary(), c.error ? 'error' : 'success', { title: pmRun.stopped ? 'Pull stopped' : 'Pull done' });
   const pulledHere = pmRun.items.some((i) => i.state === 'updated' && samePath(i.path, currentRepo || ''));
-  await refreshSummaries();
+  // only the ones chosen to pull: git is asked about no other repository
+  await refreshSummaries(pmRun.items.map((i) => i.path));
   if (pulledHere) await refresh();
 }
 

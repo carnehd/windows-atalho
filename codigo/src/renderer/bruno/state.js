@@ -1,5 +1,6 @@
 // Bruno tab (renderer/bruno/): state.js the state and small helpers; view.js loading a collection, the bar; tree.js the
-// requests on the left; req-menu.js a request's right-click menu; kv.js the parts of the editors; editor.js the request chosen, to change; response.js what came
+// requests on the left; req-menu.js a request's right-click menu; kv.js the parts of the editors; var-pick.js the
+// list of variables a click on a {{variable}} opens; editor.js the request chosen, to change; response.js what came
 // back; run.js sending with the Bruno CLI; vars.js the variables kept; envs.js the environments; sidebar.js the
 // repositories folded away while Bruno is open; setup.js the events.
 // They share these globals, as the other scripts of the page do.

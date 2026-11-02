@@ -759,7 +759,7 @@ body.resizing-sidebar {
 .sidebar-actions .btn-icon {
   justify-content: center;
 }
-/* Add and Sync: each opens a menu */
+/* Folders and Sync: each opens a menu */
 .sidebar-actions .menu-btn {
   position: relative;
   gap: 5px;
@@ -770,7 +770,7 @@ body.resizing-sidebar {
   margin-left: 1px;
   opacity: 0.7;
 }
-.sidebar-actions #syncReposBtn.unset::after {
+.sidebar-actions #foldersBtn.unset::after {
   content: '';
   position: absolute;
   top: 4px;
@@ -11605,7 +11605,7 @@ body.git-console-resizing * {
 }
 .gc-row {
   display: grid;
-  grid-template-columns: 8ch 18ch minmax(0, 1fr) auto;
+  grid-template-columns: 8ch 18ch 7ch minmax(0, 1fr) auto;
   column-gap: 12px;
   padding: 1px 12px;
 }
@@ -11629,6 +11629,15 @@ body.git-console-resizing * {
 .gc-cmd {
   white-space: pre-wrap;
   word-break: break-all;
+}
+/* local (this disk) or network (a remote): the network ones stand out */
+.gc-where {
+  color: #8b8a85;
+  white-space: nowrap;
+}
+.gc-where.net {
+  color: #e3b341;
+  font-weight: 600;
 }
 .gc-row.fail .gc-cmd {
   color: #f2a39d;
@@ -11727,4 +11736,38 @@ body.git-console-resizing * {
 }
 .gc-stop:hover {
   background: rgba(255, 123, 114, 0.15);
+}
+
+/* No repository open (app.js renderRepoPick): a word on how to open one, and the one chosen last; git is asked
+   about a repository only when it is opened */
+.repo-pick {
+  display: none;
+}
+.main-content.repo-not-open > :not(.repo-pick) {
+  display: none !important;
+}
+.main-content.repo-not-open > .repo-pick {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 40px 24px;
+  color: var(--text-muted);
+  text-align: center;
+}
+.repo-pick-text {
+  max-width: 420px;
+  margin: 0;
+}
+/* a repository not asked about yet, and one changed on disk since git was last asked (a click asks again) */
+.repo-item-branch.unknown {
+  color: var(--text-dim);
+  font-style: italic;
+}
+.repo-stale {
+  margin-left: 4px;
+  color: var(--orange);
+  font-weight: 700;
 }

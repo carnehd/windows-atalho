@@ -214,7 +214,9 @@ async function init() {
   // before 1.5.1 Maven was a tab of the Git page
   if (saved.gitView === 'maven' || saved.gitTab === 'maven') gitViewChoice = 'maven';
   else if (saved.gitView === 'bruno') gitViewChoice = 'bruno';
-  await loadRepos({ git: !saved.mode || saved.mode === 'git' });
+  // Git is asked about a repository only when it is opened (a click on it): none at start
+  await loadRepos();
+  $('#repoPickOpen').addEventListener('click', () => refresh());
   setupTabs();
   $$('.view-switch-btn').forEach((b) => b.addEventListener('click', () => setGitView(b.dataset.view)));
   // the tabs get their size once the page shows (and again with the font): the line follows
@@ -245,12 +247,15 @@ let reposRootPath = '';
 async function renderReposRoot() {
   const r = await window.git.getReposRoot();
   reposRootPath = r.exists ? r.path : '';
-  // Sync has a dot while no microservices folder is chosen: Look for new repositories asks for it first
-  const btn = $('#syncReposBtn');
+  // Folders has a dot while no microservices folder is chosen: Look for new repositories (in Sync) asks for it first
+  const btn = $('#foldersBtn');
   btn.classList.toggle('unset', !reposRootPath);
   btn.title = reposRootPath
-    ? `Look for new repositories in ${reposRootPath}, pull or fetch several, the microservices folder`
-    : 'The microservices folder is not chosen yet: Look for new repositories asks for it';
+    ? `Add or clone a repository, groups, remove several, the microservices folder (${reposRootPath})`
+    : 'Add or clone a repository, groups, remove several. The microservices folder is not chosen yet';
+  $('#syncReposBtn').title = reposRootPath
+    ? `Look for new repositories in ${reposRootPath}, pull or fetch several`
+    : 'Look for new repositories (asks for the microservices folder first), pull or fetch several';
 }
 
 async function chooseReposRoot() {
@@ -283,15 +288,13 @@ async function refreshRepoList() {
     toast(result.error, 'error', { title: "Couldn't look in the folder" });
     return;
   }
-  if (!currentRepo && result.first) currentRepo = result.first;
   await loadRepos();
-  if (currentMode === 'git' && currentRepo) await refresh();
   const extra = result.truncated ? ' (the search stopped at its limit)' : '';
   if (result.added > 0) toast(`Found ${result.added} new ${result.added === 1 ? 'repository' : 'repositories'}${extra}`, 'success');
   else toast(`Up to date: no new repositories in ${result.root}${extra}`, 'info');
 }
 
-// -- Sync: look for new repositories in the microservices folder, pull or fetch several, the folder itself --
+// -- Sync: look for new repositories in the microservices folder, pull or fetch several --
 function openSyncReposMenu() {
   const btn = $('#syncReposBtn');
   if ($('#actionMenu') && $('#actionMenu').dataset.anchor === btn.id) {
@@ -305,10 +308,48 @@ function openSyncReposMenu() {
       { icon: 'scan', label: 'Look for new repositories', hint: reposRootPath ? `In ${reposRootPath}, and update the list` : 'Asks for the microservices folder first', run: refreshRepoList },
       { icon: 'pull', label: 'Pull several...', hint: 'Choose repositories and pull them one after the other', run: () => openPullMany() },
       { icon: 'fetchAll', label: 'Fetch several...', hint: 'Choose repositories and see what is new on origin for each, without changing any file', disabled: !git || fetchingMany, run: () => openPullMany(null, 'fetch') },
-      { icon: 'listRemove', label: 'Remove several...', hint: 'Choose repositories to take out of the list; their folders stay on disk', disabled: !repos.length, run: () => openPullMany(null, 'remove') },
-      { icon: 'folder', label: 'Microservices folder...', hint: reposRootPath || 'Not chosen yet', run: openReposRootMenu },
     ],
   });
+}
+
+// -- Folders: what goes into the list and out of it, its groups, the microservices folder --
+function openFoldersMenu() {
+  const btn = $('#foldersBtn');
+  if ($('#actionMenu') && $('#actionMenu').dataset.anchor === btn.id) {
+    closeActionMenu();
+    return;
+  }
+  openActionMenu({
+    anchor: btn,
+    align: 'left',
+    items: [
+      { icon: 'folder', label: 'Add a folder...', hint: 'A repository (or any folder) already on this PC', run: addExistingFolder },
+      { icon: 'clone', label: 'Clone from a URL...', hint: 'Copy a repository from GitHub or another server', run: openCloneModal },
+      { icon: 'group', label: 'Manage groups...', hint: 'Create groups and drag the microservices into them', run: openGroupsBoard },
+      { icon: 'folderCog', label: 'Microservices folder...', hint: reposRootPath || 'Not chosen yet', run: openReposRootMenu },
+      { icon: 'listRemove', label: 'Remove several...', hint: 'Choose repositories to take out of the list; their folders stay on disk', disabled: !repos.length, run: () => openPullMany(null, 'remove') },
+    ],
+  });
+}
+
+async function addExistingFolder() {
+  let result;
+  try {
+    result = await window.git.addRepo();
+  } catch (e) {
+    toast(e.message, 'error');
+    return;
+  }
+  if (!result) return;
+  if (result.error) {
+    toast(result.error, 'error');
+    return;
+  }
+  currentRepo = result.path;
+  await loadRepos();
+  await refresh();
+  if (result.existing) toast('Already in the list', 'info');
+  else toast(result.notGit ? 'Folder added (no Git)' : 'Repository added', 'success');
 }
 
 // Fetch of the repositories chosen in the popup of Pull several (a few at a time): the list then shows what each has
@@ -349,17 +390,20 @@ async function fetchManyRepos(paths) {
       plain: true,
     });
   }
-  await refreshSummaries();
-  if (currentMode === 'git' && currentRepo) await refresh();
+  // only the ones fetched: git is asked about no other repository
+  const fetched = r.results.map((x) => x.path);
+  await refreshSummaries(fetched);
+  if (currentMode === 'git' && currentRepo && fetched.includes(currentRepo)) await refresh();
 }
 
 function openReposRootMenu() {
-  const btn = $('#syncReposBtn');
+  const btn = $('#foldersBtn');
   const choose = async () => {
     if (await chooseReposRoot()) await refreshRepoList();
   };
   openActionMenu({
     anchor: btn,
+    align: 'left',
     title: 'Microservices folder',
     items: [
       { note: reposRootPath || 'Not chosen yet. Choose the folder that holds your microservices: Look for new repositories then finds every repository in it.' },
@@ -393,7 +437,8 @@ const REPO_DRAG_TYPE = 'application/x-git-quick-repo';
 
 // git: whether to ask git now (the branch and changes of each repository, and the one open); not when the app starts
 // on another page, where they are not seen: the Git page asks when it shows.
-async function loadRepos({ git = true } = {}) {
+// The list of repositories, without asking git anything: a repository is asked about when it is opened.
+async function loadRepos() {
   const [list, groups] = await Promise.all([window.git.getRepos(), window.git.getRepoGroups()]);
   repoGroups = groups.groups || [];
   const previous = new Map(repos.map((r) => [r.path, r]));
@@ -408,18 +453,14 @@ async function loadRepos({ git = true } = {}) {
   $('#emptyState').classList.add('hidden');
   $('#mainContent').classList.remove('hidden');
 
-  if (!currentRepo || !repos.some((r) => r.path === currentRepo)) {
-    currentRepo = repos[0].path;
-  }
+  if (currentRepo && !repos.some((r) => r.path === currentRepo)) currentRepo = null;
   renderSidebar();
-  if (!git) return;
-  refreshChangedSummaries(currentRepo); // the open one comes with its page
-  await refresh();
+  renderRepoPick();
 }
 
 // -- What git said last, and when: each repository's count of changes on disk (watched by the app, no git) when git
-// was last asked about it, for its line in the list and for the page. The same count now: nothing changed since, so
-// showing the window again or coming back to the Git page asks git nothing. -1: not watched, always asked. --
+// was last asked about it, for its line in the list and for the page. Another count now: it changed on disk since,
+// and its line says so (git is asked again only when it is opened). -1: not watched. --
 const repoSeen = { summary: new Map(), page: new Map() };
 
 async function repoChanges(paths = repos.filter((r) => r.isGit !== false).map((r) => r.path)) {
@@ -428,15 +469,6 @@ async function repoChanges(paths = repos.filter((r) => r.isGit !== false).map((r
   } catch {
     return {};
   }
-}
-
-function changedRepos(seen, counts) {
-  return Object.keys(counts).filter((p) => counts[p] === -1 || seen.get(p) !== counts[p]);
-}
-
-// The lines of the repositories that changed on disk since git was last asked about them (but this one).
-async function refreshChangedSummaries(except) {
-  await refreshSummaries(changedRepos(repoSeen.summary, await repoChanges()).filter((p) => p !== except));
 }
 
 // The branch and changes of each repository in the list, or of these ones only (none: nothing to ask).
@@ -452,32 +484,47 @@ async function refreshSummaries(only) {
   repos.forEach((r) => {
     const s = summaries[r.path];
     if (!s) return;
-    Object.assign(r, { branch: s.branch, changes: s.changes, ahead: s.ahead, behind: s.behind, error: s.error });
+    Object.assign(r, { branch: s.branch, changes: s.changes, ahead: s.ahead, behind: s.behind, error: s.error, stale: false });
     if (counts[r.path] !== undefined) repoSeen.summary.set(r.path, counts[r.path]);
   });
   renderSidebar();
 }
 
-// The window shown again, or the Git page again: git is asked only about what changed on disk since it last was -
-// the line of each repository in the list, and the one open. Asked again a moment later, as an editor may save its
-// files just then (IntelliJ saves when it loses the focus to this window).
+// The window shown again, or the Git page again: git is asked nothing. What changed on disk since git was last asked
+// about a repository (the app watches the folders, no git) gets a dot on its line: a click on it asks git again. Looked
+// at again a moment later, as an editor may save its files just then (IntelliJ saves when it loses the focus).
 let recheckTimer = 0;
 
 async function refreshIfChanged({ again = true } = {}) {
   clearTimeout(recheckTimer);
   if (again) recheckTimer = setTimeout(() => refreshIfChanged({ again: false }), 1200);
   if (!repos.length || currentMode !== 'git') return;
-  const counts = await repoChanges();
-  refreshSummaries(changedRepos(repoSeen.summary, counts).filter((p) => p !== currentRepo));
-  if (!currentRepo) return;
-  const isGit = (repos.find((r) => r.path === currentRepo) || {}).isGit !== false;
-  if (shownRepo !== currentRepo || !isGit || changedRepos(repoSeen.page, { [currentRepo]: counts[currentRepo] ?? -1 }).length) await refresh();
+  const counts = await repoChanges(repos.filter((r) => r.isGit !== false && repoSeen.summary.has(r.path)).map((r) => r.path));
+  let marked = false;
+  for (const r of repos) {
+    const stale = counts[r.path] !== undefined && counts[r.path] !== -1 && repoSeen.summary.get(r.path) !== counts[r.path];
+    if (Boolean(r.stale) !== stale) marked = true;
+    r.stale = stale;
+  }
+  if (marked) renderSidebar();
+}
+
+// While no repository is open (at start, or after the open one is removed): a word on how to open one, and the one
+// chosen last, to open with a click.
+function renderRepoPick() {
+  const main = $('#mainContent');
+  const open = Boolean(currentRepo && (shownRepo === currentRepo || (repoLoading && repoLoading.repo === currentRepo)));
+  main.classList.toggle('repo-not-open', !open);
+  const btn = $('#repoPickOpen');
+  const entry = currentRepo && repos.find((r) => r.path === currentRepo);
+  btn.classList.toggle('hidden', !entry || open);
+  if (entry) btn.textContent = `Open ${displayName(entry)}`;
 }
 
 function updateRepoSummary(repoPath, status) {
   const r = repos.find((x) => x.path === repoPath);
   if (!r) return;
-  Object.assign(r, { branch: status.branch, changes: status.changes, ahead: status.ahead, behind: status.behind, error: undefined });
+  Object.assign(r, { branch: status.branch, changes: status.changes, ahead: status.ahead, behind: status.behind, error: undefined, stale: false });
   renderSidebar();
 }
 
@@ -798,6 +845,13 @@ function repoRow(r) {
     badge.title = `${r.changes} changed file${r.changes !== 1 ? 's' : ''}`;
     title.appendChild(badge);
   }
+  if (r.stale) {
+    const dot = document.createElement('span');
+    dot.className = 'repo-stale';
+    dot.textContent = '•';
+    dot.title = 'Changed on disk since Git was last asked: click to ask again';
+    title.appendChild(dot);
+  }
   const runTag = document.createElement('span');
   runTag.className = 'repo-run-tag';
   runTag.textContent = 'running';
@@ -812,7 +866,9 @@ function repoRow(r) {
   } else if (r.isGit === false) {
     branch.textContent = 'Folder (no Git)';
   } else if (r.branch === undefined) {
-    branch.textContent = '...';
+    branch.classList.add('unknown');
+    branch.textContent = 'Not opened yet';
+    branch.title = 'Git is asked about it when you open it';
   } else {
     const sync = [r.ahead > 0 ? `↑${r.ahead}` : '', r.behind > 0 ? `↓${r.behind}` : ''].filter(Boolean).join(' ');
     branch.textContent = `⎇ ${r.branch || 'detached'}${sync ? '  ' + sync : ''}`;
@@ -831,8 +887,9 @@ function repoRow(r) {
     startRename(r, name);
   });
 
+  // a click opens it (git is asked then, and only then); on the one open, asks again
   item.addEventListener('click', async () => {
-    if (editingPath || r.path === currentRepo) return;
+    if (editingPath) return;
     currentRepo = r.path;
     $$('.repo-item').forEach((el) => el.classList.toggle('active', el === item));
     $$('#repoList .repo-group[data-group]').forEach(markGroupState);
@@ -1161,6 +1218,7 @@ function renderRepoLoading() {
   }
   main.classList.toggle('repo-switching', on);
   main.classList.toggle('repo-status-pending', Boolean(pending && pending.has('status')));
+  renderRepoPick();
 }
 
 async function refresh() {
@@ -2893,6 +2951,7 @@ const ACTION_ICONS = {
   copy: '<path d="M7 9.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667z"/><path d="M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1"/>',
   push: '<path d="M12 4v10"/><path d="M12 4l4 4"/><path d="M12 4l-4 4"/><path d="M4 20h16"/>',
   folder: '<path d="M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2"/>',
+  folderCog: '<path d="M12.5 19h-7.5a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2h4l3 3h7a2 2 0 0 1 2 2v2.5"/><path d="M17 19a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M19 15.5v1.5"/><path d="M19 21v1.5"/><path d="M22.03 17.25l-1.3 .75"/><path d="M17.27 20l-1.3 .75"/><path d="M15.97 17.25l1.3 .75"/><path d="M20.73 20l1.3 .75"/>',
   clone: '<path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/><path d="M7 11l5 5l5 -5"/><path d="M12 4v12"/>',
   rename: '<path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4"/><path d="M13.5 6.5l4 4"/>',
   open: '<path d="M12 6h-6a2 2 0 0 0 -2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-6"/><path d="M11 13l9 -9"/><path d="M15 4h5v5"/>',
@@ -3199,7 +3258,8 @@ function closeActionMenu() {
   box.remove();
 }
 
-function openActionMenu({ anchor = null, x = 0, y = 0, title = '', items }) {
+// align: which edges of the menu and its button line up ('left' for a button at the left of the sidebar).
+function openActionMenu({ anchor = null, x = 0, y = 0, title = '', items, align = 'right' }) {
   closeActionMenu();
   const box = document.createElement('div');
   box.id = 'actionMenu';
@@ -3255,9 +3315,9 @@ function openActionMenu({ anchor = null, x = 0, y = 0, title = '', items }) {
   document.body.appendChild(box);
   const m = box.getBoundingClientRect();
   if (anchor) {
-    // under the button, its right edges lined up; above it when there is no room below
+    // under the button, its right (or left) edges lined up; above it when there is no room below
     const a = anchor.getBoundingClientRect();
-    x = a.right - m.width;
+    x = align === 'left' ? a.left : a.right - m.width;
     y = a.bottom + 4 + m.height > window.innerHeight - 8 ? a.top - 4 - m.height : a.bottom + 4;
   }
   box.style.left = `${Math.round(Math.max(8, Math.min(x, window.innerWidth - m.width - 8)))}px`;
@@ -4283,6 +4343,7 @@ async function confirmClone() {
   closeCloneModal();
   currentRepo = result.path;
   await loadRepos();
+  await refresh();
   toast(result.existing ? 'Cloned (the folder was already in the list)' : `Cloned into ${result.path}`, 'success');
 }
 
@@ -4299,6 +4360,7 @@ async function initRepoHere() {
     return;
   }
   await loadRepos();
+  await refresh();
   toast(`${name} is now a Git repository`, 'success');
 }
 
@@ -4426,40 +4488,7 @@ function setupEvents() {
   });
 
   $('#syncReposBtn').addEventListener('click', openSyncReposMenu);
-  $('#addRepoBtn').addEventListener('click', () => {
-    const btn = $('#addRepoBtn');
-    if ($('#actionMenu') && $('#actionMenu').dataset.anchor === btn.id) {
-      closeActionMenu();
-      return;
-    }
-    openActionMenu({
-      anchor: btn,
-      items: [
-        { icon: 'folder', label: 'Add a folder...', hint: 'A repository (or any folder) already on this PC', run: addExistingFolder },
-        { icon: 'clone', label: 'Clone from a URL...', hint: 'Copy a repository from GitHub or another server', run: openCloneModal },
-        { icon: 'group', label: 'Manage groups...', hint: 'Create groups and drag the microservices into them', run: openGroupsBoard },
-      ],
-    });
-  });
-
-  async function addExistingFolder() {
-    let result;
-    try {
-      result = await window.git.addRepo();
-    } catch (e) {
-      toast(e.message, 'error');
-      return;
-    }
-    if (!result) return;
-    if (result.error) {
-      toast(result.error, 'error');
-      return;
-    }
-    currentRepo = result.path;
-    await loadRepos();
-    if (result.existing) toast('Already in the list', 'info');
-    else toast(result.notGit ? 'Folder added (no Git)' : 'Repository added', 'success');
-  }
+  $('#foldersBtn').addEventListener('click', openFoldersMenu);
 
   // Refresh: looks for repositories in the microservices folder that are not in the list yet, and updates the
   // branch and changes of every repository. Without that folder it asks for it first.
@@ -5573,7 +5602,10 @@ function handleIde(ide) {
   hideIdeBanner();
   if (!ide) return;
   if (ide.repo) {
+    // its project in the editor in front: chosen, opened with a click (git is asked then)
     currentRepo = ide.repo;
+    renderSidebar();
+    renderRepoPick();
     return;
   }
   ideProjectPath = ide.projectPath;
@@ -5596,6 +5628,7 @@ function setupIdeBanner() {
     hideIdeBanner();
     currentRepo = r.path;
     await loadRepos();
+    await refresh();
     toast(r.notGit ? 'Folder added (no Git)' : 'Repository added', 'success');
   });
 }

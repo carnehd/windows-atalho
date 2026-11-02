@@ -1,6 +1,7 @@
 // -- The Git panel at the bottom of the window: every git command the app runs, as a terminal shows it, and a line to
 // type your own --
-// When, in which repository, the command, and how long it took or how it failed. Closed it is one line with the last
+// When, in which repository, whether it goes to the network (a remote) or stays on this disk, the command, and how
+// long it took or how it failed. Closed it is one line with the last
 // command; open, the list (the last GC_MAX), which its top edge makes taller or shorter. Open or not, and how tall,
 // are kept on this PC.
 const GC_MAX = 1000;
@@ -46,11 +47,13 @@ function gcRow(e) {
   time.className = 'gc-time';
   const repo = document.createElement('span');
   repo.className = 'gc-repo';
+  const where = document.createElement('span');
+  where.className = 'gc-where';
   const cmd = document.createElement('span');
   cmd.className = 'gc-cmd';
   const out = document.createElement('span');
   out.className = 'gc-out';
-  row.append(time, repo, cmd, out);
+  row.append(time, repo, where, cmd, out);
   gcFillRow(row, e);
   return row;
 }
@@ -60,9 +63,12 @@ function gcFillRow(row, e) {
   const typed = Boolean(e.typed || gcTyped.has(e.id));
   row.className = `gc-row${o.cls ? ` ${o.cls}` : ''}${typed ? ' typed' : ''}`;
   row.title = [new Date(e.at).toLocaleString(), e.cwd, o.note].filter(Boolean).join('\n');
-  const [time, repo, cmd, out] = row.children;
+  const [time, repo, where, cmd, out] = row.children;
   time.textContent = gcClock(e.at);
   repo.textContent = gcRepoName(e.cwd);
+  where.textContent = e.network ? 'network' : 'local';
+  where.classList.toggle('net', Boolean(e.network));
+  where.title = e.network ? 'Talks to the remote (origin): goes over the network' : 'Reads or writes the repository on this disk only: no network';
   cmd.textContent = e.command;
   out.textContent = o.text;
   if (typed) gcFillOutput(row, e.id);
@@ -270,7 +276,7 @@ function gcRenderBar() {
     return;
   }
   const o = gcOutcome(e);
-  last.textContent = `${e.command}  ·  ${gcRepoName(e.cwd)}  ·  ${o.text}`;
+  last.textContent = `${e.network ? 'network' : 'local'}  ·  ${e.command}  ·  ${gcRepoName(e.cwd)}  ·  ${o.text}`;
   last.className = `git-console-last${o.cls ? ` ${o.cls}` : ''}`;
 }
 

@@ -41,6 +41,25 @@ function commandLine(args) {
   return ['git', ...shown].join(' ');
 }
 
+// Whether a git command talks to another machine (a remote, origin): fetch, pull, push, clone, ls-remote and the few
+// others that do. The rest read and write the repository on this disk only.
+const NETWORK = new Set(['fetch', 'pull', 'push', 'clone', 'ls-remote']);
+const WITH_VALUE = new Set(['-c', '-C', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--config-env']);
+
+function usesNetwork(args) {
+  const list = (Array.isArray(args) ? args.slice(1) : []).map(String); // the first is the program itself
+  let i = 0;
+  while (i < list.length && list[i].startsWith('-')) i += WITH_VALUE.has(list[i]) ? 2 : 1; // git's own options
+  const [command, sub = ''] = list.slice(i);
+  const rest = list.slice(i + 1);
+  if (NETWORK.has(command)) return true;
+  if (command === 'remote') return sub === 'update' || sub === 'prune' || (sub === 'show' && !rest.includes('-n'));
+  if (command === 'submodule') return sub === 'update';
+  if (command === 'lfs') return ['fetch', 'pull', 'push', 'clone'].includes(sub);
+  if (command === 'archive') return rest.some((a) => a.startsWith('--remote'));
+  return false;
+}
+
 function changed(entry) {
   if (entry.id < listedFrom || !listener) return;
   pending.set(entry.id, { ...entry });
@@ -59,6 +78,7 @@ function track(child, options, started) {
     at: Date.now(),
     cwd: options.cwd ? String(options.cwd) : process.cwd(),
     command: commandLine(options.args),
+    network: usesNetwork(options.args),
     running: true,
     ms: 0,
     code: null,
@@ -126,10 +146,11 @@ function busyIn(dir, graceMs) {
 
 module.exports = {
   install,
+  usesNetwork,
   busyIn,
   list: () => entries.filter((e) => e.id >= listedFrom).map((e) => ({ ...e })),
   // as text, one line each: for Copy
-  text: () => entries.filter((e) => e.id >= listedFrom).map((e) => `${stamp(e.at)}  ${e.cwd}  ${e.command}  (${outcome(e)})`).join('\n'),
+  text: () => entries.filter((e) => e.id >= listedFrom).map((e) => `${stamp(e.at)}  ${e.network ? 'network' : 'local  '}  ${e.cwd}  ${e.command}  (${outcome(e)})`).join('\n'),
   clear() {
     entries.length = 0;
     pending.clear();
