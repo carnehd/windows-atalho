@@ -9,20 +9,33 @@ const ANALYSES = [
 ];
 
 // One scan of the folders serves the page; Scan again reads them again, and so does a change in the list of
-// repositories or in the folders to look in.
+// repositories or in the folders to look in, or on disk in one of them since the scan (a checkout, a pull, a file
+// added: see swaggerScanStale).
 let anScan = null;
 let anScanList = '';
+let anScanCounts = null; // what the watcher had counted for each repository when the scan started
 const anReposKey = () => repos.map((r) => r.path).sort().join('\n');
+const anRepoCounts = () => window.git.repoChanges(repos.map((r) => r.path)).catch(() => ({}));
 function swaggerScan(force = false) {
   const list = anReposKey();
   if (!anScan || force || list !== anScanList) {
     anScanList = list;
-    anScan = window.analysis.swagger().then((r) => {
-      if (r.error) anScan = null;
+    const counts = anRepoCounts();
+    anScanCounts = counts;
+    const scan = counts.then(() => window.analysis.swagger()).then((r) => {
+      if (r.error && anScan === scan) anScan = null;
       return r;
     });
+    anScan = scan;
   }
   return anScan;
+}
+// Whether a repository of the list changed on disk since the scan started; one that cannot be watched always has.
+async function swaggerScanStale() {
+  if (!anScan || anReposKey() !== anScanList) return false;
+  const counts = anScanCounts;
+  const [then, now] = await Promise.all([counts, anRepoCounts()]);
+  return counts === anScanCounts && repos.some((r) => !(now[r.path] >= 0) || now[r.path] !== then[r.path]);
 }
 const ANALYSIS_KEY = 'analysisCurrent';
 let currentAnalysis = 'swagger';
@@ -524,7 +537,7 @@ function buildSwaggerAnalysis() {
     rescan.classList.add('busy');
     state.textContent = `Looking in ${repos.length} microservice${repos.length === 1 ? '' : 's'}...`;
     stateMore.textContent = '';
-    const scanning = swaggerScan(force);
+    const scanning = swaggerScan(force || (await swaggerScanStale()));
     seen = scanning;
     const r = await scanning;
     loading = false;
@@ -904,7 +917,11 @@ function buildSwaggerAnalysis() {
       if (!scanned || anReposKey() !== anScanList || seen !== anScan) {
         scanned = true;
         scan(false);
-      } else render();
+      } else {
+        render();
+        // changed on disk meanwhile: read again
+        swaggerScanStale().then((stale) => stale && scan(true));
+      }
     },
   };
 }

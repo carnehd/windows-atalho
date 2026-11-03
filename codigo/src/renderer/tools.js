@@ -2168,7 +2168,8 @@ function buildApiDiffTool() {
     modal.querySelector('.api-pick-files').textContent = '';
     modal.querySelector('.api-pick-status').textContent = `Looking for specs in ${plural(repos.length, 'microservice')}...`;
     modal.querySelector('.api-pick-rescan').disabled = true;
-    const r = await swaggerScan(force);
+    // a microservice changed on disk since the last scan (a checkout, a pull, a spec added): read them again
+    const r = await swaggerScan(force || (await swaggerScanStale()));
     modal.querySelector('.api-pick-rescan').disabled = false;
     if (modal.classList.contains('hidden')) return;
     if (r.error) {
