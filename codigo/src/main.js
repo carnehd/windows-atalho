@@ -533,9 +533,12 @@ app.whenReady().then(() => {
     listRepos: listNamedRepos,
     isKnownRepo,
     openPath,
-    // the folders the swagger files are looked for in (missing: the default, swagger)
+    // the folders the swagger files are looked for in (missing: the default, swagger and openapi), and whether the
+    // specs outside them are looked for too
     loadFolders: () => store.get('swaggerFolders', null),
     saveFolders: (list) => store.set('swaggerFolders', list),
+    loadAnywhere: () => store.get('swaggerAnywhere', true),
+    saveAnywhere: (on) => store.set('swaggerAnywhere', on),
     pickDir: async (title) => {
       const result = await withDialog(() => dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'], title }));
       return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0];
@@ -571,6 +574,9 @@ app.whenReady().then(() => {
       else delete all[pathKey(String(repoPath))];
       store.set('mavenRunEnv', all);
     },
+    // what Start in container ran with last time (in data/, like the rest)
+    loadContainer: (repoPath) => store.get('mavenContainer', {})[pathKey(String(repoPath))],
+    saveContainer: (repoPath, value) => store.set('mavenContainer', { ...store.get('mavenContainer', {}), [pathKey(String(repoPath))]: value }),
   });
 
   logWatches = registerLogWatches({
@@ -780,7 +786,7 @@ function setupIPC() {
     const keys = new Set(paths.map((p) => pathKey(String(p))));
     store.set('repos', getRepoList().filter((r) => !keys.has(pathKey(r))));
     store.set('repoFavorites', store.get('repoFavorites', []).filter((k) => !keys.has(k)));
-    for (const name of ['repoNames', 'pushTargets', 'mavenPorts', 'mavenDirs', 'mavenRunEnv']) {
+    for (const name of ['repoNames', 'pushTargets', 'mavenPorts', 'mavenDirs', 'mavenRunEnv', 'mavenContainer']) {
       const kept = { ...store.get(name, {}) };
       for (const key of keys) delete kept[key];
       store.set(name, kept);

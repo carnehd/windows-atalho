@@ -256,13 +256,26 @@ function renderMvnPreview() {
   $('#mvnCustom').classList.toggle('hidden', mvnChoice() !== 'custom');
   fitMvnCommand();
   const macro = chosenMacro();
-  // a macro's steps carry their own flags: the options do not apply to it, nor does a separate window
-  ['#mvnTags', '#mvnOptionsBtn'].forEach((sel) => $(sel).classList.toggle('hidden', Boolean(macro)));
-  $('#mvnMacroInfo').classList.toggle('hidden', !macro);
+  const container = mvnChoice() === 'container';
+  // a macro's steps carry their own flags, and a container runs the jar: the options do not apply to them, nor does a
+  // separate window
+  ['#mvnTags', '#mvnOptionsBtn'].forEach((sel) => $(sel).classList.toggle('hidden', Boolean(macro) || container));
+  $('#mvnMacroInfo').classList.toggle('hidden', !macro && !container);
   $('#mvnCmdline .mvn-prefix').textContent = macro ? 'macro' : 'mvn';
+  $('#mvnCmdline .mvn-prefix').classList.toggle('hidden', container);
   $('#mvnMacroEditBtn').classList.toggle('hidden', !macro);
-  $('#mvnExternal').disabled = Boolean(macro);
-  $('#mvnExternal').closest('label').title = macro ? 'Macros run here, in the app' : 'Opens a separate window (PowerShell on Windows, Terminal on Mac) instead of showing the output here';
+  $('#mvnExternal').disabled = Boolean(macro) || container;
+  $('#mvnExternal').closest('label').title = macro ? 'Macros run here, in the app' : container ? 'A container runs here, in the app' : 'Opens a separate window (PowerShell on Windows, Terminal on Mac) instead of showing the output here';
+  if (container) {
+    const summary = mvnContainerSummary(mvnContainerSpec);
+    $('#mvnMacroInfo').textContent = summary;
+    $('#mvnMacroInfo').title = 'Run opens a dialog with the image, the port and the variables of the container';
+    const bar = $('#mvnCmdline');
+    bar.dataset.command = `Start in container${summary ? `: ${summary}` : ''}`;
+    bar.title = bar.dataset.command;
+    updateMvnRunButton();
+    return;
+  }
   if (macro) {
     $('#mvnMacroInfo').textContent = `${macro.steps.length} step${macro.steps.length === 1 ? '' : 's'}`;
     const lines = macro.steps.map((st, i) => `${i + 1}. ${macroStepText(st)}`);
@@ -839,6 +852,7 @@ async function refreshMaven() {
 function applyMvnInfo(info) {
   mvnOptionList = info.options || [];
   mvnProfiles = info.profiles || [];
+  mvnContainerSpec = info.container || null;
   renderMvnFolder(info);
   renderMvnValuesBtn(info);
   renderMvnEnvBtn(info);
@@ -903,6 +917,11 @@ async function runMaven(request) {
     toast(`Opened ${r.command} in a ${window.git.platform === 'win32' ? 'PowerShell' : 'Terminal'} window${left.length ? `, without ${left.join(' nor ')}: they go to a run here only` : ''}`, left.length ? 'info' : 'success', { plain: true });
     return;
   }
+  startedMvnRun(r);
+}
+
+// A run that started here: its output and status in the page.
+function startedMvnRun(r) {
   mvnRun = { id: r.id, written: r.written, command: r.command, running: true, startedAt: r.startedAt, exitCode: null };
   setMvnOutput(r.log || `> ${r.command}\n`);
   renderMvnStatus();
@@ -1161,7 +1180,7 @@ const NEW_STEPS = {
 // the commands of the list (not Custom), as a step runs them: Start is mvn spring-boot:run
 const macroPresets = () =>
   [...$('#mvnCommand').children]
-    .filter((o) => o.tagName === 'OPTION' && o.value !== 'custom')
+    .filter((o) => o.tagName === 'OPTION' && o.value !== 'custom' && o.value !== 'container')
     .map((o) => [o.value, `mvn ${(mvnPortsView && mvnPortsView.presets && mvnPortsView.presets[o.value]) || o.textContent}`]);
 
 function openMacroEditor(macro) {
@@ -1633,6 +1652,7 @@ function setupMaven() {
     closeMvnOptions();
     const macro = chosenMacro();
     if (macro) runMvnMacro(macro);
+    else if (mvnChoice() === 'container') openMvnContainer();
     else runMaven({ ...(mvnChoice() === 'custom' ? { custom: $('#mvnCustom').value } : { preset: mvnChoice() }), ...chosenMvnOptions() });
   };
   setupMacroEditor();

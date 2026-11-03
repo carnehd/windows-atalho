@@ -1776,7 +1776,25 @@ function buildApiDiffTool() {
   };
 
   compare();
-  return { el: box, focus: before.area };
+  return {
+    el: box,
+    focus: before.area,
+    // two specs from elsewhere (the Analysis page), and where each one is from
+    fill(a, b, aName, bName) {
+      before.area.value = a;
+      after.area.value = b;
+      before.source = aName || '';
+      after.source = bName || '';
+      compare();
+    },
+  };
+}
+
+// Opens Compare APIs with two specs in it: the old one (Before) and the new one (After).
+function openInApiCompare(a, b, aName, bName) {
+  setMode('tools');
+  showTool('apidiff');
+  builtTools.get('apidiff').fill(a, b, aName, bName);
 }
 
 // -- Compare JSON --

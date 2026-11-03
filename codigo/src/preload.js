@@ -181,6 +181,9 @@ contextBridge.exposeInMainWorld('maven', {
   setDir: (repo, rel) => ipcRenderer.invoke('mvn-set-dir', repo, rel),
   setRunEnv: (repo, value) => ipcRenderer.invoke('mvn-set-run-env', repo, value),
   intellijConfigs: (repo) => ipcRenderer.invoke('mvn-intellij-configs', repo),
+  containerInfo: (repo) => ipcRenderer.invoke('mvn-container-info', repo),
+  containerPreview: (repo, spec, engine, withValues) => ipcRenderer.invoke('mvn-container-preview', repo, spec, engine, withValues),
+  containerRun: (repo, spec, values) => ipcRenderer.invoke('mvn-container-run', repo, spec, values),
   macros: () => ipcRenderer.invoke('mvn-macros'),
   saveMacro: (macro) => ipcRenderer.invoke('mvn-macro-save', macro),
   deleteMacro: (id) => ipcRenderer.invoke('mvn-macro-delete', id),
@@ -230,6 +233,8 @@ contextBridge.exposeInMainWorld('analysis', {
   folders: () => ipcRenderer.invoke('an-folders'),
   setFolders: (list) => ipcRenderer.invoke('an-set-folders', list),
   pickFolder: () => ipcRenderer.invoke('an-pick-folder'),
+  setAnywhere: (on) => ipcRenderer.invoke('an-set-anywhere', on),
+  diff: (pairs) => ipcRenderer.invoke('an-diff', pairs),
 });
 
 contextBridge.exposeInMainWorld('search', {

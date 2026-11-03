@@ -364,6 +364,16 @@ function tokenize(text) {
   return out;
 }
 
+// The engine for a run of another page (Start in container on the Maven page): the one that answers, how to call it
+// and the environment to call it with.
+async function engineCall() {
+  const s = await findEngine();
+  if (!s.engine) throw new Error(NOT_INSTALLED);
+  if (!s.running) throw new Error(`${ENGINE_NAMES[s.engine]} is not running: start it (the Containers page can)${s.error ? `. ${s.error.split('\n')[0]}` : ''}`);
+  const env = await shell.loginShellEnv();
+  return { name: s.engine, label: ENGINE_NAMES[s.engine], exe: executable(s.engine, env), env };
+}
+
 // "docker run -d ..." from the form, every part checked. Returns the arguments after "docker".
 function runArgs(spec = {}) {
   const image = String(spec.image || '').trim();
@@ -656,4 +666,4 @@ function registerContainers({ getWindow }) {
   };
 }
 
-module.exports = { registerContainers, parsePorts, parseLabels, runArgs, dockerError, tokenize, details, containerRow, shownCommand, typedArgs };
+module.exports = { registerContainers, parsePorts, parseLabels, runArgs, dockerError, tokenize, details, containerRow, shownCommand, typedArgs, engineCall, IMAGE, REF };

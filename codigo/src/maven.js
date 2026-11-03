@@ -8,6 +8,7 @@ const { SKIP } = require('./analysis');
 const GitService = require('./git-service');
 const envValues = require('./env-values');
 const runEnv = require('./run-env');
+const containers = require('./containers');
 
 const { IS_WIN, psQuote } = shell;
 // The Maven wrapper a project may carry: mvnw.cmd on Windows, the mvnw shell script elsewhere.
@@ -145,6 +146,166 @@ const MACRO_LIMITS = { count: 30, steps: 15, name: 60, text: 400 };
 const SERVER_GOALS = /(^|\s)spring-boot:run(\s|$)/;
 // Under the command: the values the application gets over its files (the Values button), and where they come from.
 const valuesLine = (values, note) => (values ? `  SPRING_APPLICATION_JSON: ${String(note || `${Object.keys(values).length} values`).slice(0, 300)}\n` : '');
+
+// -- Start in container: the jar Maven builds, run by Docker or Podman in a Java image, with no file added to the
+// microservice's folder (the jar is mounted read-only). The port and the variables of the dialog go to the container,
+// the values of the Values button as SPRING_APPLICATION_JSON. --
+const CONTAINER_LABEL = 'git-quick=maven';
+const DEFAULT_JAVA = 21;
+
+// The Java version of the pom.xml: java.version, maven.compiler.release or .source, or the compiler's <release>.
+function pomJava(dir) {
+  try {
+    const xml = fs.readFileSync(path.join(dir, 'pom.xml'), 'utf8').replace(/<!--[\s\S]*?-->/g, '');
+    const m = /<(java\.version|maven\.compiler\.release|maven\.compiler\.source|release)>\s*(?:1\.)?(\d{1,2})\s*</.exec(xml);
+    return m ? Number(m[2]) : null;
+  } catch {
+    return null;
+  }
+}
+
+// A container name from the folder, as Docker takes it: letters, digits, _ . -, a letter or digit first.
+const containerName = (dir) => path.basename(dir).toLowerCase().replace(/[^a-z0-9_.-]+/g, '-').replace(/^[^a-z0-9]+/, '').slice(0, 60) || 'app';
+
+// What the dialog starts with for a folder never started in a container. vars null: the variables of Env.
+const containerDefaults = (dir, ports) => ({
+  image: `eclipse-temurin:${pomJava(dir) || DEFAULT_JAVA}-jre`,
+  name: containerName(dir),
+  port: ports.server || 8080,
+  debug: false,
+  debugPort: ports.debug || 5005,
+  build: true,
+  values: true,
+  vars: null,
+});
+
+const portOf = (value, what) => {
+  const n = Number(String(value ?? '').trim());
+  if (!Number.isInteger(n) || n < 1 || n > 65535) throw new Error(`${what} must be a number between 1 and 65535`);
+  return n;
+};
+
+function cleanContainerSpec(input = {}) {
+  const image = String(input.image || '').trim();
+  if (!containers.IMAGE.test(image)) throw new Error('Type the image to run the jar in, for example eclipse-temurin:21-jre');
+  const name = String(input.name || '').trim();
+  if (!containers.REF.test(name)) throw new Error('Name the container: letters, digits, dots, dashes and underscores');
+  const spec = {
+    image,
+    name,
+    port: portOf(input.port, 'The port'),
+    debug: Boolean(input.debug),
+    debugPort: portOf(input.debugPort ?? 5005, 'The debug port'),
+    build: input.build !== false,
+    values: input.values !== false,
+    vars: runEnv.cleanRunEnv({ vars: Array.isArray(input.vars) ? input.vars : [] }).vars,
+  };
+  if (spec.debug && spec.debugPort === spec.port) throw new Error('The debug port has to differ from the port of the app');
+  return spec;
+}
+
+const OTHER_JAR = /-(sources|javadoc|tests|test-sources)\.jar$/;
+const ANSI = /\x1b\[[0-9;?]*[A-Za-z]/g;
+
+// The jars in target/ that can run (not the sources, javadoc or tests ones): { file, mtime, size }.
+function targetJars(dir) {
+  const out = [];
+  try {
+    for (const f of fs.readdirSync(path.join(dir, 'target'))) {
+      if (!f.endsWith('.jar') || OTHER_JAR.test(f)) continue;
+      const file = path.join(dir, 'target', f);
+      const st = fs.statSync(file);
+      if (st.isFile()) out.push({ file, mtime: st.mtimeMs, size: st.size });
+    }
+  } catch {
+    // not built yet
+  }
+  return out;
+}
+
+// The jar to run when no build says which: the newest (an older one of another version left in target/ is not it), and
+// of those written with it, the biggest (the one Spring Boot repackages with its dependencies).
+function newestJar(dir) {
+  const jars = targetJars(dir).sort((a, b) => b.mtime - a.mtime);
+  if (!jars.length) return null;
+  return jars.filter((j) => jars[0].mtime - j.mtime < 60000).sort((a, b) => b.size - a.size)[0];
+}
+
+// The jar a build made, from what Maven said: Spring Boot's repackaged one ("Attaching repackaged archive <jar> with
+// classifier", "Replacing main artifact <jar> with repackaged archive": said even when the jar was up to date and not
+// written again), else maven-jar-plugin's "Building jar: <jar>". null when it named none in target/.
+function jarSaid(text, dir) {
+  const target = path.resolve(dir, 'target');
+  const named = (re) => {
+    let found = null;
+    for (const m of String(text).replace(ANSI, '').matchAll(re)) {
+      const file = path.resolve(dir, m[1].trim());
+      if (path.dirname(file) === target && !OTHER_JAR.test(file) && fs.existsSync(file)) found = file;
+    }
+    return found;
+  };
+  return named(/(?:Attaching repackaged archive|Replacing main artifact) (.+?\.jar) with /g) || named(/Building jar: (.+?\.jar)\s*$/gm);
+}
+
+// "12 s ago", "3 h ago"
+function agoText(ms) {
+  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  if (s < 60) return `${s} s ago`;
+  const min = Math.round(s / 60);
+  if (min < 60) return `${min} min ago`;
+  const h = Math.round(min / 60);
+  return h < 48 ? `${h} h ago` : `${Math.round(h / 24)} days ago`;
+}
+
+// "docker run" for the jar: removed when it stops, labelled as this page's, its port (and the debug one) published, the
+// application told its port (SERVER_PORT, unless a variable sets it) and the variables switched on; the jar mounted
+// read-only. shown: the same with the values of the variables hidden.
+function containerArgs(spec, jar, values) {
+  const given = spec.vars.filter((v) => v.enabled !== false);
+  const own = new Map(given.map((v) => [v.name, v.value]));
+  const env = [];
+  if (!own.has('SERVER_PORT')) env.push(['SERVER_PORT', String(spec.port), true]);
+  if (spec.debug) {
+    const jdwp = `-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:${spec.debugPort}`;
+    env.push(['JAVA_TOOL_OPTIONS', own.has('JAVA_TOOL_OPTIONS') ? `${own.get('JAVA_TOOL_OPTIONS')} ${jdwp}` : jdwp, !own.has('JAVA_TOOL_OPTIONS')]);
+  }
+  for (const v of given) if (!(spec.debug && v.name === 'JAVA_TOOL_OPTIONS')) env.push([v.name, v.value, false]);
+  if (values) env.push(['SPRING_APPLICATION_JSON', JSON.stringify(values), false]);
+  // a field of --mount with a comma or a quote in it is quoted, as CSV
+  const csv = (t) => (/[",]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t);
+  const head = ['run', '--rm', '--name', spec.name, '--label', CONTAINER_LABEL, '-p', `${spec.port}:${spec.port}`, ...(spec.debug ? ['-p', `${spec.debugPort}:${spec.debugPort}`] : [])];
+  const tail = ['--mount', ['type=bind', csv(`source=${jar}`), 'target=/app/app.jar', 'readonly'].join(','), spec.image, 'java', '-jar', '/app/app.jar'];
+  return {
+    args: [...head, ...env.flatMap(([k, v]) => ['-e', `${k}=${v}`]), ...tail],
+    shown: [...head, ...env.flatMap(([k, v, plain]) => ['-e', plain ? `${k}=${v}` : `${k}=\u2026`]), ...tail].map((a) => (/[\s"']/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a)).join(' '),
+  };
+}
+
+// docker or podman once, what it printed collected (inspect, rm, stop).
+const engineOnce = (call, args, timeout = 60000) =>
+  new Promise((resolve) => {
+    let stdout = '';
+    let stderr = '';
+    let child;
+    try {
+      child = spawn(call.exe, args, { env: call.env, windowsHide: true });
+    } catch (e) {
+      resolve({ code: -1, stdout, stderr: e.message });
+      return;
+    }
+    const timer = setTimeout(() => child.kill(), timeout);
+    child.stdout.on('data', (c) => (stdout += c.toString('utf8')));
+    child.stderr.on('data', (c) => (stderr += c.toString('utf8')));
+    child.on('error', (e) => {
+      clearTimeout(timer);
+      resolve({ code: -1, stdout, stderr: e.message });
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({ code, stdout, stderr });
+    });
+  });
+
 // A step that starts the application does not end by itself, so it can only be the last one.
 const keepsRunning = (step) => (step.kind === 'preset' && ['start', 'debug'].includes(step.preset)) || (step.kind === 'custom' && SERVER_GOALS.test(step.goals));
 const GIT_KINDS = new Set(['changes', 'fetch', 'checkout', 'branch', 'pull', 'unstash']);
@@ -272,7 +433,7 @@ const mavenArgv = (dir, args, wrapper = findWrapper(dir)) => {
 };
 const terminalScript = (dir, args) => shell.terminalScript(dir, mavenArgv(dir, args));
 
-function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, saveDir, loadMacros, saveMacros, loadRunEnv, saveRunEnv }) {
+function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, saveDir, loadMacros, saveMacros, loadRunEnv, saveRunEnv, loadContainer, saveContainer }) {
   const portsFor = (repoPath) => {
     try {
       return parsePorts(loadPorts(repoPath) || {});
@@ -295,12 +456,23 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
     if (!inside || inside.startsWith('..') || path.isAbsolute(inside) || !fs.existsSync(path.join(dir, 'pom.xml'))) return { dir: repoPath, rel: '', lost: rel };
     return { dir, rel: relOf(repoPath, dir) };
   }
-  // The profiles and environment variables Start and Debug give the application (run-env.js), saved for the repository.
+  // The environment variables Start and Debug give the application (run-env.js), saved for the repository.
   const runEnvFor = (repoPath) => {
     try {
       return runEnv.cleanRunEnv((loadRunEnv && loadRunEnv(repoPath)) || {});
     } catch {
       return { ...runEnv.EMPTY };
+    }
+  };
+  // What Start in container starts with: what was chosen for the repository last time, else the defaults.
+  const containerFor = (repoPath) => {
+    const { dir } = chosenDir(repoPath);
+    const defaults = containerDefaults(dir, portsFor(repoPath));
+    try {
+      const saved = loadContainer && loadContainer(repoPath);
+      return saved ? cleanContainerSpec({ ...defaults, ...saved }) : defaults;
+    } catch {
+      return defaults;
     }
   };
   const macroList = () => {
@@ -339,8 +511,8 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
     if (!run.muted) send('mvn-output', { repo: run.repo, text, id: run.id, end: run.written });
   };
 
-  // Maven once, its output added to the run's log; resolves with the exit code.
-  function runStep(run, dir, args, env) {
+  // Maven once, its output added to the run's log (and given to tap); resolves with the exit code.
+  function runStep(run, dir, args, env, tap = null) {
     return new Promise((resolve) => {
       let settled = false;
       const end = (code) => {
@@ -351,7 +523,11 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
       };
       const child = startMaven(dir, args, env, findWrapper(dir, run.repo));
       run.child = child;
-      const append = (chunk) => write(run, chunk.toString('utf8'));
+      const append = (chunk) => {
+        const text = chunk.toString('utf8');
+        write(run, text);
+        if (tap) tap(text);
+      };
       child.stdout.on('data', append);
       child.stderr.on('data', append);
       child.on('error', (e) => {
@@ -370,6 +546,54 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
     run.resolveDone();
     if (runs.get(key(run.repo)) === run) send('mvn-exit', { repo: run.repo, exitCode, endedAt: run.endedAt, failedStep: run.failedStep || null, failedGit: Boolean(run.failedGit), stopped: run.cancelled, marks: run.macro ? run.macro.marks : null });
     announce();
+  }
+
+  // Stop: Maven and the Java it started, or the docker command. A container is stopped by the engine first: ending the
+  // command alone would leave it running on Windows.
+  async function stopRun(run, wait = 10) {
+    run.cancelled = true;
+    if (run.container && run.container.started) await engineOnce(run.container.call, ['stop', '-t', String(wait), run.container.name], (wait + 20) * 1000);
+    if (run.child) await killTree(run.child);
+  }
+
+  // docker run, its output added to the run's log; resolves with its exit code.
+  function runEngine(run, call, args) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const end = (code) => {
+        if (settled) return;
+        settled = true;
+        run.child = null;
+        resolve(code);
+      };
+      const child = spawn(call.exe, args, { env: call.env, windowsHide: true, detached: !IS_WIN });
+      run.child = child;
+      const append = (chunk) => write(run, chunk.toString('utf8'));
+      child.stdout.on('data', append);
+      child.stderr.on('data', append);
+      child.on('error', (e) => {
+        write(run, `\n[failed to start ${call.name}: ${e.message}]\n`);
+        end(-1);
+      });
+      child.on('close', end);
+    });
+  }
+
+  // A container of the same name left from before: removed when this page started it (its label), else the run stops.
+  async function clearOldContainer(run, call, name) {
+    const r = await engineOnce(call, ['container', 'inspect', '--format', '{{index .Config.Labels "git-quick"}}', name]);
+    if (r.code !== 0) return 0;
+    if (r.stdout.trim() !== 'maven') {
+      write(run, `\nA container named ${name} already exists, and it was not started here: choose another name, or remove it in Containers.\n`);
+      return 1;
+    }
+    write(run, `\nRemoving the ${name} container started before.\n`);
+    const rm = await engineOnce(call, ['rm', '-f', name]);
+    if (rm.code !== 0) {
+      write(run, `${containers.dockerError(rm.stderr)}\n`);
+      return 1;
+    }
+    return 0;
   }
 
   function resolveArgs(repoPath, request) {
@@ -526,6 +750,7 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
       // the environments with an application-<env> file: Start and Debug can take their values (the Values button)
       valueEnvs: envValues.listEnvs(dir),
       runEnv: runEnvFor(repoPath),
+      container: containerFor(repoPath),
       ports,
       ...presetView(ports),
       run: run && {
@@ -570,12 +795,13 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
     }
   });
 
-  // The profiles and environment variables of Start and Debug, saved for the repository: used the next time one starts.
+  // The environment variables of Start and Debug, saved for the repository (those switched off too): used the next time
+  // one starts.
   ipcMain.handle('mvn-set-run-env', (_, repoPath, input) => {
     try {
       if (!isKnownRepo(repoPath)) throw new Error('Unknown repository');
       const clean = runEnv.cleanRunEnv(input);
-      saveRunEnv(repoPath, runEnv.hasRunEnv(clean) ? clean : null);
+      saveRunEnv(repoPath, clean.vars.length ? clean : null);
       return { runEnv: clean };
     } catch (e) {
       return { error: e.message };
@@ -612,8 +838,8 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
     try {
       const args = resolveArgs(repoPath, request);
       const { dir, rel } = chosenDir(repoPath);
-      // the values chosen per environment, the profiles and the variables go to the application only: a build or the
-      // tests run with the files and the user's own environment
+      // the values chosen per environment and the variables go to the application only: a build or the tests run with
+      // the files and the user's own environment
       const starts = SERVER_GOALS.test(args.join(' '));
       const values = starts ? envValues.cleanValues(request.values) : null;
       const appEnv = starts ? runEnvFor(repoPath) : null;
@@ -633,6 +859,99 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
       runs.set(k, run);
       announce();
       runStep(run, dir, args, env).then((code) => finishRun(run, code));
+      return { success: true, command, startedAt: run.startedAt, log: run.log, id: run.id, written: run.written };
+    } catch (e) {
+      return { error: e.message };
+    }
+  });
+
+  // Start in container, the dialog: what it starts with, the engine that would run it, the jar built so far.
+  ipcMain.handle('mvn-container-info', async (_, repoPath) => {
+    if (!isKnownRepo(repoPath)) return { error: 'Unknown repository' };
+    const { dir } = chosenDir(repoPath);
+    const jar = newestJar(dir);
+    let engine;
+    try {
+      const call = await containers.engineCall();
+      engine = { name: call.name, label: call.label };
+    } catch (e) {
+      engine = { error: e.message };
+    }
+    return { spec: containerFor(repoPath), engine, jar: jar ? { name: path.relative(dir, jar.file).split(path.sep).join('/'), ago: agoText(jar.mtime) } : null };
+  });
+
+  // The command the dialog would run, as the output shows it (the values of the variables hidden).
+  ipcMain.handle('mvn-container-preview', (_, repoPath, input, engineName, withValues) => {
+    try {
+      if (!isKnownRepo(repoPath)) throw new Error('Unknown repository');
+      const { dir } = chosenDir(repoPath);
+      const spec = cleanContainerSpec(input);
+      const newest = newestJar(dir);
+      const jar = newest ? newest.file : path.join(dir, 'target', '*.jar');
+      const name = engineName === 'podman' ? 'podman' : 'docker';
+      return { command: `${name} ${containerArgs(spec, jar, withValues ? {} : null).shown}` };
+    } catch (e) {
+      return { error: e.message };
+    }
+  });
+
+  // Start in container: what the dialog chose, saved for the repository; then the jar built (when asked) and the
+  // container started, its output in the page. Stop stops the container (stopRun).
+  ipcMain.handle('mvn-container-run', async (_, repoPath, input = {}, valuesRequest = {}) => {
+    try {
+      if (!isKnownRepo(repoPath)) throw new Error('Unknown repository');
+      const { dir, rel } = chosenDir(repoPath);
+      if (!fs.existsSync(path.join(dir, 'pom.xml'))) throw new Error('No pom.xml in this repository');
+      const spec = cleanContainerSpec(input);
+      saveContainer(repoPath, spec);
+      const k = key(repoPath);
+      const current = runs.get(k);
+      if (current && current.active) throw new Error('A command is already running in this repository. Stop it first.');
+      const call = await containers.engineCall();
+      const values = spec.values ? envValues.cleanValues(valuesRequest && valuesRequest.values) : null;
+      const command = `container ${spec.name}`;
+      const run = newRun(repoPath, command, `> Start in container: ${spec.name} (${spec.image}) with ${call.label}${rel ? `   (in ${rel}/)` : ''}\n`, { container: { name: spec.name, call, started: false } });
+      runs.set(k, run);
+      announce();
+      (async () => {
+        let code = 0;
+        // the jar: the one the build named (written now, or up to date), else the newest in target/
+        let picked = null;
+        let note = '';
+        if (spec.build) {
+          write(run, '\n\u25B6 mvn package -DskipTests\n');
+          const began = Date.now();
+          let said = '';
+          code = await runStep(run, dir, ['package', '-DskipTests'], IS_WIN ? null : await shell.loginShellEnv(), (text) => (said = (said + text).slice(-200000)));
+          const named = code === 0 && !run.cancelled ? jarSaid(said, dir) : null;
+          if (named) {
+            const mtime = fs.statSync(named).mtimeMs;
+            picked = { file: named, mtime };
+            // a second clock tick of slack: some file systems keep the time to the second
+            note = mtime >= began - 2000 ? 'built now' : `up to date: Maven found nothing changed since it was built, ${agoText(mtime)}`;
+          } else if (code === 0 && !run.cancelled) {
+            picked = newestJar(dir);
+            if (picked) note = `the newest in target/ (Maven did not say which jar it built), built ${agoText(picked.mtime)}`;
+          }
+        } else {
+          picked = newestJar(dir);
+          if (picked) note = `built ${agoText(picked.mtime)} (not built now: Build first is off)`;
+        }
+        const jar = picked && !run.cancelled ? picked.file : null;
+        if (code === 0 && !run.cancelled && !jar) {
+          write(run, '\nNo jar in target/: tick Build first, or build it (mvn package).\n');
+          code = 1;
+        }
+        if (jar) write(run, `\nJar: ${path.relative(dir, jar).split(path.sep).join('/')}, ${note}\n`);
+        if (jar && !run.cancelled) code = await clearOldContainer(run, call, spec.name);
+        if (jar && code === 0 && !run.cancelled) {
+          const { args, shown } = containerArgs(spec, jar, values);
+          write(run, `\n\u25B6 ${call.name} ${shown}\n${valuesLine(values, valuesRequest && valuesRequest.valuesNote)}`);
+          run.container.started = true;
+          code = await runEngine(run, call, args);
+        }
+        finishRun(run, code);
+      })();
       return { success: true, command, startedAt: run.startedAt, log: run.log, id: run.id, written: run.written };
     } catch (e) {
       return { error: e.message };
@@ -709,8 +1028,7 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
           if (p.stop) {
             if (busy && previous.active) {
               write(run, `Stopping ${previous.command}...\n`);
-              previous.cancelled = true;
-              if (previous.child) await killTree(previous.child);
+              await stopRun(previous);
               await Promise.race([previous.done, new Promise((r) => setTimeout(r, 15000))]);
               write(run, 'Stopped.\n');
             } else write(run, 'Nothing was running.\n');
@@ -719,8 +1037,8 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
           }
           if (p.git) code = await runGitStep(run, p.git, i, ctx);
           else {
-            // the step that starts the application gets the values chosen per environment, the profiles and the
-            // variables; the others, the files
+            // the step that starts the application gets the values chosen per environment and the variables; the
+            // others, the files
             const starts = SERVER_GOALS.test(p.args.join(' '));
             if (starts) write(run, valuesLine(values, valuesRequest.valuesNote) + runEnv.runEnvLines(appEnv));
             code = await runStep(run, dir, p.args, starts ? envValues.withValues(runEnv.withRunEnv(env, appEnv), values) : env);
@@ -746,8 +1064,7 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
   ipcMain.handle('mvn-stop', async (_, repoPath) => {
     const run = runs.get(key(String(repoPath)));
     if (!run || !run.active) return { error: 'Nothing is running' };
-    run.cancelled = true;
-    if (run.child) await killTree(run.child);
+    await stopRun(run);
     return { success: true };
   });
 
@@ -759,12 +1076,9 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
 
   const stopAll = () =>
     Promise.all(
-      [...runs.values()].filter((r) => r.active).map((r) => {
-        r.cancelled = true;
-        return r.child ? killTree(r.child) : null;
-      })
+      [...runs.values()].filter((r) => r.active).map((r) => stopRun(r, 3))
     );
   return { stopAll };
 }
 
-module.exports = { registerMaven, PRESETS, OPTIONS, DEFAULT_PORTS, parsePorts, tokenize, buildScript, terminalScript, pomProfiles, withOptions, findWrapper, pomFolders, cleanMacro };
+module.exports = { registerMaven, PRESETS, OPTIONS, DEFAULT_PORTS, parsePorts, tokenize, buildScript, terminalScript, pomProfiles, withOptions, findWrapper, pomFolders, cleanMacro, cleanContainerSpec, containerArgs, newestJar, jarSaid, pomJava };

@@ -1,12 +1,41 @@
 // Every dropdown (<select>) opens a list drawn by the app, the same on Windows and on a Mac, instead of the system's.
 // The select stays what is chosen: a pick sets its value and fires its change event, as the system list does, so the
 // code around each dropdown is the same. Hidden options (a placeholder such as "+ Add a step...") are not listed. A
-// dropdown with a list of its own (the Maven command, with its macros) is marked data-own-menu.
+// dropdown with a list of its own (the Maven command, with its macros) is marked data-own-menu. A long list (10
+// entries or more), or a dropdown marked data-search, has a search field at the top.
 (() => {
-  let open = null; // { select, menu }
+  let open = null; // { select, menu, search, filter }
+  const SEARCH_FROM = 10;
 
   const ours = (el) => el instanceof HTMLSelectElement && !el.multiple && el.size <= 1 && !el.disabled && !el.hasAttribute('data-own-menu');
-  const items = () => (open ? [...open.menu.querySelectorAll('.sel-item:not(:disabled)')] : []);
+  const items = () => (open ? [...open.menu.querySelectorAll('.sel-item:not(:disabled):not([hidden])')] : []);
+
+  // The entries with the text typed (a group's name only while one of its entries is left), "Nothing matches" else.
+  function filterMenu(menu, text, none) {
+    const q = text.trim().toLowerCase();
+    let shown = 0;
+    let group = null;
+    let inGroup = 0;
+    const settle = () => {
+      if (group) group.hidden = !inGroup;
+    };
+    for (const el of menu.children) {
+      if (el.classList.contains('sel-group')) {
+        settle();
+        group = el;
+        inGroup = 0;
+      } else if (el.classList.contains('sel-item')) {
+        const on = !q || el.textContent.toLowerCase().includes(q);
+        el.hidden = !on;
+        if (on) {
+          shown++;
+          inGroup++;
+        }
+      }
+    }
+    settle();
+    none.hidden = shown > 0;
+  }
 
   function closeSelectMenu(refocus = false) {
     if (!open) return;
@@ -66,8 +95,31 @@
         shown.forEach((o) => menu.appendChild(item(o)));
       }
     }
-    if (!menu.querySelector('.sel-item')) return;
-    // under the dropdown, at least as wide; above it when there is more room there
+    const count = menu.querySelectorAll('.sel-item').length;
+    if (!count) return;
+    let search = null;
+    let filter = () => {};
+    if (select.hasAttribute('data-search') || count >= SEARCH_FROM) {
+      const box = document.createElement('div');
+      box.className = 'sel-search';
+      search = document.createElement('input');
+      search.type = 'search';
+      search.placeholder = 'Search';
+      search.spellcheck = false;
+      search.setAttribute('autocomplete', 'off');
+      search.setAttribute('aria-label', 'Search the list');
+      box.appendChild(search);
+      const none = document.createElement('div');
+      none.className = 'sel-none';
+      none.textContent = 'Nothing matches';
+      none.hidden = true;
+      menu.prepend(box);
+      menu.appendChild(none);
+      filter = () => filterMenu(menu, search.value, none);
+      search.addEventListener('input', filter);
+    }
+    // under the dropdown, at least as wide; above it when there is more room there (held by its bottom, so a list
+    // narrowed by the search stays by the dropdown); as wide while it is narrowed
     const a = select.getBoundingClientRect();
     menu.style.minWidth = `${Math.round(a.width)}px`;
     document.body.appendChild(menu);
@@ -77,22 +129,25 @@
     const up = m.height > below && above > below;
     const room = Math.max(120, up ? above : below);
     menu.style.maxHeight = `${room}px`;
-    const height = Math.min(m.height, room);
+    if (search) menu.style.width = `${Math.ceil(m.width)}px`;
     menu.style.left = `${Math.round(Math.max(8, Math.min(a.left, window.innerWidth - m.width - 8)))}px`;
-    menu.style.top = `${Math.round(up ? a.top - 4 - height : a.bottom + 4)}px`;
-    open = { select, menu };
+    if (up) menu.style.bottom = `${Math.round(window.innerHeight - a.top + 4)}px`;
+    else menu.style.top = `${Math.round(a.bottom + 4)}px`;
+    open = { select, menu, search, filter };
     window.addEventListener('keydown', onKey, true);
     document.addEventListener('mousedown', onOutside, true);
     document.addEventListener('scroll', onScroll, true);
     const current = menu.querySelector('.sel-item.current:not(:disabled)') || items()[0];
     if (current) {
-      current.focus();
+      if (!search) current.focus();
       current.scrollIntoView({ block: 'nearest' });
     }
+    if (search) search.focus();
   }
 
   // While a list is open its keys come first (before the shortcuts of the page and of a dialog): arrows, Enter, Esc,
-  // and the first letters of an entry (or of a word in it) to go to it.
+  // and the first letters of an entry (or of a word in it) to go to it. In the search field: what is typed narrows
+  // the list, Down goes into it, Enter takes the first entry left, Esc clears the text (then closes).
   let typed = '';
   let typedAt = 0;
   function onKey(e) {
@@ -104,6 +159,42 @@
       e.preventDefault();
       e.stopImmediatePropagation();
     };
+    const { search } = open;
+    if (search && document.activeElement === search) {
+      if (e.key === 'ArrowDown') {
+        handled();
+        go(0);
+      } else if (e.key === 'Enter') {
+        handled();
+        const current = search.value.trim() ? null : all.find((b) => b.classList.contains('current'));
+        if (current || all[0]) (current || all[0]).click();
+      } else if (e.key === 'Escape') {
+        handled();
+        if (search.value) {
+          search.value = '';
+          open.filter();
+        } else closeSelectMenu(true);
+      } else if (e.key === 'Tab') {
+        closeSelectMenu(true);
+      } else {
+        // the field's own keys (typing, Backspace, the arrows along the text); not the page's
+        e.stopImmediatePropagation();
+      }
+      return;
+    }
+    if (search && e.key === 'ArrowUp' && i <= 0) {
+      handled();
+      search.focus();
+      return;
+    }
+    // typed on an entry of a list with a search: it goes to the search
+    if (search && e.key.length === 1 && e.key !== ' ' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      handled();
+      search.focus();
+      search.value += e.key;
+      open.filter();
+      return;
+    }
     if (e.key === 'ArrowDown') {
       handled();
       go(i + 1);

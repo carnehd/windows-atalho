@@ -4670,6 +4670,57 @@ body.card-window .vault-card {
   color: var(--accent);
   font-weight: 600;
 }
+/* a value changed here (double-click, F2): ✎ before it, and ↺ beside it puts the file's back */
+.mv-table td:has(.mv-cell) {
+  position: relative;
+}
+.mv-cell.edited {
+  padding-right: 26px;
+}
+.mv-cell.edited span::before {
+  content: '\270E  ';
+  color: var(--accent);
+}
+.mv-cell.editing {
+  padding: 0;
+  overflow: visible;
+  cursor: text;
+}
+.mv-cell input.mv-edit {
+  position: static;
+  width: 100%;
+  height: 28px;
+  padding: 0 7px;
+  opacity: 1;
+  pointer-events: auto;
+  color: var(--text);
+  font-weight: 400;
+}
+.mv-reset {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(-50%);
+}
+.mv-table td:hover .mv-reset,
+.mv-reset:focus-visible {
+  opacity: 1;
+}
+.mv-reset:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
 .mv-legend {
   margin: 8px 0 0;
   color: var(--text-muted);
@@ -4688,49 +4739,13 @@ body.card-window .vault-card {
 .mv-gap {
   flex: 1;
 }
-/* Env: the profiles and environment variables of Start and Debug (mvn-env.js) */
+/* Env: the environment variables of Start and Debug (mvn-env.js), a table of rows as the Bruno page has them */
 .me-card {
-  width: min(640px, 94vw);
+  width: min(680px, 94vw);
   max-width: none;
   max-height: 88vh;
   display: flex;
   flex-direction: column;
-}
-.me-profiles-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-.me-profiles {
-  flex: 1 1 200px;
-  min-width: 0;
-}
-.me-chips {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-.me-chip {
-  padding: 3px 9px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: none;
-  color: var(--text-muted);
-  font: inherit;
-  font-family: var(--font-mono);
-  font-size: var(--fs-small);
-  cursor: pointer;
-}
-.me-chip:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-.me-chip.on {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  color: var(--accent);
-  font-weight: 600;
 }
 .me-hint,
 .me-note {
@@ -4746,20 +4761,91 @@ body.card-window .vault-card {
 }
 .me-vars-head {
   display: flex;
-  align-items: center;
-  margin-top: 14px;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 4px;
 }
-.me-vars-head .settings-label {
+.me-vars-head .me-hint {
+  flex: 1;
   margin: 0;
+  line-height: 1.45;
 }
 .me-vars {
-  min-height: 180px;
-  height: 240px;
-  margin-top: 6px;
-  resize: vertical;
-  line-height: 1.5;
-  white-space: pre;
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 52vh;
+  margin-top: 10px;
+  padding: 2px;
   overflow: auto;
+}
+.me-vars .bru-kv-name[aria-invalid='true'] {
+  border-color: var(--red);
+}
+/* Start in container (mvn-container.js): the fields in two columns, the variables as in Env, the command it runs */
+.mc-card {
+  width: min(720px, 94vw);
+  max-width: none;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+.mc-engine {
+  margin: 0 0 10px;
+}
+.mc-engine.error {
+  color: var(--red);
+}
+.mc-grid {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px 12px;
+}
+.mc-key {
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+.mc-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-width: 0;
+}
+.mc-wide {
+  flex: 1;
+  min-width: 0;
+}
+.mc-port {
+  width: 92px;
+}
+.mc-inline-hint {
+  margin: 0;
+}
+.mc-vars-head {
+  margin-top: 16px;
+}
+.mc-vars {
+  max-height: 32vh;
+}
+.mc-command {
+  max-height: 120px;
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.mc-command.error {
+  color: var(--red);
 }
 .mvn-ports-btn {
   flex: none;
@@ -9145,22 +9231,6 @@ label.file-item {
   flex-direction: column;
   gap: 16px;
 }
-.an-service-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 10px;
-  margin-bottom: 6px;
-}
-.an-service-head h3 {
-  margin: 0;
-  font-size: var(--fs-body);
-  font-weight: 600;
-}
-.an-count {
-  color: var(--text-muted);
-  font-size: var(--fs-small);
-}
 /* Folders: where the swagger files are looked for (analysis.js) */
 .af-card {
   width: min(520px, 94vw);
@@ -9279,20 +9349,16 @@ label.file-item {
 .an-title {
   overflow-wrap: anywhere;
 }
+/* a .yaml that is a part of a spec (its models), not a spec of its own */
+.an-part {
+  color: var(--text-muted);
+}
 .an-none {
   line-height: 1.5;
 }
 /* Compare with documentation */
 .an-doc {
   max-width: 280px;
-}
-.an-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.an-chips:empty {
-  display: none;
 }
 .an-chip {
   display: inline-block;
@@ -9321,27 +9387,410 @@ label.file-item {
   background: color-mix(in srgb, var(--red) 13%, transparent);
   color: var(--red);
 }
-.an-files.an-docs {
-  grid-template-columns: minmax(150px, 260px) 140px 140px minmax(0, 1fr) 96px;
+.an-docs-tool {
+  max-width: 1400px;
 }
-.an-files.an-docs > :nth-child(4n + 1) {
-  padding-left: 0;
+.an-sum-all:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
-.an-files.an-docs > :nth-child(5n + 1) {
-  padding-left: 12px;
+.an-chip.an-note {
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-weight: 400;
 }
-.an-files.an-docs > :nth-last-child(-n + 4) {
+/* the title and what acts on the whole page (the folders, scan again, copy); then one bar of fields */
+.an-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+.an-top h2 {
+  margin: 0;
+  font-size: var(--fs-title);
+  font-weight: 600;
+}
+.an-top-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.an-folders-btn {
+  max-width: 280px;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.an-sum-all {
+  align-self: center;
+  padding: 2px 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: var(--fs-small);
+  cursor: pointer;
+}
+.an-sum-all:hover {
+  text-decoration: underline;
+}
+/* a microservice's name: a tag of its own colour (one of eight, none a state's), the text dark enough on its tint */
+.an-ms-tag {
+  --ms: var(--mauve);
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 1px 10px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ms) 14%, transparent);
+  color: var(--ms);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.an-ms-tag.ms0 {
+  --ms: #6d28d9;
+}
+.an-ms-tag.ms1 {
+  --ms: #115e59;
+}
+.an-ms-tag.ms2 {
+  --ms: #be185d;
+}
+.an-ms-tag.ms3 {
+  --ms: #4338ca;
+}
+.an-ms-tag.ms4 {
+  --ms: #155e75;
+}
+.an-ms-tag.ms5 {
+  --ms: #854d0e;
+}
+.an-ms-tag.ms6 {
+  --ms: #a21caf;
+}
+.an-ms-tag.ms7 {
+  --ms: #475569;
+}
+:root[data-theme='dark'] .an-ms-tag.ms0 {
+  --ms: #c4b5fd;
+}
+:root[data-theme='dark'] .an-ms-tag.ms1 {
+  --ms: #5eead4;
+}
+:root[data-theme='dark'] .an-ms-tag.ms2 {
+  --ms: #f9a8d4;
+}
+:root[data-theme='dark'] .an-ms-tag.ms3 {
+  --ms: #a5b4fc;
+}
+:root[data-theme='dark'] .an-ms-tag.ms4 {
+  --ms: #67e8f9;
+}
+:root[data-theme='dark'] .an-ms-tag.ms5 {
+  --ms: #fcd34d;
+}
+:root[data-theme='dark'] .an-ms-tag.ms6 {
+  --ms: #f0abfc;
+}
+:root[data-theme='dark'] .an-ms-tag.ms7 {
+  --ms: #cbd5e1;
+}
+/* one bar: Microservices and File | Compare with | the search and + Filter; it wraps a group at a time */
+.an-fieldbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-surface);
+}
+/* the lists give up room before anything goes to the next line */
+.an-fieldbar .an-group {
+  flex: 1 1 200px;
+  min-width: 130px;
+  max-width: 220px;
+}
+.an-fieldbar .an-search {
+  flex: 2 1 160px;
+  min-width: 120px;
+}
+.an-sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border);
+}
+.an-bar-key {
+  font-size: var(--fs-small);
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* under the bar: the filters as tags, then Only differences and how many */
+.an-under {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  min-height: 26px;
+}
+.an-under .an-gap {
+  flex: 1;
+}
+.an-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.an-filter-key,
+.an-filter-none {
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+.an-filter-none {
+  color: var(--text-dim);
+}
+.an-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--fs-small);
+  cursor: pointer;
+}
+.an-link:hover {
+  text-decoration: underline;
+}
+.an-status {
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+  white-space: nowrap;
+}
+.an-status-more {
+  color: var(--text-dim);
+  font-size: var(--fs-small);
+}
+/* + Filter, and its popover: the kind and the text, Cancel and Add */
+.an-addf {
+  position: relative;
+  flex: none;
+}
+.an-fpop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 320px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+}
+.an-fpop-title {
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+.an-fpop-fields {
+  display: flex;
+  gap: 6px;
+}
+.an-fpop .an-fkind {
+  width: 140px;
+  flex: none;
+  font-family: inherit;
+}
+.an-fpop .an-finput {
+  flex: 1;
+  min-width: 0;
+}
+.an-fpop-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+/* over the table, in a row: a tag a state with how many (a click picks it), or what was found */
+.an-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.an-legend:empty {
+  display: none;
+}
+.an-chip.an-leg {
+  padding: 2px 10px;
+  border: 1px solid transparent;
+  font-family: inherit;
+  cursor: pointer;
+}
+.an-chip.an-leg:hover {
+  border-color: currentColor;
+}
+.an-chip.an-leg[aria-pressed='true'] {
+  border-color: currentColor;
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+.an-chip.an-leg:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* one table, a row a file: the microservice first, the state as a tag */
+.an-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: clip;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: var(--fs-small);
+}
+.an-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 7px 10px;
   border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
 }
-.an-files.an-docs > :nth-last-child(-n + 5) {
+.an-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.an-table tbody tr:last-child td {
   border-bottom: none;
+}
+.an-table tbody tr:hover td {
+  background: var(--bg-hover);
+}
+.an-col-ms {
+  width: 170px;
+}
+.an-col-ver {
+  width: 120px;
+}
+.an-col-state {
+  width: 220px;
+}
+.an-col-act {
+  width: 92px;
+}
+.an-table .an-open {
+  display: block;
+  max-width: 100%;
+}
+.an-table td.an-act {
+  text-align: right;
+}
+/* Scan again: its icon only, turning while it reads */
+.an-icon-btn {
+  padding-left: 8px;
+  padding-right: 8px;
+}
+.an-icon-btn.busy svg {
+  animation: spin 1s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .an-icon-btn.busy svg {
+    animation: none;
+  }
+}
+/* the filters as tags */
+.an-ftags {
+  display: contents;
+}
+.an-ftag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 0 2px 0 8px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--text);
+  font-size: var(--fs-small);
+  line-height: 22px;
+}
+.an-ftag.not {
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+}
+.an-ftag-kind {
+  color: var(--text-muted);
+}
+.an-ftag-text {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.an-ftag-x {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-muted);
+  font-size: 10px;
+  cursor: pointer;
+}
+.an-ftag-x:hover {
+  background: var(--bg-hover);
+  color: var(--red);
+}
+.an-fand {
+  color: var(--text-dim);
+  font-size: var(--fs-caption);
+}
+/* the versions compared: the colour of the row's state */
+.an-ver .tool-badge.good {
+  background: var(--green-soft);
+  color: var(--green);
+}
+.an-ver .tool-badge.warn {
+  background: color-mix(in srgb, var(--orange) 15%, transparent);
+  color: var(--orange);
+}
+.an-ver .tool-badge.info {
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  color: var(--accent);
+}
+.an-ver .tool-badge.bad {
+  background: color-mix(in srgb, var(--red) 13%, transparent);
+  color: var(--red);
 }
 .an-absent {
   color: var(--text-dim);
 }
-.an-state {
+.an-files > .an-state {
   flex-wrap: wrap;
-  gap: 2px;
+  gap: 4px;
+}
+.an-act {
+  gap: 6px;
 }
 .an-act .btn {
   padding: 2px 10px;
@@ -11632,6 +12081,40 @@ select optgroup {
   flex-direction: column;
   max-width: 480px;
   overflow-y: auto;
+}
+/* the search at the top of a long list (or of a dropdown marked data-search): it stays while the list scrolls */
+.sel-search {
+  position: sticky;
+  top: -4px;
+  z-index: 1;
+  flex: none;
+  margin: -4px -4px 4px;
+  padding: 4px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.sel-search input {
+  width: 100%;
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+  background: var(--bg-input);
+  color: var(--text);
+  font: inherit;
+}
+.sel-search input:focus {
+  border-color: var(--accent);
+}
+.sel-none {
+  padding: 6px 10px;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+.sel-menu [hidden] {
+  display: none !important;
 }
 .sel-menu .sel-item {
   display: flex;
