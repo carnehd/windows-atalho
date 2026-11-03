@@ -435,6 +435,16 @@ const AN_REFRESH_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20
 // Only differences and how many; then the states as tags in a row (a click picks some) and one table, a row a file. --
 const AN_COMPARE_KEY = 'analysisCompareWith';
 const AN_MS_COLOURS = 8; // .an-ms-tag.ms0 to .ms7 in the styles
+
+// A microservice's name in a colour, by its place in the list of repositories in alphabetical order: the ones next to
+// each other in a table never share one, and each keeps its colour from one look to the next (Compare APIs too).
+function anMsTag(s) {
+  const sorted = [...repos].sort((x, y) => displayName(x).localeCompare(displayName(y)));
+  const at = Math.max(0, sorted.findIndex((r) => r.path === s.path));
+  const tag = tEl('span', `an-ms-tag ms${at % AN_MS_COLOURS}`, s.name);
+  tag.title = s.path;
+  return tag;
+}
 const AN_KIND = (f) => (f.spec.startsWith('Swagger') ? 'Swagger 2.0' : f.spec.startsWith('OpenAPI') ? 'OpenAPI 3' : '');
 
 function buildSwaggerAnalysis() {
@@ -610,15 +620,7 @@ function buildSwaggerAnalysis() {
     td.append(...children);
     return td;
   };
-  // a colour a microservice, by its place in the list of repositories in alphabetical order: the ones next to each other
-  // in the table never share one, and each keeps its colour from one look to the next
-  const msTag = (s) => {
-    const sorted = [...repos].sort((x, y) => displayName(x).localeCompare(displayName(y)));
-    const at = Math.max(0, sorted.findIndex((r) => r.path === s.path));
-    const tag = tEl('span', `an-ms-tag ms${at % AN_MS_COLOURS}`, s.name);
-    tag.title = s.path;
-    return tag;
-  };
+  const msTag = anMsTag;
 
   // -- the list --
   const listed = () => {
@@ -714,7 +716,7 @@ function buildSwaggerAnalysis() {
     const left = `${doc.name} / ${r.doc.rel}`;
     const right = `${g.service.name} / ${r.svc.rel}`;
     if (r.svc.part || r.doc.part) openInCompare(a.text, b.text, `Left: ${left}   ·   Right: ${right}`);
-    else openInApiCompare(a.text, b.text, left, right);
+    else openInApiCompare(a.text, b.text, { ms: doc.name, path: doc.path, file: r.doc.rel }, { ms: g.service.name, path: g.service.path, file: r.svc.rel });
   };
 
   // the pairs not compared yet, all at once; shown when done

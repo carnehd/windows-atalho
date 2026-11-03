@@ -131,6 +131,23 @@ function toolNote(text, cls = 'tool-error') {
   return tEl('div', cls, text);
 }
 
+// Whether some text is selected on the page: a drag that selects text is not a click on what it is over.
+function textSelected() {
+  const sel = window.getSelection();
+  return Boolean(sel && !sel.isCollapsed && sel.toString().trim());
+}
+
+// A right-click on text selected inside box: a menu with Copy (Ctrl+C copies it too). textOf: what is copied.
+function selectionCopyMenu(box, textOf = () => window.getSelection().toString()) {
+  box.addEventListener('contextmenu', (e) => {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.toString().trim() || !box.contains(sel.anchorNode) || (e.target.closest && e.target.closest('textarea, input'))) return;
+    const text = textOf();
+    e.preventDefault();
+    openActionMenu({ x: e.clientX, y: e.clientY, items: [{ label: 'Copy', icon: 'copy', run: () => toolCopy(text, 'Text') }] });
+  });
+}
+
 function debounce(fn, ms) {
   let t = null;
   return (...args) => {
@@ -1530,8 +1547,12 @@ function buildApiDiffTool() {
   let seq = 0;
   let result = null;
   let filter = 'all';
+  // where a side's spec is from: what its line says (a file, an address, "a-service / swagger/api.yaml") and, when it
+  // is a microservice's, which one (its name and folder) and the file in it
+  const setFrom = (side, source = '', from = null) => Object.assign(side, { source, ms: from ? from.ms : '', msPath: from ? from.path : '', file: from ? from.file : '' });
   const makeSide = (title, placeholder) => {
-    const side = { title, source: '' };
+    const side = { title };
+    setFrom(side);
     side.area = toolArea(placeholder, 9);
     side.area.setAttribute('aria-label', `${title} spec`);
     side.card = toolCard(title);
@@ -1548,7 +1569,7 @@ function buildApiDiffTool() {
         return;
       }
       side.area.value = r.text;
-      side.source = r.name;
+      setFrom(side, r.name);
       urlRow.classList.add('hidden');
       compare();
     });
@@ -1556,7 +1577,11 @@ function buildApiDiffTool() {
       if (e.key === 'Enter') get.click();
     });
     urlRow.append(side.url, get);
+    side.fromMs = toolButton('From microservice', () => pickSpec(side), 'api-from-ms');
+    side.fromMs.title = 'A spec of one of the microservices of your list';
+    side.fromMs.setAttribute('aria-haspopup', 'dialog');
     side.card.tools.append(
+      side.fromMs,
       toolButton('Open file', async () => {
         const r = await window.tools.apiOpen();
         if (r.canceled) return;
@@ -1565,7 +1590,7 @@ function buildApiDiffTool() {
           return;
         }
         side.area.value = r.text;
-        side.source = r.name;
+        setFrom(side, r.name);
         compare();
       }, 'api-open'),
       toolButton('From URL', () => {
@@ -1574,26 +1599,28 @@ function buildApiDiffTool() {
       }, 'api-from-url'),
       toolCardClear(`Clear the ${title.toLowerCase()} spec`, () => {
         side.area.value = '';
-        side.source = '';
+        setFrom(side);
         compare();
         side.area.focus();
       })
     );
     side.card.body.append(urlRow, side.area);
     side.area.addEventListener('input', () => {
-      side.source = '';
+      setFrom(side);
       compareSoon();
     });
     return side;
   };
-  const before = makeSide('Before', 'The old spec: paste it (JSON or YAML), open a file or get it from an address');
-  const after = makeSide('After', 'The new spec: paste it (JSON or YAML), open a file or get it from an address');
+  const before = makeSide('Before', 'The old spec: paste it (JSON or YAML), take it from a microservice, open a file or get it from an address');
+  const after = makeSide('After', 'The new spec: paste it (JSON or YAML), take it from a microservice, open a file or get it from an address');
   const two = tEl('div', 'tool-two');
   two.append(before.card, after.card);
   const actions = tEl('div', 'tool-row');
   actions.append(toolButton('Swap', () => {
     [before.area.value, after.area.value] = [after.area.value, before.area.value];
-    [before.source, after.source] = [after.source, before.source];
+    const keep = { ...before };
+    setFrom(before, after.source, after.ms ? { ms: after.ms, path: after.msPath, file: after.file } : null);
+    setFrom(after, keep.source, keep.ms ? { ms: keep.ms, path: keep.msPath, file: keep.file } : null);
     compare();
   }, 'api-swap'));
   const out = tEl('div', 'tool-result api-result');
@@ -1601,6 +1628,7 @@ function buildApiDiffTool() {
     toolHead('Compare APIs', 'Two OpenAPI or Swagger specs (JSON or YAML): which endpoints and models were added, removed or changed, and which changes break a client of the old one. Here in the app: nothing is sent anywhere.'),
     two, actions, out
   );
+  selectionCopyMenu(box);
 
   const describe = (side, info) => {
     const what = [info.kind, [info.title, info.version].filter(Boolean).join(' '), `${plural(info.endpoints, 'endpoint')}, ${plural(info.models, 'model')}`].filter(Boolean).join(' · ');
@@ -1610,8 +1638,10 @@ function buildApiDiffTool() {
   const compare = async () => {
     const a = before.area.value.trim();
     const b = after.area.value.trim();
-    for (const side of [before, after]) if (!side.area.value.trim()) side.card.setStatus('Paste a spec, open a file or get it from an address', 'note');
+    for (const side of [before, after]) if (!side.area.value.trim()) side.card.setStatus('Paste a spec, take it from a microservice, open a file or get it from an address', 'note');
     if (!a || !b) {
+      // the one there: where it is from, until the other one comes
+      for (const side of [before, after]) if (side.area.value.trim()) side.card.setStatus(side.source ? `From ${side.source}` : '', 'note');
       result = null;
       out.textContent = '';
       return;
@@ -1643,6 +1673,7 @@ function buildApiDiffTool() {
       row.classList.add('api-link');
       row.title = `See ${c.model} in Models`;
       row.addEventListener('click', () => {
+        if (textSelected()) return;
         const m = out.querySelector(`.api-item[data-model="${CSS.escape(c.model)}"]`);
         if (!m) return;
         setOpen(m, true);
@@ -1659,11 +1690,16 @@ function buildApiDiffTool() {
     if (head) head.setAttribute('aria-expanded', String(on));
   };
   const STATE_TEXT = { added: 'Added', removed: 'Removed', changed: 'Changed' };
-  const item = ({ cls, data, head, lines, breaking, state, count, note }) => {
+  // part: the endpoint or model as Before / After shows it
+  const item = ({ cls, data, head, lines, breaking, state, count, note, part }) => {
     const el = tEl('div', `api-item ${state}${breaking ? ' breaking' : ''}${cls ? ` ${cls}` : ''}`);
     Object.assign(el.dataset, data);
-    const h = tEl('button', 'api-item-head');
-    h.type = 'button';
+    el.apiPart = part;
+    // the line opens on what changed; its text can be selected (a drag that selects some does not open it)
+    const top = tEl('div', 'api-item-top');
+    const h = tEl('div', 'api-item-head');
+    h.setAttribute('role', 'button');
+    h.tabIndex = 0;
     h.innerHTML = API_CHEVRON;
     h.append(...head);
     const tail = tEl('span', 'api-item-tail');
@@ -1671,12 +1707,24 @@ function buildApiDiffTool() {
     tail.appendChild(apiChip(STATE_TEXT[state], state));
     if (count) tail.appendChild(tEl('span', 'api-count', plural(count, 'change')));
     h.appendChild(tail);
+    const code = toolButton('Before / After', () => showCode(el), 'api-code-btn');
+    code.title = 'The code of both specs side by side, what differs in red and green';
+    code.setAttribute('aria-haspopup', 'dialog');
+    top.append(h, code);
     const body = tEl('div', 'api-item-body');
     if (note) body.appendChild(tEl('div', 'api-note', note));
     // the breaking ones first
     [...lines].sort((x, y) => Number(y.breaking) - Number(x.breaking)).forEach((c) => body.appendChild(changeRow(c)));
-    h.addEventListener('click', () => setOpen(el, !el.classList.contains('open')));
-    el.append(h, body);
+    const toggle = () => setOpen(el, !el.classList.contains('open'));
+    h.addEventListener('click', () => {
+      if (!textSelected()) toggle();
+    });
+    h.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      toggle();
+    });
+    el.append(top, body);
     setOpen(el, breaking && state === 'changed');
     return el;
   };
@@ -1688,6 +1736,7 @@ function buildApiDiffTool() {
     state: e.state,
     count: e.changes.length,
     note: e.state === 'removed' ? 'Gone from the new spec: a client that calls it fails now.' : e.state === 'added' ? 'New in the new spec.' : '',
+    part: { kind: 'endpoint', key: e.key, method: e.method, path: e.path, state: e.state, breaking: e.breaking, models: e.changes.filter((c) => c.model).map((c) => c.model) },
   });
   const modelItem = (m) => item({
     cls: 'api-model',
@@ -1698,6 +1747,7 @@ function buildApiDiffTool() {
     state: m.state,
     count: m.changes.length,
     note: m.usedBy.length ? `Used by ${m.usedBy.join(', ')}` : '',
+    part: { kind: 'model', key: m.name, state: m.state, breaking: m.breaking, models: [] },
   });
 
   const search = toolInput('Filter by path, model or change');
@@ -1740,6 +1790,7 @@ function buildApiDiffTool() {
   };
 
   const renderResult = () => {
+    closeCode();
     out.textContent = '';
     const r = result;
     const s = r.summary;
@@ -1775,26 +1826,415 @@ function buildApiDiffTool() {
     applyFilter();
   };
 
+  // -- Before / After: an endpoint or model as each spec has it, side by side, the microservice (or file) of each on
+  // top; the lines that differ in red and green, the unchanged ones folded but for 3 around each change. Previous and
+  // Next go through the endpoints and models the list shows. --
+  let codeItem = null; // the item of the list on show, or null for a model reached from an endpoint
+  let codeShown = null; // { part, a, b }: what is on show
+  let codeAll = false;
+  let codeSeq = 0;
+  let codeFrom = null; // the button that opened it, given the focus back
+  const codeModal = () => {
+    let modal = $('#apiCodeModal');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'apiCodeModal';
+    modal.className = 'settings-overlay hidden';
+    modal.innerHTML = `
+      <div class="settings-card api-code-card" role="dialog" aria-modal="true" aria-labelledby="apiCodeTitle">
+        <div class="api-code-head">
+          <h3 id="apiCodeTitle" class="api-code-title"></h3>
+          <span class="api-code-chips"></span>
+          <span class="mv-gap"></span>
+          <span class="api-code-count tool-hint" aria-live="polite"></span>
+          <button type="button" class="btn btn-sm api-code-prev" title="The endpoint or model above in the list">‹ Previous</button>
+          <button type="button" class="btn btn-sm api-code-next" title="The endpoint or model below in the list">Next ›</button>
+        </div>
+        <div class="api-code-models hidden"></div>
+        <div class="diff-cols api-code-cols">
+          <div class="api-code-side" data-side="before"></div>
+          <div class="api-code-side" data-side="after"></div>
+        </div>
+        <div class="diff-body api-code-body"></div>
+        <div class="action-row api-code-foot">
+          <span class="api-code-every"></span>
+          <span class="mv-gap"></span>
+          <button type="button" class="btn api-code-close">Close</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.querySelector('.api-code-every').appendChild(toolCheck('Show every line', false, (v) => {
+      codeAll = v;
+      if (codeShown) drawCode();
+    }));
+    modal.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      closeCode();
+    });
+    modal.addEventListener('mousedown', (e) => {
+      if (e.target === modal) closeCode();
+      // only the side the selection starts on can be selected
+      const cell = e.target.closest && e.target.closest('.ds-cell');
+      const lines = modal.querySelector('.diff-lines.split');
+      if (lines && cell && e.button === 0) lines.dataset.select = cell.classList.contains('side-right') ? 'right' : 'left';
+    });
+    modal.querySelector('.api-code-close').addEventListener('click', closeCode);
+    modal.querySelector('.api-code-prev').addEventListener('click', () => stepCode(-1));
+    modal.querySelector('.api-code-next').addEventListener('click', () => stepCode(1));
+    // what is copied of the code (Ctrl+C or Copy): the lines of the side selected, without their numbers
+    const selectedCode = () => {
+      const lines = modal.querySelector('.diff-lines.split');
+      const picked = lines && splitSelection(lines);
+      return picked ? picked.text : '';
+    };
+    modal.addEventListener('copy', (e) => {
+      const text = selectedCode();
+      if (!text) return;
+      e.preventDefault();
+      e.clipboardData.setData('text/plain', text);
+    });
+    selectionCopyMenu(modal, () => selectedCode() || window.getSelection().toString());
+    return modal;
+  };
+  const shownItems = () => [...out.querySelectorAll('.api-item:not(.hidden)')];
+  const stepCode = (by) => {
+    const list = shownItems();
+    const at = list.indexOf(codeItem);
+    const next = list[at + by];
+    if (next) showCode(next);
+  };
+  // the head of each side: Before or After, the microservice (or the file, the address) and the file in it
+  const sideHead = (cell, side, text) => {
+    cell.textContent = '';
+    cell.appendChild(apiChip(side.title, 'same'));
+    if (side.ms) {
+      cell.appendChild(anMsTag({ name: side.ms, path: side.msPath }));
+      cell.appendChild(tEl('span', 'api-code-file', side.file));
+    } else {
+      cell.appendChild(tEl('strong', 'api-code-file', side.source || 'Pasted here'));
+    }
+    if (text === null) {
+      cell.appendChild(tEl('span', 'api-code-none', side === before ? 'Not in the old spec' : 'Not in the new spec'));
+      return;
+    }
+    const copy = toolButton('Copy', () => toolCopy(text, side.title), 'api-code-copy');
+    copy.title = `Copy the ${side.title.toLowerCase()} code`;
+    cell.appendChild(copy);
+  };
+  const drawCode = () => {
+    const modal = codeModal();
+    const body = modal.querySelector('.api-code-body');
+    const count = modal.querySelector('.api-code-count');
+    const { a, b } = codeShown;
+    const left = a === null ? [] : a.split('\n');
+    const right = b === null ? [] : b.split('\n');
+    // too different to line up: one side after the other
+    const ops = diffLines(left, right, (x, y) => x === y) || [...left.map((_, i) => ['-', i, null]), ...right.map((_, j) => ['+', null, j])];
+    const rows = ops.map(([op, i, j]) => (op === '=' ? { type: 'ctx', oldNo: i + 1, newNo: j + 1, text: left[i] } : op === '-' ? { type: 'del', oldNo: i + 1, text: left[i] } : { type: 'add', newNo: j + 1, text: right[j] }));
+    annotateWords(rows);
+    const removed = rows.filter((r) => r.type === 'del').length;
+    const added = rows.filter((r) => r.type === 'add').length;
+    count.textContent = removed || added ? `${plural(removed, 'line')} removed, ${added} added` : 'No line differs';
+    // the unchanged lines more than 3 away from a change folded, unless every line is wanted (or none differs)
+    const keep = new Set();
+    rows.forEach((r, i) => {
+      if (codeAll || !(removed || added) || r.type !== 'ctx') for (let k = Math.max(0, i - 3); k <= Math.min(rows.length - 1, i + 3); k++) keep.add(k);
+    });
+    const items = [];
+    let folded = 0;
+    const onShow = () => {
+      codeAll = true;
+      modal.querySelector('.api-code-every input').checked = true;
+      drawCode();
+    };
+    rows.forEach((row, i) => {
+      if (!keep.has(i)) {
+        folded++;
+        return;
+      }
+      if (folded) items.push({ kind: 'fold', count: folded, onShow });
+      folded = 0;
+      items.push({ kind: 'line', row });
+    });
+    if (folded) items.push({ kind: 'fold', count: folded, onShow });
+    // the renderer collects change groups for the Changes diff's J/K keys; keep that list as it was
+    const changesGroups = diffGroups;
+    diffGroups = [];
+    const view = renderSplit(items);
+    diffGroups = changesGroups;
+    body.textContent = '';
+    if (!(removed || added) && codeShown.part.models.length) body.appendChild(tEl('div', 'api-code-msg', 'Its own lines are the same in both: what changed is in the models it uses, above.'));
+    body.appendChild(view);
+    body.scrollTop = 0;
+  };
+  // el: an item of the list, or { apiPart } for a model reached from an endpoint
+  const showCode = async (el) => {
+    const part = el.apiPart;
+    const modal = codeModal();
+    if (modal.classList.contains('hidden')) codeFrom = document.activeElement;
+    codeItem = el instanceof Element ? el : null;
+    const title = modal.querySelector('.api-code-title');
+    title.textContent = '';
+    if (part.kind === 'endpoint') title.append(tEl('span', `api-method m-${part.method.toLowerCase()}`, part.method), tEl('span', 'api-path', part.path));
+    else title.append(tEl('span', 'api-code-kind', 'Model'), tEl('span', 'api-model-name', part.key));
+    const chips = modal.querySelector('.api-code-chips');
+    chips.textContent = '';
+    if (part.breaking) chips.appendChild(apiChip('Breaking', 'bad'));
+    chips.appendChild(apiChip(STATE_TEXT[part.state], part.state));
+    // the models it uses that changed, each a click away
+    const models = modal.querySelector('.api-code-models');
+    models.textContent = '';
+    models.classList.toggle('hidden', !part.models.length);
+    if (part.models.length) {
+      models.appendChild(tEl('span', 'tool-hint', 'Models it uses that changed:'));
+      for (const name of part.models) {
+        const m = result && result.models.find((x) => x.name === name);
+        const b = toolButton(name, () => showCode({ apiPart: { kind: 'model', key: name, state: m ? m.state : 'changed', breaking: Boolean(m && m.breaking), models: [] } }), 'api-code-model');
+        b.title = `${name}: before and after`;
+        models.appendChild(b);
+      }
+    }
+    const list = shownItems();
+    const at = list.indexOf(codeItem);
+    modal.querySelector('.api-code-prev').disabled = at <= 0;
+    modal.querySelector('.api-code-next').disabled = at < 0 || at >= list.length - 1;
+    const body = modal.querySelector('.api-code-body');
+    body.textContent = '';
+    body.appendChild(tEl('div', 'api-code-msg', 'Reading both specs...'));
+    modal.querySelector('.api-code-count').textContent = '';
+    for (const cell of modal.querySelectorAll('.api-code-side')) cell.textContent = '';
+    modal.classList.remove('hidden');
+    if (!modal.contains(document.activeElement)) modal.querySelector('.api-code-close').focus();
+    const mine = ++codeSeq;
+    const r = await window.tools.apiPart(before.area.value, after.area.value, part.kind, part.key);
+    if (mine !== codeSeq || modal.classList.contains('hidden')) return;
+    if (r.error) {
+      body.textContent = '';
+      body.appendChild(tEl('div', 'api-code-msg error', r.error));
+      return;
+    }
+    sideHead(modal.querySelector('.api-code-side[data-side="before"]'), before, r.before);
+    sideHead(modal.querySelector('.api-code-side[data-side="after"]'), after, r.after);
+    codeShown = { part, a: r.before, b: r.after };
+    drawCode();
+  };
+  function closeCode() {
+    const modal = $('#apiCodeModal');
+    if (!modal || modal.classList.contains('hidden')) return;
+    codeSeq++;
+    codeShown = null;
+    closeActionMenu();
+    modal.classList.add('hidden');
+    if (codeFrom && codeFrom.isConnected) codeFrom.focus();
+  }
+
+  // -- From microservice: the specs of the microservices of the list, found as the Analysis page finds them (its
+  // Folders), one microservice at a time; the search on top looks through all of them (names, files, paths, titles). --
+  let pickSide = null;
+  let pickScan = null; // the scan's services, or null while it runs
+  let pickMs = ''; // the folder of the microservice chosen
+  const pickModal = () => {
+    let modal = $('#apiPickModal');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'apiPickModal';
+    modal.className = 'settings-overlay hidden';
+    modal.innerHTML = `
+      <div class="settings-card api-pick-card" role="dialog" aria-modal="true" aria-labelledby="apiPickTitle">
+        <div class="api-pick-head">
+          <h3 id="apiPickTitle">Spec from a microservice</h3>
+          <span class="api-pick-for tool-hint"></span>
+        </div>
+        <input class="input api-pick-search" type="search" placeholder="Search microservices, files, paths, titles" aria-label="Search the specs" spellcheck="false" autocomplete="off" />
+        <div class="api-pick-two">
+          <div class="api-pick-ms" role="group" aria-label="Microservices"></div>
+          <div class="api-pick-files" role="group" aria-label="The specs of the microservice"></div>
+        </div>
+        <div class="action-row api-pick-foot">
+          <span class="api-pick-status tool-hint" aria-live="polite"></span>
+          <span class="mv-gap"></span>
+          <button type="button" class="btn api-pick-rescan" title="Look in the folders again">Scan again</button>
+          <button type="button" class="btn api-pick-cancel">Cancel</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    const searchBox = modal.querySelector('.api-pick-search');
+    searchBox.addEventListener('input', drawPick);
+    searchBox.addEventListener('keydown', (e) => {
+      const first = modal.querySelector('.api-pick-file:not(:disabled)');
+      if (e.key === 'ArrowDown' && first) {
+        e.preventDefault();
+        first.focus();
+      } else if (e.key === 'Enter' && first) {
+        e.preventDefault();
+        first.click();
+      }
+    });
+    // up and down in a list, left and right from one list to the other
+    modal.querySelector('.api-pick-two').addEventListener('keydown', (e) => {
+      const list = e.target.closest('.api-pick-ms, .api-pick-files');
+      if (!list || !['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+      e.preventDefault();
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        const other = modal.querySelector(e.key === 'ArrowLeft' ? '.api-pick-ms .active' : '.api-pick-file:not(:disabled)');
+        if (other) other.focus();
+        return;
+      }
+      const items = [...list.querySelectorAll('button:not(:disabled)')];
+      const at = items.indexOf(document.activeElement);
+      if (at === 0 && e.key === 'ArrowUp' && list.classList.contains('api-pick-files')) searchBox.focus();
+      else if (items.length) items[Math.max(0, Math.min(items.length - 1, at + (e.key === 'ArrowDown' ? 1 : -1)))].focus();
+    });
+    modal.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      closePick();
+    });
+    modal.addEventListener('mousedown', (e) => {
+      if (e.target === modal) closePick();
+    });
+    modal.querySelector('.api-pick-cancel').addEventListener('click', closePick);
+    modal.querySelector('.api-pick-rescan').addEventListener('click', () => scanPick(true));
+    selectionCopyMenu(modal);
+    return modal;
+  };
+  const pickWords = () => pickModal().querySelector('.api-pick-search').value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  // a spec matches when each word of the search is in the microservice's name or in the file's name, path, title, version
+  const pickMatches = (s, f, words) => {
+    const text = [s.name, f.name, f.rel, f.title, f.version, f.spec].join(' ').toLowerCase();
+    return words.every((w) => text.includes(w));
+  };
+  const loadable = (f) => !f.error && !f.part && f.spec;
+  function drawPick() {
+    const modal = pickModal();
+    const msBox = modal.querySelector('.api-pick-ms');
+    const filesBox = modal.querySelector('.api-pick-files');
+    const status = modal.querySelector('.api-pick-status');
+    if (!pickScan) return;
+    const words = pickWords();
+    const services = pickScan.filter((s) => !s.missing).map((s) => ({ s, files: s.files.filter((f) => pickMatches(s, f, words)) }));
+    const shown = words.length ? services.filter((x) => x.files.length) : services;
+    const specs = pickScan.reduce((n, s) => n + s.files.filter(loadable).length, 0);
+    status.textContent = words.length
+      ? `${plural(shown.reduce((n, x) => n + x.files.length, 0), 'file')} found in ${plural(shown.length, 'microservice')}`
+      : `${plural(specs, 'spec')} in ${plural(services.filter((x) => x.files.some(loadable)).length, 'microservice')}`;
+    if (!shown.some((x) => x.s.path === pickMs)) pickMs = (shown.find((x) => x.files.some(loadable)) || shown[0] || { s: {} }).s.path || '';
+    const hadFocus = msBox.contains(document.activeElement);
+    msBox.textContent = '';
+    for (const x of shown) {
+      const b = tEl('button', `api-pick-ms-item${x.s.path === pickMs ? ' active' : ''}${x.files.length ? '' : ' empty'}`);
+      b.type = 'button';
+      b.setAttribute('aria-pressed', String(x.s.path === pickMs));
+      b.append(anMsTag(x.s), tEl('span', 'api-pick-count', String(x.files.filter(loadable).length)));
+      b.title = `${x.s.name}: ${plural(x.files.filter(loadable).length, 'spec')}`;
+      b.addEventListener('click', () => {
+        pickMs = x.s.path;
+        drawPick();
+        const now = msBox.querySelector('.active');
+        if (now) now.focus();
+      });
+      msBox.appendChild(b);
+    }
+    if (hadFocus && msBox.querySelector('.active')) msBox.querySelector('.active').focus();
+    if (!shown.length) msBox.appendChild(tEl('div', 'api-pick-note', words.length ? 'No microservice has a match' : 'No microservice in your list'));
+    filesBox.textContent = '';
+    const chosen = shown.find((x) => x.s.path === pickMs);
+    if (!chosen) return;
+    if (!chosen.files.length) {
+      filesBox.appendChild(tEl('div', 'api-pick-note', `No spec found in ${chosen.s.name}: the Analysis page's Folders say where they are looked for.`));
+      return;
+    }
+    for (const f of chosen.files) {
+      const ok = loadable(f);
+      const b = tEl('button', `api-pick-file${ok ? '' : ' off'}`);
+      b.type = 'button';
+      b.disabled = !ok;
+      b.append(tEl('span', 'api-pick-name', f.name), tEl('span', 'api-pick-kind', f.spec || (f.part ? 'Part of a spec' : '')));
+      b.appendChild(tEl('span', 'api-pick-rel', f.rel));
+      const about = f.error || (f.part ? 'Models another spec points to: not a spec by itself' : [f.title, f.version].filter(Boolean).join(' · '));
+      if (about) b.appendChild(tEl('span', `api-pick-about${f.error ? ' error' : ''}`, about));
+      if (ok) {
+        b.title = `Into ${pickSide.title}: ${chosen.s.name} / ${f.rel}`;
+        b.addEventListener('click', () => takeSpec(chosen.s, f));
+      }
+      filesBox.appendChild(b);
+    }
+  }
+  const scanPick = async (force = false) => {
+    const modal = pickModal();
+    pickScan = null;
+    modal.querySelector('.api-pick-ms').textContent = '';
+    modal.querySelector('.api-pick-files').textContent = '';
+    modal.querySelector('.api-pick-status').textContent = `Looking for specs in ${plural(repos.length, 'microservice')}...`;
+    modal.querySelector('.api-pick-rescan').disabled = true;
+    const r = await swaggerScan(force);
+    modal.querySelector('.api-pick-rescan').disabled = false;
+    if (modal.classList.contains('hidden')) return;
+    if (r.error) {
+      modal.querySelector('.api-pick-status').textContent = r.error;
+      return;
+    }
+    pickScan = r.services;
+    drawPick();
+  };
+  const takeSpec = async (s, f) => {
+    const side = pickSide;
+    const status = pickModal().querySelector('.api-pick-status');
+    status.textContent = `Reading ${f.rel}...`;
+    const r = await window.analysis.read(s.path, f.rel);
+    if (side !== pickSide) return;
+    if (r.error) {
+      status.textContent = r.error;
+      return;
+    }
+    side.area.value = r.text;
+    setFrom(side, `${s.name} / ${f.rel}`, { ms: s.name, path: s.path, file: f.rel });
+    closePick();
+    compare();
+  };
+  const pickSpec = (side) => {
+    const modal = pickModal();
+    pickSide = side;
+    const other = side === before ? after : before;
+    // the microservice this side (or the other one) came from, else the one open on the Git page
+    pickMs = side.msPath || other.msPath || currentRepo || '';
+    modal.querySelector('.api-pick-for').textContent = `into ${side.title}`;
+    modal.querySelector('.api-pick-search').value = '';
+    modal.classList.remove('hidden');
+    modal.querySelector('.api-pick-search').focus();
+    scanPick();
+  };
+  function closePick() {
+    const modal = $('#apiPickModal');
+    if (!modal || modal.classList.contains('hidden')) return;
+    modal.classList.add('hidden');
+    if (pickSide) pickSide.fromMs.focus();
+    pickSide = null;
+  }
+
   compare();
   return {
     el: box,
     focus: before.area,
-    // two specs from elsewhere (the Analysis page), and where each one is from
-    fill(a, b, aName, bName) {
+    // two specs from elsewhere (the Analysis page), and where each one is from: a name, or a microservice's
+    // { ms, path, file }
+    fill(a, b, aFrom, bFrom) {
       before.area.value = a;
       after.area.value = b;
-      before.source = aName || '';
-      after.source = bName || '';
+      const set = (side, from) => (from && typeof from === 'object' ? setFrom(side, `${from.ms} / ${from.file}`, from) : setFrom(side, from || ''));
+      set(before, aFrom);
+      set(after, bFrom);
       compare();
     },
   };
 }
 
-// Opens Compare APIs with two specs in it: the old one (Before) and the new one (After).
-function openInApiCompare(a, b, aName, bName) {
+// Opens Compare APIs with two specs in it: the old one (Before) and the new one (After), and where each is from.
+function openInApiCompare(a, b, aFrom, bFrom) {
   setMode('tools');
   showTool('apidiff');
-  builtTools.get('apidiff').fill(a, b, aName, bName);
+  builtTools.get('apidiff').fill(a, b, aFrom, bFrom);
 }
 
 // -- Compare JSON --

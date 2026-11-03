@@ -19,7 +19,7 @@ const { TodoStore } = require('./todos');
 const { MyCommands } = require('./my-commands');
 const { RepoGroups } = require('./repo-groups');
 const { registerTools } = require('./tools');
-const { compareSpecs } = require('./api-diff');
+const { compareSpecs, specPart } = require('./api-diff');
 const { registerAnalysis } = require('./analysis');
 const { registerSearch } = require('./search');
 const { registerCardWindows } = require('./card-windows');
@@ -386,6 +386,14 @@ function registerApiCompare() {
   ipcMain.handle('tools-api-compare', (_, before, after) => {
     try {
       return compareSpecs(String(before || ''), String(after || ''));
+    } catch (e) {
+      return { error: e.message };
+    }
+  });
+  // one endpoint or model as each spec has it (null on the side that does not have it), to show them side by side
+  ipcMain.handle('tools-api-part', (_, before, after, kind, key) => {
+    try {
+      return { before: specPart(String(before || ''), kind, key), after: specPart(String(after || ''), kind, key) };
     } catch (e) {
       return { error: e.message };
     }

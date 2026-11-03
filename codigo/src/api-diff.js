@@ -396,4 +396,28 @@ function compareSpecs(beforeText, afterText) {
   };
 }
 
-module.exports = { compareSpecs, parseSpec };
+// The part of a spec one endpoint or one model of the comparison is, as the spec has it: { "/pets/{id}": { get } } (with
+// the parameters of the path) or { Pet }; in YAML, or in JSON for a JSON spec. null when the spec has no such part.
+function specPart(text, kind, key) {
+  const doc = parseSpec(text, 'The spec');
+  let part = null;
+  if (kind === 'model') {
+    const models = modelsOf(doc);
+    if (Object.prototype.hasOwnProperty.call(models, key)) part = { [key]: models[key] };
+  } else {
+    const k = String(key || '');
+    const method = k.split(' ')[0].toLowerCase();
+    const shape = k.slice(k.indexOf(' ') + 1);
+    const deref = makeDeref(doc);
+    for (const [p, raw] of Object.entries(doc.paths || {})) {
+      const item = deref(raw);
+      if (p.replace(/\{[^}]*\}/g, '{}') !== shape || !item[method] || typeof item[method] !== 'object') continue;
+      part = { [p]: { ...(Array.isArray(item.parameters) ? { parameters: item.parameters } : {}), [method]: item[method] } };
+      break;
+    }
+  }
+  if (!part) return null;
+  return String(text).trim().startsWith('{') ? JSON.stringify(part, null, 2) : yaml.dump(part, { lineWidth: -1, noRefs: true }).replace(/\n$/, '');
+}
+
+module.exports = { compareSpecs, parseSpec, specPart };

@@ -8934,21 +8934,32 @@ label.file-item {
 .api-item.flash {
   box-shadow: 0 0 0 3px var(--accent-ring);
 }
-.api-item-head {
+/* the line of an endpoint or model: the part that opens it, and Before / After next to it */
+.api-item-top {
   display: flex;
   align-items: center;
+}
+.api-item-top:hover {
+  background: var(--bg-hover);
+}
+.api-item-head {
+  display: flex;
+  flex: 1;
+  align-items: center;
   gap: 10px;
-  width: 100%;
+  min-width: 0;
   padding: 8px 12px;
-  border: none;
-  background: none;
   color: var(--text);
-  font: inherit;
-  text-align: left;
   cursor: pointer;
 }
-.api-item-head:hover {
-  background: var(--bg-hover);
+.api-item-head:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 9px;
+}
+.api-code-btn {
+  flex: none;
+  margin-right: 10px;
 }
 .api-chevron {
   flex: none;
@@ -9074,6 +9085,226 @@ label.file-item {
   color: var(--accent);
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+/* every text of Compare APIs and of its popups can be selected and copied */
+.api-tool,
+.api-code-card,
+.api-pick-card {
+  user-select: text;
+}
+/* Before / After: an endpoint or model of both specs side by side, the microservice of each on top */
+.api-code-card {
+  display: flex;
+  flex-direction: column;
+  width: min(1240px, 96vw);
+  max-width: none;
+  height: 88vh;
+  padding: 0;
+  overflow: hidden;
+}
+.api-code-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-card h3.api-code-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+}
+.api-code-title .api-path,
+.api-code-title .api-model-name {
+  max-width: none;
+  font-size: var(--fs-body);
+}
+.api-code-kind {
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+.api-code-chips {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+.api-code-count {
+  flex: none;
+}
+.api-code-models {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.api-code-cols > div {
+  padding: 6px 12px;
+}
+.api-code-file {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+strong.api-code-file {
+  color: var(--text);
+  font-family: var(--font-ui);
+}
+.api-code-none {
+  margin-left: auto;
+  font-style: italic;
+}
+.api-code-copy {
+  flex: none;
+  margin-left: auto;
+  padding: 1px 8px;
+  font-size: var(--fs-caption);
+}
+.api-code-msg {
+  padding: 10px 14px;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--fs-small);
+}
+.api-code-msg.error {
+  color: var(--red);
+}
+.api-code-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+}
+/* From microservice: the microservices on the left, the specs of the one chosen on the right, the search on top */
+.api-pick-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(880px, 94vw);
+  max-width: none;
+  height: min(640px, 86vh);
+}
+.api-pick-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.settings-card .api-pick-head h3 {
+  margin: 0;
+}
+.api-pick-two {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(180px, 34%) minmax(0, 1fr);
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.api-pick-ms,
+.api-pick-files {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  padding: 4px;
+  overflow-y: auto;
+}
+.api-pick-ms {
+  border-right: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+.api-pick-ms-item,
+.api-pick-file {
+  flex: none;
+  width: 100%;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.api-pick-ms-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+}
+.api-pick-ms-item .an-ms-tag {
+  min-width: 0;
+}
+.api-pick-ms-item:hover,
+.api-pick-file:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.api-pick-ms-item.active {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.api-pick-ms-item.empty {
+  opacity: 0.6;
+}
+.api-pick-count {
+  flex: none;
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: var(--fs-caption);
+}
+.api-pick-file {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 10px;
+  padding: 7px 10px;
+}
+.api-pick-file:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+.api-pick-name {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.api-pick-kind {
+  color: var(--text-dim);
+  font-size: var(--fs-caption);
+}
+.api-pick-rel {
+  grid-column: 1 / -1;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  overflow-wrap: anywhere;
+}
+.api-pick-about {
+  grid-column: 1 / -1;
+  color: var(--text-dim);
+  font-size: var(--fs-small);
+}
+.api-pick-about.error {
+  color: var(--red);
+}
+.api-pick-note {
+  padding: 14px 10px;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+.api-pick-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
 }
 .tool-badge {
   display: inline-block;

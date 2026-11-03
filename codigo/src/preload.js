@@ -253,6 +253,7 @@ contextBridge.exposeInMainWorld('tools', {
   apiOpen: () => ipcRenderer.invoke('tools-api-open'),
   apiFetch: (url) => ipcRenderer.invoke('tools-api-fetch', url),
   apiCompare: (before, after) => ipcRenderer.invoke('tools-api-compare', before, after),
+  apiPart: (before, after, kind, key) => ipcRenderer.invoke('tools-api-part', before, after, kind, key),
   convertConfig: (text, from, to) => ipcRenderer.invoke('tools-config', text, from, to),
   ports: (port) => ipcRenderer.invoke('tools-ports', port),
   endProcess: (pid) => ipcRenderer.invoke('tools-end-process', pid),
