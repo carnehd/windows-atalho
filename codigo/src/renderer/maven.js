@@ -463,7 +463,8 @@ function formatDuration(ms) {
 function setMvnOutput(text) {
   const out = $('#mvnOutput');
   const clean = text.replace(ANSI, '');
-  out.textContent = clean;
+  mvnRaw = clean;
+  showMvnOutput();
   out.scrollTop = out.scrollHeight;
   // the modules are read again from the whole output (no times for what was already building)
   resetMvnModules();
@@ -476,9 +477,165 @@ function appendMvnOutput(text) {
   const out = $('#mvnOutput');
   const atBottom = out.scrollHeight - out.scrollTop - out.clientHeight < 40;
   const clean = text.replace(ANSI, '');
-  out.textContent = (out.textContent + clean).slice(-MAX_OUTPUT_CHARS);
+  mvnRaw = (mvnRaw + clean).slice(-MAX_OUTPUT_CHARS);
+  const s = mvnTail + clean;
+  const cut = mvnFormatOn ? s.lastIndexOf('\n') + 1 : 0;
+  if (!cut) {
+    if (mvnFormatOn) mvnTail = s;
+    mvnOutAppend(clean);
+  } else {
+    // the line shown as it came, now ended, formatted with the lines after it
+    const f = formatLogLines(s.slice(0, cut));
+    mvnOutCutEnd(mvnTail.length);
+    mvnTail = s.slice(cut);
+    mvnOutAppend(f.text + mvnTail, f.marks);
+  }
+  mvnOutTrim();
   if (atBottom) out.scrollTop = out.scrollHeight;
   if (feedMvnModules(clean, true)) renderMvnModules();
+  mvnFindLater();
+}
+
+// -- The output in blocks of whole lines, about 20 000 characters each: what comes goes into the last one, so the page
+// lays out that one again and not the whole output (400 000 characters of it took tens of milliseconds a line). The
+// search, the steps and the modules read places in the output across them (mvnOutRange). --
+const MVN_BLOCK = 20000;
+let mvnOutLength = 0;
+
+function mvnOutClear() {
+  $('#mvnOutput').textContent = '';
+  mvnOutLength = 0;
+}
+
+// text at the end of the output, with the marks of Format in it ([start, end, kind] from the start of the text): a
+// new block once the last one is full and ends a line, so a line is never split between two
+function mvnOutAppend(text, marks) {
+  const out = $('#mvnOutput');
+  const hl = marks && marks.length ? mvnFmtHighlights() : null;
+  let k = 0;
+  for (let at = 0; at < text.length; ) {
+    let block = out.lastElementChild;
+    if (!block || (block.firstChild.length >= MVN_BLOCK && block.firstChild.data.endsWith('\n'))) {
+      block = document.createElement('span');
+      block.className = 'mvn-block';
+      block.appendChild(document.createTextNode(''));
+      out.appendChild(block);
+    }
+    const node = block.firstChild;
+    const room = MVN_BLOCK - node.length;
+    let end = text.length;
+    if (end - at > room) {
+      const nl = text.indexOf('\n', at + Math.max(0, room - 1));
+      if (nl !== -1) end = nl + 1;
+    }
+    const base = node.length - at;
+    node.appendData(text.slice(at, end));
+    // a mark is in one line, so in one block
+    for (; hl && k < marks.length && marks[k] < end; k += 3) {
+      const r = new Range();
+      r.setStart(node, marks[k] + base);
+      r.setEnd(node, marks[k + 1] + base);
+      hl[marks[k + 2]].add(r);
+    }
+    at = end;
+  }
+  mvnOutLength += text.length;
+}
+
+// the last n characters off (the line not ended yet: all of it in the last block)
+function mvnOutCutEnd(n) {
+  const block = $('#mvnOutput').lastElementChild;
+  if (!block || !n) return;
+  const node = block.firstChild;
+  const cut = Math.min(n, node.length);
+  node.deleteData(node.length - cut, cut);
+  mvnOutLength -= cut;
+  if (!node.length) block.remove();
+}
+
+// over the most the output keeps: its first blocks go (and the colours in them); one line longer than that, cut
+function mvnOutTrim() {
+  const out = $('#mvnOutput');
+  let gone = false;
+  while (mvnOutLength > MAX_OUTPUT_CHARS && out.children.length > 1) {
+    mvnOutLength -= out.firstElementChild.firstChild.length;
+    out.firstElementChild.remove();
+    gone = true;
+  }
+  if (mvnOutLength > MAX_OUTPUT_CHARS * 1.5) {
+    const node = out.firstElementChild.firstChild;
+    node.deleteData(0, mvnOutLength - MAX_OUTPUT_CHARS);
+    mvnOutLength = node.length;
+    gone = true;
+  }
+  if (gone && mvnFmtMarks) Object.values(mvnFmtMarks).forEach((h) => h.forEach((r) => r.collapsed && h.delete(r)));
+}
+
+// characters from to to of the output (in one line), as a range; null when the output is shorter
+function mvnOutRange(from, to) {
+  let at = 0;
+  for (const block of $('#mvnOutput').children) {
+    const node = block.firstChild;
+    if (from < at + node.length) {
+      const r = new Range();
+      r.setStart(node, from - at);
+      r.setEnd(node, Math.min(node.length, to - at));
+      return r;
+    }
+    at += node.length;
+  }
+  return null;
+}
+
+// -- Format (the { } over the output): JSON, SQL and XML on lines of their own, in colour (log-format.js). The output
+// as it came is kept, so switching it off or on shows it again from that. While it comes, a line is formatted once it
+// ends (till then it is shown as it came); the colours are CSS highlights on the text, kept as more comes. --
+const MVN_FORMAT_KEY = 'mvnFormat';
+const MVN_FMT_KINDS = ['key', 'str', 'num', 'kw'];
+let mvnRaw = '';
+let mvnTail = ''; // with Format on, the last line, not ended yet, as it came at the end of the output
+let mvnFmtMarks = null; // kind → Highlight
+let mvnFormatOn = (() => {
+  try {
+    return localStorage.getItem(MVN_FORMAT_KEY) !== '0';
+  } catch {
+    return true;
+  }
+})();
+
+function mvnFmtHighlights() {
+  if (!mvnFmtMarks && window.CSS && CSS.highlights) {
+    mvnFmtMarks = Object.fromEntries(MVN_FMT_KINDS.map((k) => [k, new Highlight()]));
+    MVN_FMT_KINDS.forEach((k) => CSS.highlights.set(`mvn-fmt-${k}`, mvnFmtMarks[k]));
+  }
+  return mvnFmtMarks;
+}
+
+function showMvnOutput() {
+  if (mvnFmtMarks) Object.values(mvnFmtMarks).forEach((h) => h.clear());
+  mvnOutClear();
+  mvnTail = '';
+  if (!mvnFormatOn) mvnOutAppend(mvnRaw);
+  else {
+    const cut = mvnRaw.lastIndexOf('\n') + 1;
+    const f = formatLogLines(mvnRaw.slice(0, cut));
+    mvnTail = mvnRaw.slice(cut);
+    mvnOutAppend(f.text + mvnTail, f.marks);
+  }
+  mvnOutTrim();
+}
+
+function setMvnFormat(on) {
+  mvnFormatOn = on;
+  try {
+    localStorage.setItem(MVN_FORMAT_KEY, on ? '1' : '0');
+  } catch {
+    // as it is for now
+  }
+  const out = $('#mvnOutput');
+  const atBottom = out.scrollHeight - out.scrollTop - out.clientHeight < 40;
+  showMvnOutput();
+  if (atBottom) out.scrollTop = out.scrollHeight;
   mvnFindLater();
 }
 
@@ -499,8 +656,7 @@ function mvnFindLater() {
 function mvnFindRun({ fresh = false } = {}) {
   clearTimeout(mvnFindTimer);
   const q = $('#mvnFind').value;
-  const node = $('#mvnOutput').firstChild;
-  const text = node ? node.data.toLowerCase() : '';
+  const text = $('#mvnOutput').textContent.toLowerCase();
   const hits = [];
   if (q) {
     const word = q.toLowerCase();
@@ -521,20 +677,23 @@ function mvnFindPaint(scroll) {
   $('#mvnFindNext').disabled = hits.length < 2;
   if (!window.CSS || !CSS.highlights) return;
   const out = $('#mvnOutput');
-  const node = out.firstChild;
   const others = [];
   let current = null;
-  if (node && q) {
+  if (q) {
     hits.forEach((i, k) => {
-      const r = new Range();
-      r.setStart(node, i);
-      r.setEnd(node, Math.min(node.length, i + q.length));
+      const r = mvnOutRange(i, i + q.length);
+      if (!r) return;
       if (k === at) current = r;
       else others.push(r);
     });
   }
-  CSS.highlights.set('mvn-find', new Highlight(...others));
-  CSS.highlights.set('mvn-find-current', new Highlight(...(current ? [current] : [])));
+  // over the colours of Format
+  const all = new Highlight(...others);
+  const one = new Highlight(...(current ? [current] : []));
+  all.priority = 1;
+  one.priority = 2;
+  CSS.highlights.set('mvn-find', all);
+  CSS.highlights.set('mvn-find-current', one);
   if (scroll && current) {
     const top = current.getBoundingClientRect().top - out.getBoundingClientRect().top;
     out.scrollTop += top - out.clientHeight / 2;
@@ -821,13 +980,9 @@ function renderMvnSteps() {
 // The output scrolled to the line where the step starts ("▶ 2/5").
 function scrollToMvnStep(n, total) {
   const out = $('#mvnOutput');
-  const node = out.firstChild;
-  if (!node) return;
-  const at = node.data.lastIndexOf(`▶ ${n}/${total} `);
-  if (at === -1) return;
-  const range = document.createRange();
-  range.setStart(node, at);
-  range.setEnd(node, Math.min(node.length, at + 1));
+  const at = out.textContent.lastIndexOf(`▶ ${n}/${total} `);
+  const range = at === -1 ? null : mvnOutRange(at, at + 1);
+  if (!range) return;
   out.scrollTop += range.getBoundingClientRect().top - out.getBoundingClientRect().top - 8;
 }
 
@@ -837,11 +992,8 @@ function scrollToMvnModule(x) {
   const text = out.textContent;
   const from = Math.max(0, text.lastIndexOf('Reactor Build Order:'));
   const at = text.indexOf(`Building ${x.name} `, from);
-  const node = out.firstChild;
-  if (at === -1 || !node) return;
-  const range = document.createRange();
-  range.setStart(node, at);
-  range.setEnd(node, Math.min(node.length, at + 1));
+  const range = at === -1 ? null : mvnOutRange(at, at + 1);
+  if (!range) return;
   const top = range.getBoundingClientRect().top - out.getBoundingClientRect().top;
   out.scrollTop += top - 8;
 }
@@ -1948,6 +2100,8 @@ function setupMaven() {
   });
   $('#mvnRestartBtn').addEventListener('click', runChosen);
   setupMvnFind();
+  $('#mvnFormat').checked = mvnFormatOn;
+  $('#mvnFormat').addEventListener('change', () => setMvnFormat($('#mvnFormat').checked));
   $('#mvnCustom').addEventListener('input', renderMvnPreview);
   $('#mvnCustom').addEventListener('keydown', (e) => e.key === 'Enter' && runChosen());
   renderMvnPreview();

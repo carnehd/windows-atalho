@@ -442,7 +442,7 @@
                 </button>
               </div>
             </div>
-            <!-- the output, and over it what goes with it: search, how the last run went, a separate window, Clear -->
+            <!-- the output, and over it what goes with it: search, how the last run went, Format, a separate window, Clear -->
             <div class="mvn-console">
               <div class="mvn-console-head">
                 <!-- search in the output: the matches marked, Enter / Shift+Enter between them, Ctrl+F (Cmd+F) to get here -->
@@ -455,6 +455,8 @@
                 </span>
                 <span id="mvnStatus" class="mvn-status">Idle</span>
                 <span id="mvnWrapper" class="mvn-wrapper hidden">using mvnw</span>
+                <!-- Format: JSON, SQL and XML of a line on lines of their own, in colour (log-format.js) -->
+                <label class="mvn-ext" title="Format JSON, SQL and XML in the output: on lines of their own, indented, in colour (the values as they came)"><input id="mvnFormat" type="checkbox" checked aria-label="Format JSON, SQL and XML in the output" /><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4a2 2 0 0 0 -2 2v3a2 3 0 0 1 -2 3a2 3 0 0 1 2 3v3a2 2 0 0 0 2 2"/><path d="M17 4a2 2 0 0 1 2 2v3a2 3 0 0 0 2 3a2 3 0 0 0 -2 3v3a2 2 0 0 1 -2 2"/></svg></label>
                 <label class="mvn-ext" title="Opens a separate window (PowerShell on Windows, Terminal on Mac) instead of showing the output here"><input id="mvnExternal" type="checkbox" aria-label="Run in a separate window" /><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 9l3 3l-3 3"/><path d="M13 15h3"/><path d="M3 6a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2z"/></svg></label>
                 <button id="mvnClearBtn" class="mvn-head-btn" type="button" title="Clear the output" aria-label="Clear the output"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 20h-10.5l-4.21 -4.3a1 1 0 0 1 0 -1.41l10 -10a1 1 0 0 1 1.41 0l5 5a1 1 0 0 1 0 1.41l-9.2 9.3"/><path d="M18 13.3l-6.3 -6.3"/></svg></button>
               </div>
@@ -1216,6 +1218,7 @@
   <script src="mvn-values.js"></script>
   <script src="mvn-env.js"></script>
   <script src="mvn-container.js"></script>
+  <script src="log-format.js"></script>
   <script src="maven.js"></script>
   <script src="bruno/state.js"></script>
   <script src="bruno/view.js"></script>

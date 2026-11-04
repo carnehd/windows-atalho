@@ -5019,6 +5019,19 @@ body.card-window .vault-card {
   background-color: #e3b341;
   color: #151515;
 }
+/* Format (log-format.js): the parts of JSON, SQL and XML, in the colours of a dark editor (the output is always dark) */
+::highlight(mvn-fmt-key) {
+  color: #9cdcfe;
+}
+::highlight(mvn-fmt-str) {
+  color: #ce9178;
+}
+::highlight(mvn-fmt-num) {
+  color: #b5cea8;
+}
+::highlight(mvn-fmt-kw) {
+  color: #569cd6;
+}
 .mvn-wrapper {
   font-size: var(--fs-caption);
   padding: 0 6px;
@@ -5136,7 +5149,7 @@ body.card-window .vault-card {
   color: #8b8a85;
   white-space: nowrap;
 }
-/* Separate window (a checkbox drawn as a button that stays pressed) and Clear */
+/* Format and Separate window (checkboxes drawn as buttons that stay pressed), and Clear */
 .mvn-ext,
 .mvn-head-btn {
   position: relative;
@@ -5202,6 +5215,10 @@ body.card-window .vault-card {
   white-space: pre-wrap;
   word-break: break-word;
   user-select: text;
+}
+/* the Maven output in blocks of whole lines (maven.js): only the last one is laid out again as more comes */
+.mvn-block {
+  display: block;
 }
 
 /* Favorite repos */
