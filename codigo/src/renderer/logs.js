@@ -1321,6 +1321,7 @@ function renderLogs(error, code) {
   const empty = $('#logsEmpty');
   empty.classList.remove('logs-error');
   const summary = $('#logsSummary');
+  $('#logsTestsBtn').disabled = Boolean(error) || !logsResult || !logsResult.hits.length;
   if (error || !logsResult) {
     summary.textContent = error ? 'Search failed' : '';
     empty.textContent = error || '';
@@ -1753,6 +1754,7 @@ function setupLogs() {
       closeLogsPopup();
     }
   }, true);
+  setupLogTests();
   renderLogsHead();
   renderLogsTabs();
   document.addEventListener('mousedown', (e) => {

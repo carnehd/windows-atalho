@@ -716,6 +716,7 @@
           <button id="logsGrafanaBtn" class="btn btn-sm" type="button">Log in to Grafana</button>
           <button id="logsLiveBtn" class="btn btn-sm hidden" type="button" title="Keep adding new test logs every few seconds, so the watches find new logs">Live test logs: off</button>
           <button id="logsGenerateBtn" class="btn btn-sm hidden" type="button" title="Write a new set of test logs for the last 7 days (replaces the current test logs)">Generate test logs</button>
+          <button id="logsTestsBtn" class="btn btn-sm" type="button" title="Make Bruno tests from the requests in these logs: the same request again, and checks that the answer is still the one in the logs" disabled>Bruno tests</button>
           <button id="logsConfigBtn" class="btn btn-sm" type="button" title="Open logs-config.json: source, address, credentials and field names">Config</button>
         </div>
         <div class="logs-table-wrap">
@@ -825,6 +826,45 @@
           <button id="logsPopupClose" class="close-btn" type="button" title="Close (Esc)" aria-label="Close">&#x2715;</button>
         </div>
         <div id="logsPopupBody" class="logs-popup-body"></div>
+      </div>
+    </div>
+
+    <!-- Logs: Bruno tests from the requests and responses in the logs (log-tests.js) -->
+    <div id="ltModal" class="settings-overlay hidden">
+      <div class="settings-card lt-card" role="dialog" aria-modal="true" aria-labelledby="ltTitle">
+        <div class="logs-trace-head">
+          <h3 id="ltTitle">Bruno tests from these logs</h3>
+          <span class="logs-trace-space"></span>
+          <button id="ltClose" class="close-btn" type="button" title="Close (Esc)" aria-label="Close">&#x2715;</button>
+        </div>
+        <div id="ltIntro" class="lt-intro"></div>
+        <div class="lt-where">
+          <label class="lt-field lt-field-wide"><span>Collection</span><select id="ltCollection" class="input"></select></label>
+          <label class="lt-field"><span>Folder</span><input id="ltFolder" class="input" spellcheck="false" /></label>
+          <div class="lt-field"><label for="ltBase">Address</label><input id="ltBase" class="input" spellcheck="false" autocomplete="off" title="Put before the path of each request: a variable of the collection's environments, or an address" /><div id="ltBases" class="lt-bases"></div></div>
+        </div>
+        <div class="lt-main">
+          <div class="lt-list-wrap">
+            <div class="lt-tabs" role="tablist" aria-label="Where the tests come from">
+              <button id="ltTabLogs" class="lt-tab on" type="button" role="tab" aria-selected="true" title="The requests of the logs, each with its response">From the logs <span id="ltTabLogsCount" class="lt-tab-count"></span></button>
+              <button id="ltTabMore" class="lt-tab" type="button" role="tab" aria-selected="false" title="What nobody tried yet: those requests with one change, actions in another order, what the code can answer">Not in the logs <span id="ltTabMoreCount" class="lt-tab-count"></span></button>
+            </div>
+            <label id="ltListHead" class="lt-list-head"><input id="ltAll" type="checkbox" /> <span id="ltCount"></span><span class="lt-list-order">in the order they came</span></label>
+            <div id="ltMoreHead" class="lt-more-head hidden"></div>
+            <div id="ltList" class="lt-list"></div>
+          </div>
+          <div class="lt-preview">
+            <div id="ltPreviewHead" class="lt-preview-head"></div>
+            <pre id="ltPreview" class="clip-formatted lt-preview-pre"></pre>
+          </div>
+        </div>
+        <div class="lt-foot">
+          <span id="ltLeft" class="lt-left"></span>
+          <span id="ltDone" class="lt-done hidden"></span>
+          <button id="ltOpen" class="btn btn-sm hidden" type="button" title="The repository's Bruno page, with these tests">Open in Bruno</button>
+          <button id="ltRun" class="btn btn-primary btn-sm hidden" type="button" title="The repository's Bruno page, running the folder of these tests">Run them in Bruno</button>
+          <button id="ltCreate" class="btn btn-primary btn-sm" type="button">Create tests</button>
+        </div>
       </div>
     </div>
 
@@ -1238,6 +1278,7 @@
   <script src="bruno/setup.js"></script>
   <script src="clipboard.js"></script>
   <script src="logs.js"></script>
+  <script src="log-tests.js"></script>
   <script src="containers.js"></script>
   <script src="logs-trace.js"></script>
   <script src="help.js"></script>

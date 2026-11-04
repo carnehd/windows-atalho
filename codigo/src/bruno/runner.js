@@ -60,6 +60,8 @@ function report(result) {
     asserts: checks(result.assertionResults, (a) => `${a.lhsExpr}: ${a.rhsExpr}`),
     tests: checks([...(result.preRequestTestResults || []), ...(result.testResults || []), ...(result.postResponseTestResults || [])], (t) => t.description),
   };
+  // the CLI says "pass" for a request it sent, even when one of its checks failed: then it failed
+  if (out.status === 'pass' && [...out.asserts, ...out.tests].some((c) => c.status === 'fail' || c.status === 'error')) out.status = 'fail';
   process.stdout.write(`\n${MARK}${JSON.stringify(out)}\n`);
 }
 

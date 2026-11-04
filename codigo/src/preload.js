@@ -334,6 +334,14 @@ contextBridge.exposeInMainWorld('logs', {
   onOpenWatch: (cb) => ipcRenderer.on('logs-open-watch', (_, id) => cb(id)),
 });
 
+contextBridge.exposeInMainWorld('logTests', {
+  find: (params) => ipcRenderer.invoke('logtests-find', params),
+  plan: (token, opts, previewId) => ipcRenderer.invoke('logtests-plan', token, opts, previewId),
+  create: (token, opts) => ipcRenderer.invoke('logtests-create', token, opts),
+  more: (token, opts) => ipcRenderer.invoke('logtests-more', token, opts),
+  tryThem: (token, opts, ids) => ipcRenderer.invoke('logtests-try', token, opts, ids),
+});
+
 contextBridge.exposeInMainWorld('clips', {
   list: () => ipcRenderer.invoke('clip-list'),
   copy: (id) => ipcRenderer.invoke('clip-copy', id),

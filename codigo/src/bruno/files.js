@@ -181,11 +181,12 @@ function makeFolders(root, rel) {
   return { dir, made };
 }
 
-// After the requests of a folder: the seq one past the highest there.
-function nextSeq(dir) {
+// After the requests of a folder: the seq one past the highest there (but those in `skip`, file names about to be
+// written over).
+function nextSeq(dir, skip = new Set()) {
   let max = 0;
   for (const name of fs.readdirSync(dir)) {
-    if (!name.endsWith('.bru') || name === 'folder.bru' || name === 'collection.bru') continue;
+    if (!name.endsWith('.bru') || name === 'folder.bru' || name === 'collection.bru' || skip.has(name)) continue;
     try {
       max = Math.max(max, seqOf(path.join(dir, name)));
     } catch {
@@ -195,11 +196,16 @@ function nextSeq(dir) {
   return max + 1;
 }
 
-async function writeRequest(file, json) {
+// A request's text as Bruno writes it; it reads back, or it is not one.
+async function bruText(json) {
   const L = await findLang();
   const text = L.jsonToBruV2(json);
-  L.bruToJsonV2(text); // it reads back, or nothing is written
-  writeWhole(file, text);
+  L.bruToJsonV2(text);
+  return text;
+}
+
+async function writeRequest(file, json) {
+  writeWhole(file, await bruText(json));
 }
 
 const readJson = async (file) => (await findLang()).bruToJsonV2(fs.readFileSync(file, 'utf8'));
@@ -336,4 +342,4 @@ async function deleteEnvironment(root, name) {
   return { success: true };
 }
 
-module.exports = { readRequest, saveRequest, duplicateRequest, renameRequest, moveRequest, makeFolders, keepRequest, deleteRequest, readEnvironments, saveEnvironment, deleteEnvironment };
+module.exports = { readRequest, saveRequest, duplicateRequest, renameRequest, moveRequest, makeFolders, nextSeq, bruText, writeRequest, keepRequest, deleteRequest, readEnvironments, saveEnvironment, deleteEnvironment };

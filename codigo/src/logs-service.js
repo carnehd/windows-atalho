@@ -662,6 +662,7 @@ function createLogsService({ dataDir, fetch, grafanaBrowser = null }) {
   const ERROR_SAMPLE = 2000;
   const TRACE_WINDOW_MS = 2 * 3600e3;
   const TRACE_MAX_LOGS = 1000;
+  const TESTS_MAX_LOGS = 3000;
   const MAX_SERVICES = 30;
 
   function loadConfig() {
@@ -1089,6 +1090,37 @@ function createLogsService({ dataDir, fetch, grafanaBrowser = null }) {
     return { total, newest };
   }
 
+  // For the Bruno tests made from the logs (log-tests.js): up to TESTS_MAX_LOGS logs of the search, newest first,
+  // whole (raw and json), with the trace ids they have.
+  async function forTests(params = {}) {
+    const { cfg, p, runs } = prepare(params);
+    const lists = await Promise.all(runs.map(async ({ spec, p: rp }) => {
+      if (cfg.source === 'local') return localMatches(spec, rp) || [];
+      return (await remoteSearch(cfg, spec, rp, { size: TESTS_MAX_LOGS })).hits;
+    }));
+    const all = newestFirst(lists);
+    const records = all.slice(0, TESTS_MAX_LOGS);
+    const traceIds = [...new Set(records.map((r) => String((r.json && r.json.traceId) || getField(r.raw, 'traceId') || '').trim()).filter((x) => /^[\w.:-]{6,128}$/.test(x)))];
+    return { records, traceIds, truncated: all.length > records.length || lists.some((l) => l.length >= TESTS_MAX_LOGS), maxLogs: TESTS_MAX_LOGS, from: p.from, to: p.to };
+  }
+
+  // Every log of these traces in every origin between from and to (the lines a search left out), oldest first.
+  async function byTraceIds(ids, from, to) {
+    const cfg = loadConfig();
+    const list = [...new Set((ids || []).map((x) => String(x || '').trim()).filter((x) => /^[\w.:-]{6,128}$/.test(x)))].slice(0, 400);
+    const specs = specsFor(cfg, 'both');
+    const out = [];
+    for (let i = 0; i < list.length; i += 40) {
+      const p = { query: list.slice(i, i + 40).map((x) => `"${x}"`).join(' OR '), from, to, filters: [] };
+      const lists = await Promise.all(specs.map(async (spec) => {
+        if (cfg.source === 'local') return (localMatches(spec, p) || []).slice(0, TRACE_MAX_LOGS);
+        return (await remoteSearch(cfg, spec, p, { size: TRACE_MAX_LOGS, sortOrder: 'asc' })).hits;
+      }));
+      out.push(...lists.flat());
+    }
+    return out.sort((a, b) => a.ts - b.ts);
+  }
+
   // Writes the generated logs to the OpenShift file and, when it is set up, the GCP one.
   function writeTestLogs(cfg, logs, append) {
     const { openshift, gcp } = originSpecs(cfg);
@@ -1209,7 +1241,7 @@ function createLogsService({ dataDir, fetch, grafanaBrowser = null }) {
     return { file: localFile(cfg), count: Object.values(counts).reduce((a, b) => a + b, 0), ...counts, from: Date.parse(logs[0]['@timestamp']), to: Date.parse(logs[logs.length - 1]['@timestamp']) };
   }
 
-  return { info, search, services, errorTypes, trace, count, generate, appendLiveTestLogs, settings, grafanaLoginBase, useBrowserLogin, grafanaCookieLogin, clearGrafanaCookie, grafanaCookieStatus, configFile };
+  return { info, search, services, errorTypes, trace, count, forTests, byTraceIds, generate, appendLiveTestLogs, settings, grafanaLoginBase, useBrowserLogin, grafanaCookieLogin, clearGrafanaCookie, grafanaCookieStatus, configFile };
 }
 
 module.exports = { createLogsService, generateLogs, parseQuery, compileQuery, esBody, esJsonTerms, normalize, errorTypeOf, envKeyOf, DEFAULT_CONFIG };

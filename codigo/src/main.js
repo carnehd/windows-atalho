@@ -35,6 +35,7 @@ const { stepBack } = require('./shell');
 const { registerSignInWindows } = require('./sign-in-window');
 const { registerClipboardHistory } = require('./clipboard-history');
 const { createLogsService } = require('./logs-service');
+const { registerLogTests } = require('./log-tests');
 const { createGrafanaBrowser } = require('./grafana-browser');
 const { registerLogWatches } = require('./logs-watches');
 const { startForegroundWatcher, detectIdeProject, resolveRepo } = require('./ide-detect');
@@ -555,6 +556,8 @@ app.whenReady().then(() => {
     },
   });
   registerSearch({ listRepos: listNamedRepos, isKnownRepo, openPath, revealPath });
+  // Logs > Bruno tests: the requests and responses of the logs as tests in a Bruno collection of a repository
+  registerLogTests({ logs, listRepos: listNamedRepos, isKnownRepo, fetch: (url, options) => net.fetch(url, options) });
   // Analysis > Calls between microservices: the folder of each one is the Maven page's, when chosen
   serviceMap = registerServiceMap({ listRepos: listNamedRepos, loadDir: (repoPath) => store.get('mavenDirs', {})[pathKey(String(repoPath))] });
   terminal = registerTerminal({ isKnownRepo, getWindow: () => mainWindow });
