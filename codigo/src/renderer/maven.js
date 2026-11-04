@@ -400,6 +400,7 @@ function renderMvnPreview() {
   // separate window
   ['#mvnTags', '#mvnOptionsBtn'].forEach((sel) => $(sel).classList.toggle('hidden', Boolean(macro) || container));
   $('#mvnMacroInfo').classList.toggle('hidden', !macro && !container);
+  $('#mvnBuildFirst').classList.toggle('hidden', !container);
   $('#mvnCmdline .mvn-prefix').textContent = macro ? 'macro' : 'mvn';
   $('#mvnCmdline .mvn-prefix').classList.toggle('hidden', container);
   $('#mvnMacroEditBtn').classList.toggle('hidden', !macro);
@@ -407,6 +408,7 @@ function renderMvnPreview() {
   $('#mvnExternal').closest('label').title = macro ? 'Macros run here, in the app' : container ? 'A container runs here, in the app' : 'Opens a separate window (PowerShell on Windows, Terminal on Mac) instead of showing the output here';
   if (container) {
     const summary = mvnContainerSummary(mvnContainerSpec);
+    $('#mvnBuildFirstBox').checked = !mvnContainerSpec || mvnContainerSpec.build !== false;
     $('#mvnMacroInfo').textContent = summary;
     $('#mvnMacroInfo').title = 'Run opens a dialog with the image, the port and the variables of the container';
     const bar = $('#mvnCmdline');
@@ -1837,6 +1839,18 @@ function setupMacroEditor() {
   $('#mvnMacroEditBtn').addEventListener('click', () => {
     const macro = chosenMacro();
     if (macro) openMacroEditor(macro);
+  });
+  // Build first on the bar (Start in container): saved for the repository, the dialog opens with it
+  $('#mvnBuildFirstBox').addEventListener('change', async () => {
+    const repo = mvnRepo;
+    if (!repo) return;
+    const on = $('#mvnBuildFirstBox').checked;
+    if (mvnContainerSpec) mvnContainerSpec = { ...mvnContainerSpec, build: on };
+    const r = await window.maven.containerBuild(repo, on);
+    if (repo !== mvnRepo) return;
+    if (r.error) toast(r.error, 'error');
+    else mvnContainerSpec = r.spec;
+    renderMvnPreview();
   });
 }
 

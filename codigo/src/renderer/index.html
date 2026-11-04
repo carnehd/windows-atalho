@@ -400,6 +400,8 @@
               <button id="mvnSavedEdit" class="mvn-add-option hidden" type="button" aria-haspopup="dialog" title="Change its name or its goals">Edit</button>
               <button id="mvnSavedDelete" class="mvn-add-option hidden" type="button" title="Take it out of My commands">Delete</button>
               <span id="mvnMacroInfo" class="mvn-macro-info hidden"></span>
+              <!-- Start in container: build the jar first, or run the newest one in target/ -->
+              <label id="mvnBuildFirst" class="mvn-build-first hidden" title="Build the jar first (mvn package -DskipTests). Off: the newest jar in target/ runs"><input id="mvnBuildFirstBox" type="checkbox" />Build first</label>
               <button id="mvnMacroEditBtn" class="mvn-add-option hidden" type="button" title="Change the steps of this macro">Edit</button>
               <span id="mvnTags" class="mvn-tags"></span>
               <button id="mvnOptionsBtn" class="mvn-add-option" type="button" aria-haspopup="true" aria-expanded="false" title="Add flags and pom.xml profiles">+ option</button>

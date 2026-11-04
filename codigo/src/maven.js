@@ -603,13 +603,16 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
       return { ...runEnv.EMPTY };
     }
   };
-  // What Start in container starts with: what was chosen for the repository last time, else the defaults.
+  // What Start in container starts with: what was chosen for the repository last time, else the defaults. Only Build
+  // first switched on the bar (never started): the variables still those of Env (vars null).
   const containerFor = (repoPath) => {
     const { dir } = chosenDir(repoPath);
     const defaults = containerDefaults(dir, portsFor(repoPath));
     try {
       const saved = loadContainer && loadContainer(repoPath);
-      return saved ? cleanContainerSpec({ ...defaults, ...saved }) : defaults;
+      if (!saved) return defaults;
+      const spec = cleanContainerSpec({ ...defaults, ...saved });
+      return Array.isArray(saved.vars) ? spec : { ...spec, vars: null };
     } catch {
       return defaults;
     }
@@ -1117,6 +1120,17 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
       const { spec, jar, name } = containerCall(repoPath, input, engineName);
       const values = spec.values ? envValues.cleanValues(valuesRequest && valuesRequest.values) : null;
       return { command: pastedCommand(name, containerArgs(spec, jar, values).args) };
+    } catch (e) {
+      return { error: e.message };
+    }
+  });
+
+  // Build first, switched on the bar: saved with the rest of what Start in container starts with.
+  ipcMain.handle('mvn-container-build', (_, repoPath, on) => {
+    try {
+      if (!isKnownRepo(repoPath)) throw new Error('Unknown repository');
+      saveContainer(repoPath, { ...(loadContainer(repoPath) || {}), build: Boolean(on) });
+      return { spec: containerFor(repoPath) };
     } catch (e) {
       return { error: e.message };
     }

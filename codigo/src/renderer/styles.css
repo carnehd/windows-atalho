@@ -10832,6 +10832,26 @@ strong.api-code-file {
   font-size: var(--fs-small);
   white-space: nowrap;
 }
+/* Start in container: Build first, switched on the bar */
+.mvn-build-first {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 5px;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.mvn-build-first:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.mvn-build-first input {
+  margin: 0;
+}
 /* a saved command chosen: its goals, after its name */
 .mvn-saved-info {
   min-width: 0;
