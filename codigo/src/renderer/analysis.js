@@ -6,6 +6,8 @@
 // toolButton, toolInput, toolCopy, debounce).
 const ANALYSES = [
   { id: 'swagger', title: 'Swagger files', sub: 'Find them, compare them', build: buildSwaggerAnalysis },
+  // calls-map.js
+  { id: 'calls', title: 'Calls between microservices', sub: 'Who calls whom, on a map', build: buildCallsAnalysis },
 ];
 
 // One scan of the folders serves the page; Scan again reads them again, and so does a change in the list of

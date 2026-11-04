@@ -27,6 +27,7 @@ const { registerMaven } = require('./maven');
 const { registerContainers } = require('./containers');
 const { registerTerminal } = require('./terminal');
 const { registerIdeOpen } = require('./ide-open');
+const { registerServiceMap } = require('./service-map');
 const { registerBruno } = require('./bruno');
 const { registerUpdates } = require('./updater');
 const { registerDb } = require('./db');
@@ -89,6 +90,7 @@ let windowMode = MODES.includes(store.get('uiState', {}).mode) ? store.get('uiSt
 let clipboardTimer = null;
 let pinned = false;
 let maven = null;
+let serviceMap = null;
 let containers = null;
 let terminal = null;
 let bruno = null;
@@ -553,9 +555,11 @@ app.whenReady().then(() => {
     },
   });
   registerSearch({ listRepos: listNamedRepos, isKnownRepo, openPath, revealPath });
+  // Analysis > Calls between microservices: the folder of each one is the Maven page's, when chosen
+  serviceMap = registerServiceMap({ listRepos: listNamedRepos, loadDir: (repoPath) => store.get('mavenDirs', {})[pathKey(String(repoPath))] });
   terminal = registerTerminal({ isKnownRepo, getWindow: () => mainWindow });
   registerIdeOpen({ isKnownRepo });
-  bruno = registerBruno({ isKnownRepo, getWindow: () => mainWindow, savedDir: path.join(DATA_DIR, 'saved-requests'), cliHome: path.join(DATA_DIR, 'bruno-cli') });
+  bruno = registerBruno({ isKnownRepo, getWindow: () => mainWindow, savedDir: path.join(DATA_DIR, 'saved-requests'), cliHome: path.join(DATA_DIR, 'bruno-cli'), onRequest: (url) => serviceMap && serviceMap.noteClient('Bruno', url) });
   registerDb({ dataDir: DATA_DIR });
   registerUpdates({ getWindow: () => mainWindow });
   maven = registerMaven({
@@ -614,6 +618,7 @@ app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   if (fgWatcher) fgWatcher.stop();
   if (logWatches) logWatches.stop();
+  if (serviceMap) serviceMap.stop();
   grafanaBrowser.close();
   if (containers) containers.stop();
 });

@@ -12904,3 +12904,63 @@ body.git-console-resizing * {
   color: var(--orange);
   font-weight: 700;
 }
+
+/* Analysis > Calls between microservices (calls-map.js): what watching is doing, the map (its natural size, scrolled
+   when wider than the page), its legend, and what the node chosen calls and is called by */
+.calls-tool { max-width: none; }
+.calls-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.calls-live { display: inline-flex; align-items: center; gap: 8px; padding: 5px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); font-size: var(--fs-small); color: var(--text-muted); }
+.calls-live b { color: var(--text); font-weight: 600; }
+.calls-pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px var(--green-soft); }
+.calls-live.calls-stopped .calls-pulse { background: var(--text-dim); box-shadow: none; }
+.calls-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.calls-seg-btn { padding: 5px 10px; border: none; border-right: 1px solid var(--border); background: none; color: var(--text-muted); font: inherit; font-size: var(--fs-small); cursor: pointer; }
+.calls-seg-btn:last-child { border-right: none; }
+.calls-seg-btn:hover { background: var(--bg-hover); }
+.calls-seg-btn.on { background: color-mix(in srgb, var(--accent) 16%, var(--bg)); color: var(--text); font-weight: 600; }
+.calls-seg-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.calls-grow { flex: 1; }
+.calls-notes { font-size: var(--fs-small); color: var(--yellow); }
+.calls-card { border: 1px solid var(--border); border-radius: 10px; background: var(--bg-surface); }
+.calls-scroll { overflow: auto; padding: 6px 6px 0; }
+.calls-svg { display: block; }
+.calls-col-title { fill: var(--text-dim); font-family: var(--font-ui); font-size: 11px; font-weight: 600; letter-spacing: 0.05em; }
+.calls-label { fill: var(--text-muted); font-family: var(--font-ui); font-size: 11px; }
+.calls-label.calls-warn-text { fill: var(--yellow); }
+.calls-node { cursor: pointer; outline: none; }
+.calls-node rect { fill: var(--bg); stroke: var(--border); stroke-width: 1.2; }
+.calls-node:hover rect { stroke: var(--text-dim); }
+.calls-node:focus-visible rect { stroke: var(--accent); stroke-width: 2; }
+.calls-node circle { fill: var(--mauve); }
+.calls-node.calls-run circle { fill: var(--green); }
+.calls-node.calls-client circle { fill: var(--accent); }
+.calls-node.calls-off { opacity: 0.75; }
+.calls-node.calls-off rect { stroke-dasharray: 5 4; }
+.calls-node.calls-off circle { fill: var(--text-dim); }
+.calls-node.calls-warn rect { stroke: var(--yellow); stroke-dasharray: 5 4; }
+.calls-node.calls-warn circle { fill: var(--yellow); }
+.calls-node.calls-selected rect { fill: color-mix(in srgb, var(--accent) 12%, var(--bg)); stroke: var(--accent); stroke-width: 2; }
+.calls-name { fill: var(--text); font-family: var(--font-mono); font-size: 13.5px; font-weight: 600; }
+.calls-sub { fill: var(--text-muted); font-family: var(--font-ui); font-size: 11.5px; }
+.calls-warn .calls-sub { fill: var(--yellow); }
+.calls-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 8px 12px 10px; border-top: 1px solid var(--border); font-size: var(--fs-caption); color: var(--text-muted); }
+.calls-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.calls-legend svg { flex: none; }
+.calls-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+.calls-empty { padding: 18px 16px; border: 1px dashed var(--border); border-radius: 10px; color: var(--text-muted); font-size: var(--fs-small); }
+.calls-detail { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; padding: 12px 14px; user-select: text; }
+.calls-detail.hidden { display: none; }
+.calls-hint { grid-column: 1 / -1; color: var(--text-muted); font-size: var(--fs-small); }
+.calls-detail-name { grid-column: 1 / -1; margin: 0 0 2px; font-family: var(--font-mono); font-size: var(--fs-body); }
+.calls-detail-name small { margin-left: 8px; font-family: var(--font-ui); font-size: var(--fs-small); font-weight: 400; color: var(--text-muted); }
+.calls-col-head { margin-top: 4px; font-size: var(--fs-caption); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-dim); }
+.calls-row { display: grid; grid-template-columns: 14px 1fr; gap: 2px 8px; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: var(--fs-small); }
+.calls-row:last-child { border-bottom: none; }
+.calls-row-icon { width: 14px; height: 2px; margin-top: 9px; background: var(--accent); }
+.calls-row-config .calls-row-icon { background: repeating-linear-gradient(90deg, var(--text-dim) 0 3px, transparent 3px 5px); }
+.calls-row-warn .calls-row-icon { background: repeating-linear-gradient(90deg, var(--yellow) 0 3px, transparent 3px 5px); }
+.calls-row-name { font-family: var(--font-mono); font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+.calls-row-warn .calls-row-name { color: var(--yellow); }
+.calls-row-sub { font-family: var(--font-ui); font-weight: 400; color: var(--text-muted); }
+.calls-why { grid-column: 2; font-size: var(--fs-caption); color: var(--text-muted); overflow-wrap: anywhere; }
+.calls-none { grid-column: 1 / -1; padding: 5px 0; }

@@ -33,9 +33,17 @@ async function dotEnvInGit(root) {
 
 // savedDir: the app's own folder of requests saved from here (Save in Git Quick); cliHome: where Install puts the Bruno
 // CLI
-function registerBruno({ isKnownRepo, getWindow, savedDir, cliHome }) {
+// onRequest: told the address of each request sent (Analysis > Calls between microservices shows Bruno calling it)
+function registerBruno({ isKnownRepo, getWindow, savedDir, cliHome, onRequest = null }) {
   useCliHome(cliHome);
   const send = (channel, data) => {
+    if (channel === 'bruno-result' && onRequest && data && data.result && data.result.request && data.result.request.url) {
+      try {
+        onRequest(String(data.result.request.url));
+      } catch {
+        // the map is not the run's business
+      }
+    }
     const win = getWindow();
     if (win && !win.isDestroyed()) win.webContents.send(channel, data);
   };

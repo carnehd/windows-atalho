@@ -245,6 +245,14 @@ contextBridge.exposeInMainWorld('analysis', {
   diff: (pairs) => ipcRenderer.invoke('an-diff', pairs),
 });
 
+// Analysis > Calls between microservices (service-map.js)
+contextBridge.exposeInMainWorld('calls', {
+  snapshot: () => ipcRenderer.invoke('calls-snapshot'),
+  watch: (on) => ipcRenderer.invoke('calls-watch', on),
+  clear: () => ipcRenderer.invoke('calls-clear'),
+  rescan: () => ipcRenderer.invoke('calls-rescan'),
+});
+
 contextBridge.exposeInMainWorld('search', {
   text: (options) => ipcRenderer.invoke('search-text', options),
   stop: () => ipcRenderer.invoke('search-stop'),
