@@ -644,6 +644,7 @@
           <button id="dbConnBtn" class="btn btn-sm btn-icon db-icon-btn" type="button" aria-haspopup="dialog" title="Connections: add one, change it, test it" aria-label="Connections"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z"/><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></svg></button>
           <button id="dbRefreshBtn" class="btn btn-sm btn-icon db-icon-btn" type="button" title="Read the schemas and tables again" aria-label="Refresh"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg></button>
           <span id="dbStatus" class="db-status" aria-live="polite"></span>
+          <button id="dbNewBtn" class="btn btn-sm" type="button" aria-haspopup="dialog" title="A database for a microservice in a PostgreSQL of this computer: its schema, a user that makes the tables and a user for the application">+ New database</button>
           <span class="db-ro" title="This page only reads: one SELECT, WITH, SHOW, EXPLAIN, VALUES or TABLE at a time, in a read only transaction">read only</span>
         </div>
         <div id="dbEmpty" class="db-empty hidden">
@@ -1252,6 +1253,7 @@
   <script src="db/db.js"></script>
   <script src="db/db-link.js"></script>
   <script src="db/db-conn.js"></script>
+  <script src="db/new-database.js"></script>
   <script src="vault.js"></script>
   <script src="todo.js"></script>
   <!-- before maven.js, which sets up its button when it loads -->

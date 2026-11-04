@@ -277,6 +277,16 @@ contextBridge.exposeInMainWorld('tools', {
   copySecret: (text) => ipcRenderer.invoke('tools-copy-secret', text),
 });
 
+contextBridge.exposeInMainWorld('newDb', {
+  targets: () => ipcRenderer.invoke('newdb-targets'),
+  preview: (values, where) => ipcRenderer.invoke('newdb-preview', values, where),
+  copy: (values, where, what) => ipcRenderer.invoke('newdb-copy', values, where, what),
+  pod: (where) => ipcRenderer.invoke('newdb-pod', where),
+  run: (id, values, where, adminPassword, confirmed) => ipcRenderer.invoke('newdb-run', id, values, where, adminPassword, confirmed),
+  stop: () => ipcRenderer.invoke('newdb-stop'),
+  onOutput: (cb) => ipcRenderer.on('newdb-output', (_, data) => cb(data)),
+});
+
 contextBridge.exposeInMainWorld('containers', {
   state: () => ipcRenderer.invoke('dk-state'),
   images: () => ipcRenderer.invoke('dk-images'),

@@ -374,6 +374,28 @@ async function engineCall() {
   return { name: s.engine, label: ENGINE_NAMES[s.engine], exe: executable(s.engine, env), env };
 }
 
+// For another page (New database on the Database page): the containers that run now, each with its environment
+// (POSTGRES_USER...). Returns { engine, label, running, error, list }.
+async function runningContainers() {
+  const s = await findEngine();
+  if (!s.engine) return { engine: null, running: false, error: NOT_INSTALLED, list: [] };
+  if (!s.running) return { engine: s.engine, label: ENGINE_NAMES[s.engine], running: false, error: `${ENGINE_NAMES[s.engine]} is not running`, list: [] };
+  const rows = (await list()).filter((c) => c.state === 'running');
+  const env = new Map();
+  if (rows.length) {
+    const r = await cli(['inspect', ...rows.map((c) => c.id)]);
+    try {
+      for (const c of JSON.parse(r.stdout)) {
+        const pairs = ((c.Config && c.Config.Env) || []).map((e) => [e.slice(0, e.indexOf('=')), e.slice(e.indexOf('=') + 1)]).filter(([k]) => k);
+        env.set(String(c.Id), Object.fromEntries(pairs));
+      }
+    } catch {
+      // without their environment then
+    }
+  }
+  return { engine: s.engine, label: ENGINE_NAMES[s.engine], running: true, list: rows.map((c) => ({ ...c, env: env.get(c.id) || {} })) };
+}
+
 // "docker run -d ..." from the form, every part checked. Returns the arguments after "docker".
 function runArgs(spec = {}) {
   const image = String(spec.image || '').trim();
@@ -666,4 +688,4 @@ function registerContainers({ getWindow }) {
   };
 }
 
-module.exports = { registerContainers, parsePorts, parseLabels, runArgs, dockerError, tokenize, details, containerRow, shownCommand, typedArgs, engineCall, IMAGE, REF };
+module.exports = { registerContainers, parsePorts, parseLabels, runArgs, dockerError, tokenize, details, containerRow, shownCommand, typedArgs, engineCall, runningContainers, IMAGE, REF };

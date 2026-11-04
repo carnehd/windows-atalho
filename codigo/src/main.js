@@ -31,6 +31,7 @@ const { registerServiceMap } = require('./service-map');
 const { registerBruno } = require('./bruno');
 const { registerUpdates } = require('./updater');
 const { registerDb } = require('./db');
+const { registerNewDatabase } = require('./new-database');
 const { stepBack } = require('./shell');
 const { registerSignInWindows } = require('./sign-in-window');
 const { registerClipboardHistory } = require('./clipboard-history');
@@ -564,6 +565,8 @@ app.whenReady().then(() => {
   registerIdeOpen({ isKnownRepo });
   bruno = registerBruno({ isKnownRepo, getWindow: () => mainWindow, savedDir: path.join(DATA_DIR, 'saved-requests'), cliHome: path.join(DATA_DIR, 'bruno-cli'), onRequest: (url) => serviceMap && serviceMap.noteClient('Bruno', url) });
   registerDb({ dataDir: DATA_DIR });
+  // Database > New database: a database, its schema and its users in a local PostgreSQL (a container, or a pod)
+  registerNewDatabase({ getWindow: () => mainWindow, copySecret });
   registerUpdates({ getWindow: () => mainWindow });
   maven = registerMaven({
     isKnownRepo,
