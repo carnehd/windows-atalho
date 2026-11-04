@@ -1239,6 +1239,16 @@ function setupIPC() {
     return text.length <= 1000 && /^(https?:\/\/|www\.)[^\s]+$/i.test(text) ? text : null;
   });
 
+  // The same for the variables of the Maven page (Paste in Env and in Start in container): only text that reads as
+  // variables leaves the main process, NAME=value lines and # lines, or IntelliJ's NAME=value;NAME2=value2.
+  ipcMain.handle('mvn-clipboard-vars', () => {
+    const text = clipboard.readText().replace(/\r/g, '').trim();
+    const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+    const variable = /^(#\s*)?(export\s+)?[A-Za-z_][A-Za-z0-9_.-]*\s*=/;
+    const ok = text.length <= 200000 && lines.some((l) => variable.test(l)) && lines.every((l) => l.startsWith('#') || variable.test(l));
+    return { text: ok ? text : '' };
+  });
+
   ipcMain.handle('vault-open-link', async (_, url) => {
     let parsed;
     try {

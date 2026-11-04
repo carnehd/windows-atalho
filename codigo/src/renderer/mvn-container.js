@@ -58,6 +58,8 @@ function mvnContainerModal() {
       <div class="me-vars-head mc-vars-head">
         <span class="settings-label">Environment variables</span>
         <span class="mv-gap"></span>
+        <button id="mcCopyVars" class="btn btn-sm" type="button" title="Copy these variables, to paste them in another microservice (as NAME=value lines; left out of the clipboard history)">Copy</button>
+        <button id="mcPasteVars" class="btn btn-sm" type="button" title="Paste the variables copied, or NAME=value lines copied anywhere: a name already here takes the new value">Paste</button>
         <button id="mcFromEnv" class="btn btn-sm" type="button" title="The variables of Env, in place of these">From Env</button>
       </div>
       <div id="mcVars" class="me-vars mc-vars" role="group" aria-label="Environment variables of the container" aria-describedby="mcNote"></div>
@@ -117,6 +119,15 @@ function mvnContainerModal() {
   $('#mcFromEnv').addEventListener('click', () => {
     mcRows = mvnRunEnv.vars.map((v) => ({ name: v.name, value: v.value, enabled: v.enabled !== false }));
     drawMcRows(0, 'Taken from Env.');
+  });
+  $('#mcCopyVars').addEventListener('click', () => copyMvnEnvRows(mcRows));
+  $('#mcPasteVars').addEventListener('click', async () => {
+    const vars = await mvnEnvToPaste();
+    if (!vars) {
+      toast(MVN_ENV_NO_PASTE, 'error');
+      return;
+    }
+    drawMcRows(mcRows.length, pasteMvnEnvRows(mcRows, mcRows.length, vars));
   });
   // × takes the row out: the focus goes to the row that took its place
   $('#mcVars').addEventListener(

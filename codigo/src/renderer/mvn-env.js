@@ -62,24 +62,67 @@ function splitIntellijEnv(text) {
 }
 
 // Text pasted into a name, as variables: NAME=value lines (export NAME=value and quoted values as a .env file has them
-// too, # for a comment) or IntelliJ's line. null when it is not that: it is then pasted as it is.
+// too; # NAME=value is one switched off, any other # line a comment) or IntelliJ's line. null when it is not that: it
+// is then pasted as it is.
 function pastedMvnEnvVars(text) {
   const t = String(text).replace(/\r/g, '').trim();
   const vars = [];
   for (const raw of splitIntellijEnv(t) || t.split('\n')) {
     const line = raw.trim();
-    if (!line || line.startsWith('#')) continue;
-    const body = line.replace(/^export\s+/, '');
+    if (!line) continue;
+    const off = line.startsWith('#');
+    const body = line.replace(/^#\s*/, '').replace(/^export\s+/, '');
     const eq = body.indexOf('=');
     const name = eq > 0 ? body.slice(0, eq).trim() : '';
-    if (!ENV_NAME.test(name)) return null;
+    if (!ENV_NAME.test(name)) {
+      if (off) continue;
+      return null;
+    }
     let value = body.slice(eq + 1).trim();
     const q = /^(["'])([\s\S]*)\1$/.exec(value);
     if (q) value = q[2];
-    vars.push({ name, value, enabled: true });
+    vars.push({ name, value, enabled: !off });
   }
   return vars.length ? vars : null;
 }
+
+// -- Copy and Paste of a table of variables, to use those of a microservice in another (Env and Start in container) --
+// The rows as NAME=value lines, as a .env file has them: one switched off as # NAME=value; a value with spaces at its
+// ends, or in quotes, goes in quotes, so it comes back as it is.
+function mvnEnvRowsText(rows) {
+  return rows
+    .filter((r) => ENV_NAME.test(String(r.name || '').trim()))
+    .map((r) => {
+      const value = String(r.value ?? '');
+      const quoted = value !== value.trim() || /^(["'])[\s\S]*\1$/.test(value) ? `"${value}"` : value;
+      return `${r.enabled === false ? '# ' : ''}${String(r.name).trim()}=${quoted}`;
+    })
+    .join('\n');
+}
+
+let mvnEnvCopied = ''; // the last ones copied here: Paste has them when the clipboard no longer does
+
+// To the clipboard as a secret (their values may be passwords: out of the clipboard history, cleared in half a
+// minute), and kept here until the app closes.
+async function copyMvnEnvRows(rows) {
+  const text = mvnEnvRowsText(rows);
+  if (!text) {
+    toast('No variables to copy', 'error');
+    return;
+  }
+  mvnEnvCopied = text;
+  const r = await window.tools.copySecret(text);
+  toast(r.error || `${plural(text.split('\n').length, 'variable')} copied: Paste them in another microservice`, r.error ? 'error' : 'success');
+}
+
+// The variables to paste: the clipboard's when it holds NAME=value lines (the main process gives nothing else of
+// it), else the last ones copied here. null: nothing to paste.
+async function mvnEnvToPaste() {
+  const r = await window.maven.clipboardVars();
+  return pastedMvnEnvVars((r && r.text) || '') || pastedMvnEnvVars(mvnEnvCopied);
+}
+
+const MVN_ENV_NO_PASTE = 'Nothing to paste: Copy the variables of a microservice first, or copy NAME=value lines';
 
 function mvnEnvModal() {
   let modal = $('#mvnEnvModal');
@@ -93,6 +136,8 @@ function mvnEnvModal() {
       <p id="meSub" class="mv-sub">Like a run configuration in IntelliJ. Saved for this microservice: Start, Debug and spring-boot:run start with them; a build and the tests do not.</p>
       <div class="me-vars-head">
         <p id="meHint" class="me-hint">Untick one to keep it without giving it. NAME=value lines, or IntelliJ's NAME=value;NAME2=value2, pasted into a name become a row each.</p>
+        <button id="meCopyVars" class="btn btn-sm" type="button" title="Copy these variables, to paste them in another microservice (as NAME=value lines; left out of the clipboard history)">Copy</button>
+        <button id="mePasteVars" class="btn btn-sm" type="button" title="Paste the variables copied, or NAME=value lines copied anywhere: a name already here takes the new value">Paste</button>
         <button id="meIntellij" class="btn btn-sm hidden" type="button" aria-haspopup="menu">From IntelliJ</button>
       </div>
       <div id="meVars" class="me-vars" role="group" aria-label="Environment variables" aria-describedby="meHint meNote"></div>
@@ -144,6 +189,15 @@ function mvnEnvModal() {
     drawMvnEnvRows(mvnEnvRows.length, done);
   });
   $('#meIntellij').addEventListener('click', openMvnEnvIntellij);
+  $('#meCopyVars').addEventListener('click', () => copyMvnEnvRows(mvnEnvRows));
+  $('#mePasteVars').addEventListener('click', async () => {
+    const vars = await mvnEnvToPaste();
+    if (!vars) {
+      toast(MVN_ENV_NO_PASTE, 'error');
+      return;
+    }
+    drawMvnEnvRows(mvnEnvRows.length, pasteMvnEnvRows(mvnEnvRows, mvnEnvRows.length, vars));
+  });
   return modal;
 }
 
@@ -162,7 +216,7 @@ function pasteMvnEnvRows(rows, at, vars) {
     const same = rows.filter((r) => mvnEnvKey(String(r.name).trim()) === mvnEnvKey(v.name));
     const row = same.find((r) => r.enabled !== false) || same[0];
     if (row) {
-      Object.assign(row, { value: v.value, enabled: true });
+      Object.assign(row, { value: v.value, enabled: v.enabled !== false });
       replaced += 1;
     } else rows.splice(at++, 0, v);
   }

@@ -175,6 +175,7 @@ contextBridge.exposeInMainWorld('database', {
 
 contextBridge.exposeInMainWorld('maven', {
   info: (repo) => ipcRenderer.invoke('mvn-info', repo),
+  clipboardVars: () => ipcRenderer.invoke('mvn-clipboard-vars'),
   run: (repo, request) => ipcRenderer.invoke('mvn-run', repo, request),
   line: (repo, request) => ipcRenderer.invoke('mvn-line', repo, request),
   stop: (repo) => ipcRenderer.invoke('mvn-stop', repo),

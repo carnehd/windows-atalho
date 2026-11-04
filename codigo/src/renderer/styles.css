@@ -13329,3 +13329,7 @@ body.git-console-resizing * {
 .lt-bases:empty {
   display: none;
 }
+/* Copy, Paste and From Env (or From IntelliJ) above a table of variables: close to each other */
+.me-vars-head .btn + .btn {
+  margin-left: -6px;
+}
