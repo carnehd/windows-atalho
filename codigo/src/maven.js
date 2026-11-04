@@ -11,7 +11,7 @@ const runEnv = require('./run-env');
 const containers = require('./containers');
 const { NO_QUESTIONS } = require('./terminal');
 
-const { IS_WIN, psQuote } = shell;
+const { IS_WIN, psQuote, shQuote } = shell;
 // The Maven wrapper a project may carry: mvnw.cmd on Windows, the mvnw shell script elsewhere.
 const WRAPPER = IS_WIN ? 'mvnw.cmd' : 'mvnw';
 
@@ -182,6 +182,7 @@ const containerDefaults = (dir, ports) => ({
   values: true,
   vars: null,
   proxy: { on: false, url: '', noProxy: '' },
+  options: '',
 });
 
 const portOf = (value, what) => {
@@ -205,9 +206,32 @@ function cleanContainerSpec(input = {}) {
     values: input.values !== false,
     vars: runEnv.cleanRunEnv({ vars: Array.isArray(input.vars) ? input.vars : [] }).vars,
     proxy: cleanProxy(input.proxy),
+    options: cleanRunOptions(input.options),
   };
   if (spec.debug && spec.debugPort === spec.port) throw new Error('The debug port has to differ from the port of the app');
   return spec;
+}
+
+// More options of "docker run" / "podman run", as the user types them (--network, --label, -v, --add-host...): they go
+// before the image. Not those the page needs to be its own: the container's name (Stop and the next start use it), and
+// in the foreground with no terminal (its output is followed in the page).
+const RUN_OPTIONS_MAX = 1000;
+function cleanRunOptions(input) {
+  const text = String(input || '').trim();
+  if (!text) return '';
+  if (text.length > RUN_OPTIONS_MAX) throw new Error(`The extra options are too long (${RUN_OPTIONS_MAX} characters at most)`);
+  if (/[\0\r\n]/.test(text)) throw new Error('The extra options go on one line');
+  if (/["']/.test(text.replace(/"[^"]*"|'[^']*'/g, ''))) throw new Error('A quote of the extra options is not closed');
+  const tokens = tokenize(text);
+  if (!tokens[0].startsWith('-')) throw new Error(`The extra options start with - or --, for example --network my-net (not "${tokens[0].slice(0, 40)}")`);
+  for (const t of tokens) {
+    const flag = t.split('=')[0];
+    const short = /^-[A-Za-z]+$/.test(t) ? t.slice(1) : '';
+    if (flag === '--name') throw new Error('The name of the container goes in Container, not in the extra options');
+    if (flag === '--detach' || short.includes('d')) throw new Error('Not -d / --detach: the page follows the container\'s output, and Stop stops it');
+    if (/^--(interactive|tty)$/.test(flag) || /[it]/.test(short)) throw new Error('Not -i / -t: the container runs with no terminal to type in');
+  }
+  return text;
 }
 
 // The proxy the application in the container goes out through: on or off, its address (http://host:port, a user and
@@ -351,11 +375,30 @@ function containerArgs(spec, jar, values) {
   // a field of --mount with a comma or a quote in it is quoted, as CSV
   const csv = (t) => (/[",]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t);
   const head = ['run', '--rm', '--name', spec.name, '--label', CONTAINER_LABEL, '-p', `${spec.port}:${spec.port}`, ...(spec.debug ? ['-p', `${spec.debugPort}:${spec.debugPort}`] : [])];
+  // the user's extra options; the value of a variable among them hidden as the dialog's are
+  const extra = tokenize(spec.options || '');
+  const extraShown = extra.map((a, i) => {
+    const env = extra[i - 1] === '-e' || extra[i - 1] === '--env' ? a : a.startsWith('--env=') ? a.slice(6) : null;
+    const eq = env === null ? -1 : env.indexOf('=');
+    return eq > 0 ? `${a.slice(0, a.length - env.length + eq + 1)}\u2026` : a;
+  });
   const tail = ['--mount', ['type=bind', csv(`source=${jar}`), 'target=/app/app.jar', 'readonly'].join(','), spec.image, 'java', '-jar', '/app/app.jar'];
   return {
-    args: [...head, ...env.flatMap(([k, v]) => ['-e', `${k}=${v}`]), ...tail],
-    shown: [...head, ...env.flatMap(([k, , shown]) => ['-e', shown === null ? `${k}=\u2026` : `${k}=${shown}`]), ...tail].map((a) => (/[\s"']/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a)).join(' '),
+    args: [...head, ...extra, ...env.flatMap(([k, v]) => ['-e', `${k}=${v}`]), ...tail],
+    shown: [...head, ...extraShown, ...env.flatMap(([k, , shown]) => ['-e', shown === null ? `${k}=\u2026` : `${k}=${shown}`]), ...tail].map((a) => (/[\s"']/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a)).join(' '),
   };
+}
+
+// The command to paste in a terminal of this PC, the values of the variables in it (Copy): quoted for PowerShell on
+// Windows, for sh elsewhere. Windows PowerShell gives a program an argument with a space in "..." and leaves what is in
+// it as it is: a double quote in it is written \", and the \ at its end doubled (or they would end it).
+const psArg = (a) => {
+  const escaped = a.replace(/(\\*)"/g, '$1$1\\"');
+  return psQuote(/\s/.test(a) ? escaped.replace(/(\\+)$/, '$1$1') : escaped);
+};
+function pastedCommand(name, args) {
+  const quote = (a) => (/^[\w./:=+-]+$/.test(a) ? a : IS_WIN ? psArg(a) : shQuote(a));
+  return [name, ...args].map(quote).join(' ');
 }
 
 // docker or podman once, what it printed collected (inspect, rm, stop).
@@ -1049,16 +1092,31 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
     return { spec: containerFor(repoPath), engine, jar: jar ? { name: path.relative(dir, jar.file).split(path.sep).join('/'), ago: agoText(jar.mtime) } : null };
   });
 
+  // What the dialog would run: its fields checked, the jar (the newest in target/), the engine's name.
+  const containerCall = (repoPath, input, engineName) => {
+    if (!isKnownRepo(repoPath)) throw new Error('Unknown repository');
+    const { dir } = chosenDir(repoPath);
+    const spec = cleanContainerSpec(input);
+    const newest = newestJar(dir);
+    return { spec, jar: newest ? newest.file : path.join(dir, 'target', '*.jar'), name: engineName === 'podman' ? 'podman' : 'docker' };
+  };
+
   // The command the dialog would run, as the output shows it (the values of the variables hidden).
   ipcMain.handle('mvn-container-preview', (_, repoPath, input, engineName, withValues) => {
     try {
-      if (!isKnownRepo(repoPath)) throw new Error('Unknown repository');
-      const { dir } = chosenDir(repoPath);
-      const spec = cleanContainerSpec(input);
-      const newest = newestJar(dir);
-      const jar = newest ? newest.file : path.join(dir, 'target', '*.jar');
-      const name = engineName === 'podman' ? 'podman' : 'docker';
+      const { spec, jar, name } = containerCall(repoPath, input, engineName);
       return { command: `${name} ${containerArgs(spec, jar, withValues ? {} : null).shown}` };
+    } catch (e) {
+      return { error: e.message };
+    }
+  });
+
+  // The same with the values of the variables in it, to paste in a terminal (Copy).
+  ipcMain.handle('mvn-container-copy', (_, repoPath, input, engineName, valuesRequest = {}) => {
+    try {
+      const { spec, jar, name } = containerCall(repoPath, input, engineName);
+      const values = spec.values ? envValues.cleanValues(valuesRequest && valuesRequest.values) : null;
+      return { command: pastedCommand(name, containerArgs(spec, jar, values).args) };
     } catch (e) {
       return { error: e.message };
     }
@@ -1275,4 +1333,4 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
   return { stopAll };
 }
 
-module.exports = { registerMaven, PRESETS, OPTIONS, DEFAULT_PORTS, parsePorts, tokenize, buildScript, terminalScript, pomProfiles, withOptions, findWrapper, pomFolders, cleanMacro, cleanContainerSpec, containerArgs, newestJar, jarSaid, pomJava };
+module.exports = { registerMaven, PRESETS, OPTIONS, DEFAULT_PORTS, parsePorts, tokenize, buildScript, terminalScript, pomProfiles, withOptions, findWrapper, pomFolders, cleanMacro, cleanContainerSpec, containerArgs, pastedCommand, newestJar, jarSaid, pomJava };

@@ -186,6 +186,7 @@ contextBridge.exposeInMainWorld('maven', {
   containerInfo: (repo) => ipcRenderer.invoke('mvn-container-info', repo),
   containerPreview: (repo, spec, engine, withValues) => ipcRenderer.invoke('mvn-container-preview', repo, spec, engine, withValues),
   containerRun: (repo, spec, values) => ipcRenderer.invoke('mvn-container-run', repo, spec, values),
+  containerCopy: (repo, spec, engine, values) => ipcRenderer.invoke('mvn-container-copy', repo, spec, engine, values),
   containerProxy: () => ipcRenderer.invoke('mvn-container-proxy'),
   macros: () => ipcRenderer.invoke('mvn-macros'),
   saveMacro: (macro) => ipcRenderer.invoke('mvn-macro-save', macro),

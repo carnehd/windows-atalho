@@ -1,7 +1,8 @@
 // -- Start in container: the jar Maven builds, run by Docker or Podman in a Java image, with nothing added to the
 // microservice's folder. Run with it chosen opens a dialog with what the container needs (the image, its name, the
-// port, debug, build first, the values of the Values button, this PC's proxy, the variables as Env has them), the
-// command it runs under them; Start saves them for the repository and runs it, its output in the page (maven.js). --
+// port, debug, build first, the values of the Values button, this PC's proxy, more options of the run, the variables as
+// Env has them), the command it runs under them (Copy gives it with the values, for a terminal); Start saves them for
+// the repository and runs it, its output in the page (maven.js). --
 let mvnContainerSpec = null; // what the dialog starts with (from the page's info): saved for the repository, or defaults
 let mcRows = []; // the variables of the dialog, { name, value, enabled }: the table changes them in place
 let mcEngine = null; // { name, label } of the engine that answers, or { error }
@@ -13,7 +14,7 @@ const MC_IMAGES = ['eclipse-temurin:17-jre', 'eclipse-temurin:21-jre', 'eclipse-
 
 // "eclipse-temurin:21-jre · :8080" next to the command list
 function mvnContainerSummary(spec) {
-  return spec ? `${spec.image} · :${spec.port}${spec.debug ? ` · debug :${spec.debugPort}` : ''}${spec.proxy && spec.proxy.on ? ' · proxy' : ''}` : '';
+  return spec ? `${spec.image} · :${spec.port}${spec.debug ? ` · debug :${spec.debugPort}` : ''}${spec.proxy && spec.proxy.on ? ' · proxy' : ''}${spec.options ? ' · extra options' : ''}` : '';
 }
 
 function mvnContainerModal() {
@@ -49,6 +50,10 @@ function mvnContainerModal() {
         <div class="mc-line"><input id="mcNoProxy" class="input mc-wide" maxlength="1000" placeholder=".company.local, 10.1.2.3" spellcheck="false" autocomplete="off" /></div>
         <span></span>
         <p id="mcProxyHint" class="me-hint mc-inline-hint" aria-live="polite"></p>
+        <label class="mc-key" for="mcOptions">Extra options</label>
+        <div class="mc-line"><input id="mcOptions" class="input mc-wide" maxlength="1000" placeholder="--network my-net --label team=billing" spellcheck="false" autocomplete="off" aria-describedby="mcOptionsHint" /></div>
+        <span></span>
+        <p id="mcOptionsHint" class="me-hint mc-inline-hint">Given to docker run / podman run as typed, before the image: --network, --label, -v, --add-host...</p>
       </div>
       <div class="me-vars-head mc-vars-head">
         <span class="settings-label">Environment variables</span>
@@ -58,6 +63,11 @@ function mvnContainerModal() {
       <div id="mcVars" class="me-vars mc-vars" role="group" aria-label="Environment variables of the container" aria-describedby="mcNote"></div>
       <p id="mcNote" class="me-note" aria-live="polite"></p>
       <p class="me-hint">Inside the container, localhost is the container itself: for a database or a service on this PC, use host.docker.internal (Podman: host.containers.internal).</p>
+      <div class="me-vars-head mc-vars-head">
+        <span class="settings-label">Command</span>
+        <span class="mv-gap"></span>
+        <button id="mcCopy" class="btn btn-sm" type="button" title="Copy the command to paste in a terminal, with the values of the variables in it">Copy</button>
+      </div>
       <pre id="mcCommand" class="mc-command" aria-label="The command it runs"></pre>
       <div class="action-row settings-actions mv-actions">
         <span class="mv-gap"></span>
@@ -103,6 +113,7 @@ function mvnContainerModal() {
   });
   $('#mcCancel').addEventListener('click', closeMvnContainer);
   $('#mcStart').addEventListener('click', startMvnContainer);
+  $('#mcCopy').addEventListener('click', copyMvnContainer);
   $('#mcFromEnv').addEventListener('click', () => {
     mcRows = mvnRunEnv.vars.map((v) => ({ name: v.name, value: v.value, enabled: v.enabled !== false }));
     drawMcRows(0, 'Taken from Env.');
@@ -159,6 +170,7 @@ function mcSpec() {
     build: $('#mcBuild').checked,
     values: $('#mcValues').checked,
     proxy: { on: $('#mcProxy').checked, url: $('#mcProxyUrl').value.trim(), noProxy: $('#mcNoProxy').value.trim() },
+    options: $('#mcOptions').value.trim(),
     vars: checkMvnEnvRows(mcRows).vars,
   };
 }
@@ -191,6 +203,15 @@ async function previewMvnContainer() {
   box.textContent = r.error || `${$('#mcBuild').checked ? 'mvn package -DskipTests, then\n' : ''}${r.command}`;
 }
 
+// Copy: the command as it runs, the values of the variables in it, quoted for this PC's terminal.
+async function copyMvnContainer() {
+  if (!mvnRepo) return;
+  const withValues = $('#mcValues').checked && mcValues.values ? mcValues : {};
+  const r = await window.maven.containerCopy(mvnRepo, mcSpec(), mcEngine && mcEngine.name, withValues);
+  const done = r.error ? r : await window.tools.copy(r.command);
+  toast(done.error || 'Command copied, with the values of the variables', done.error ? 'error' : 'success');
+}
+
 async function openMvnContainer() {
   if (!mvnRepo) return;
   const repo = mvnRepo;
@@ -218,6 +239,7 @@ async function openMvnContainer() {
   $('#mcProxyUrl').value = proxy.url || '';
   $('#mcNoProxy').value = proxy.noProxy || '';
   setMcProxyOn(Boolean(proxy.on));
+  $('#mcOptions').value = spec.options || '';
   mcProxyFound = null;
   renderMcProxyHint();
   modal.classList.remove('hidden');

@@ -9557,54 +9557,21 @@ strong.api-code-file {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Compare texts */
-.cmp-lines {
-  overflow: auto;
+/* Compare texts: the app's side-by-side diff (renderSplit), in a frame of its own; its name is not cmp-lines, which
+   the Git compare views use for their counts */
+.cmp-out {
+  overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 8px;
-  font-family: var(--font-mono);
-  font-size: var(--fs-small);
-  line-height: 1.55;
 }
-.cmp-lines:empty {
+.cmp-out:empty {
   display: none;
 }
-.cmp-line {
-  display: grid;
-  grid-template-columns: 44px 44px 18px minmax(0, 1fr);
+.cmp-out .diff-body {
+  overflow: visible;
 }
-.cmp-line.add {
-  background: color-mix(in srgb, var(--green) 13%, transparent);
-}
-.cmp-line.del {
-  background: color-mix(in srgb, var(--red) 12%, transparent);
-}
-.cmp-no {
-  padding-right: 8px;
-  color: var(--text-dim);
-  text-align: right;
-  user-select: none;
-}
-.cmp-sign {
-  color: var(--text-dim);
-  user-select: none;
-}
-.cmp-line.add .cmp-sign {
-  color: var(--green);
-}
-.cmp-line.del .cmp-sign {
-  color: var(--red);
-}
-.cmp-text {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  user-select: text;
-}
-.cmp-gap {
-  padding: 2px 0;
-  background: var(--bg-surface);
-  color: var(--text-dim);
-  text-align: center;
+.cmp-out .diff-lines {
+  padding-bottom: 4px;
 }
 @media (max-width: 900px) {
   .tool-two {

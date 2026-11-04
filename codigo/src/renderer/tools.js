@@ -1436,14 +1436,16 @@ function buildCompareTool() {
   let ignoreCase = false;
   let all = false;
   const summary = tEl('span', 'tool-status');
-  const out = tEl('div', 'cmp-lines');
+  // the result as the app's diffs show it: before on the left, after on the right, the words that changed marked
+  const out = tEl('div', 'cmp-out');
   const two = tEl('div', 'tool-two');
   two.append(left, right);
+  const everyLine = toolCheck('Show every line', false, (v) => { all = v; render(); });
   const row = tEl('div', 'tool-row');
   row.append(
     toolCheck('Ignore spaces', false, (v) => { ignoreSpace = v; render(); }),
     toolCheck('Ignore case', false, (v) => { ignoreCase = v; render(); }),
-    toolCheck('Show every line', false, (v) => { all = v; render(); }),
+    everyLine,
     toolButton('⇄ Swap', () => {
       [left.value, right.value] = [right.value, left.value];
       render();
@@ -1488,29 +1490,54 @@ function buildCompareTool() {
       return;
     }
     summary.textContent = `${removed} line${removed === 1 ? '' : 's'} removed, ${added} added`;
-    // the changed lines with 3 lines around them, unless every line is wanted
+    const rows = ops.map(([op, i, j]) => (op === '=' ? { type: 'ctx', oldNo: i + 1, newNo: j + 1, text: a[i] } : op === '-' ? { type: 'del', oldNo: i + 1, text: a[i] } : { type: 'add', newNo: j + 1, text: b[j] }));
+    annotateWords(rows);
+    // the changed lines with 3 lines around them, unless every line is wanted; a fold shows them all
     const keep = new Set();
-    ops.forEach((o, i) => {
-      if (all || o[0] !== '=') for (let j = Math.max(0, i - 3); j <= Math.min(ops.length - 1, i + 3); j++) keep.add(j);
+    rows.forEach((r, i) => {
+      if (all || r.type !== 'ctx') for (let j = Math.max(0, i - 3); j <= Math.min(rows.length - 1, i + 3); j++) keep.add(j);
     });
-    let gap = false;
-    ops.forEach((o, i) => {
+    const onShow = () => {
+      all = true;
+      everyLine.querySelector('input').checked = true;
+      render();
+    };
+    const items = [];
+    let folded = 0;
+    rows.forEach((row, i) => {
       if (!keep.has(i)) {
-        if (!gap) out.appendChild(tEl('div', 'cmp-gap', '···'));
-        gap = true;
+        folded++;
         return;
       }
-      gap = false;
-      const line = tEl('div', `cmp-line ${o[0] === '+' ? 'add' : o[0] === '-' ? 'del' : 'ctx'}`);
-      line.append(
-        tEl('span', 'cmp-no', o[1] === null ? '' : String(o[1] + 1)),
-        tEl('span', 'cmp-no', o[2] === null ? '' : String(o[2] + 1)),
-        tEl('span', 'cmp-sign', o[0] === '=' ? ' ' : o[0]),
-        tEl('span', 'cmp-text', o[0] === '+' ? b[o[2]] : a[o[1]]),
-      );
-      out.appendChild(line);
+      if (folded) items.push({ kind: 'fold', count: folded, onShow });
+      folded = 0;
+      items.push({ kind: 'line', row });
     });
+    if (folded) items.push({ kind: 'fold', count: folded, onShow });
+    const cols = tEl('div', 'diff-cols');
+    cols.append(tEl('div', '', 'Before (the first text)'), tEl('div', '', 'After (the second)'));
+    // the renderer collects change groups for the Changes diff's J/K keys; keep that list as it was
+    const changesGroups = diffGroups;
+    diffGroups = [];
+    const view = renderSplit(items);
+    diffGroups = changesGroups;
+    const body = tEl('div', 'diff-body');
+    body.appendChild(view);
+    out.append(cols, body);
   }, 250);
+  // copied from the result: the lines of the side the selection started on, without their numbers
+  out.addEventListener('mousedown', (e) => {
+    const cell = e.target.closest && e.target.closest('.ds-cell');
+    const lines = out.querySelector('.diff-lines.split');
+    if (lines && cell && e.button === 0) lines.dataset.select = cell.classList.contains('side-right') ? 'right' : 'left';
+  });
+  out.addEventListener('copy', (e) => {
+    const lines = out.querySelector('.diff-lines.split');
+    const picked = lines && splitSelection(lines);
+    if (!picked || !picked.text) return;
+    e.preventDefault();
+    e.clipboardData.setData('text/plain', picked.text);
+  });
   left.addEventListener('input', () => { caption.textContent = ''; render(); });
   right.addEventListener('input', () => { caption.textContent = ''; render(); });
   return {
