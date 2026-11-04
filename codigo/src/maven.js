@@ -10,6 +10,7 @@ const envValues = require('./env-values');
 const runEnv = require('./run-env');
 const containers = require('./containers');
 const { NO_QUESTIONS } = require('./terminal');
+const { intellijMaven } = require('./intellij-maven');
 
 const { IS_WIN, psQuote, shQuote } = shell;
 // The Maven wrapper a project may carry: mvnw.cmd on Windows, the mvnw shell script elsewhere.
@@ -34,6 +35,42 @@ const wrapperCall = (dir, file) => {
   const rel = path.relative(dir, file);
   if (rel.startsWith('..')) return rel;
   return IS_WIN ? `.\\${rel}` : `./${rel}`;
+};
+
+// The Maven a command runs with in a folder of a repository: as IntelliJ runs it when IntelliJ has the project
+// (intellij-maven.js: its Maven, settings file, local repository, offline), else the project's mvnw, else mvn.
+// { file: the mvn or mvnw to start (null: mvn on the PATH), wrapper: that is the project's mvnw, args: the flags of
+// IntelliJ's settings, intellij: what was taken from it (for the output and the window) }
+function mavenFor(dir, root = dir) {
+  const wrapper = findWrapper(dir, root);
+  const ij = intellijMaven(root, dir, wrapper ? "the project's mvnw" : 'mvn');
+  const file = (ij && ij.file) || wrapper;
+  return { file, wrapper: Boolean(wrapper) && file === wrapper, args: ij ? ij.args : [], intellij: ij };
+}
+// how it is called from the folder the command runs in: ./mvnw (../mvnw from a module), its full path, or mvn
+const mavenExe = (dir, m) => (!m.file ? 'mvn' : m.wrapper ? wrapperCall(dir, m.file) : m.file);
+// The flags of IntelliJ's settings the command does not set itself, then the command's arguments.
+function mavenArgs(m, args) {
+  const has = (re) => args.some((a) => re.test(a));
+  const extra = [];
+  for (let i = 0; i < m.args.length; i++) {
+    const a = m.args[i];
+    if (a === '-s') {
+      if (!has(/^(-s|--settings)$/)) extra.push(a, m.args[i + 1]);
+      i++;
+    } else if (a.startsWith('-Dmaven.repo.local=')) {
+      if (!has(/^-Dmaven\.repo\.local=/)) extra.push(a);
+    } else if (a === '-o') {
+      if (!has(/^(-o|--offline)$/)) extra.push(a);
+    } else extra.push(a);
+  }
+  return [...extra, ...args];
+}
+// Under the command in the output: what IntelliJ's settings gave Maven, and what of them could not be taken.
+const mavenLine = (m) => {
+  const ij = m && m.intellij;
+  if (!ij) return '';
+  return `${ij.applies ? `  ${ij.said}\n` : ''}${ij.notes.map((n) => `  IntelliJ: ${n}\n`).join('')}`;
 };
 
 const DEFAULT_PORTS = { debug: 5005, server: null };
@@ -537,24 +574,23 @@ function cleanAnswers(macro, input = {}) {
 // Windows: mvn and mvnw are .cmd files, which only a shell can start, so they run through PowerShell (which also gives
 // UTF-8 output). Every argument is single-quoted: PowerShell 5.1 otherwise splits unquoted arguments like -Dfoo.bar=1
 // at the dot.
-function buildScript(dir, args, wrapper = findWrapper(dir)) {
-  const exe = wrapper ? wrapperCall(dir, wrapper) : 'mvn';
+function buildScript(dir, args, m = mavenFor(dir)) {
   return [
     '[Console]::OutputEncoding = [Text.Encoding]::UTF8',
-    `& ${psQuote(exe)} ${args.map(psQuote).join(' ')}`,
+    `& ${psQuote(mavenExe(dir, m))} ${mavenArgs(m, args).map(psQuote).join(' ')}`,
     'exit $LASTEXITCODE',
   ].join('; ');
 }
 
 // The command a run starts, in the folder chosen for the repository: PowerShell with the script on Windows. On macOS
 // and Linux Maven starts straight from the app, no shell in between, with the environment of the user's shell (see
-// shell.js, so a Mac app opened from the Finder still finds Homebrew's mvn and SDKMAN's Java): the project's mvnw
-// (through sh, so it works even without the executable bit a Windows checkout leaves off) or mvn, in its own process
-// group so Stop can end Maven and the Java it started together.
-function startMaven(dir, args, env, wrapper = findWrapper(dir)) {
-  if (IS_WIN) return spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', buildScript(dir, args, wrapper)], { cwd: dir, windowsHide: true, ...(env ? { env } : {}) });
-  if (wrapper) return spawn('/bin/sh', [wrapperCall(dir, wrapper), ...args], { cwd: dir, env, detached: true });
-  return spawn('mvn', args, { cwd: dir, env, detached: true });
+// shell.js, so a Mac app opened from the Finder still finds Homebrew's mvn and SDKMAN's Java): IntelliJ's Maven or the
+// project's mvnw (through sh, so it works even without the executable bit a Windows checkout leaves off) or mvn, in
+// its own process group so Stop can end Maven and the Java it started together.
+function startMaven(dir, args, env, m = mavenFor(dir)) {
+  if (IS_WIN) return spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', buildScript(dir, args, m)], { cwd: dir, windowsHide: true, ...(env ? { env } : {}) });
+  if (m.file) return spawn('/bin/sh', [mavenExe(dir, m), ...mavenArgs(m, args)], { cwd: dir, env, detached: true });
+  return spawn('mvn', mavenArgs(m, args), { cwd: dir, env, detached: true });
 }
 
 // A command line typed under the output, as typed, in the system shell: PowerShell on Windows, the user's shell
@@ -566,9 +602,9 @@ function startLine(dir, line, env) {
 }
 
 // "Separate window": the same command in PowerShell (Windows) or Terminal (macOS), left open when it ends.
-const mavenArgv = (dir, args, wrapper = findWrapper(dir)) => {
-  if (!wrapper) return ['mvn', ...args];
-  return IS_WIN ? [wrapperCall(dir, wrapper), ...args] : ['/bin/sh', wrapperCall(dir, wrapper), ...args];
+const mavenArgv = (dir, args, m = mavenFor(dir)) => {
+  if (!m.file) return ['mvn', ...mavenArgs(m, args)];
+  return IS_WIN ? [mavenExe(dir, m), ...mavenArgs(m, args)] : ['/bin/sh', mavenExe(dir, m), ...mavenArgs(m, args)];
 };
 const terminalScript = (dir, args) => shell.terminalScript(dir, mavenArgv(dir, args));
 
@@ -668,7 +704,7 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
         run.child = null;
         resolve(code);
       };
-      const child = line === null ? startMaven(dir, args, env, findWrapper(dir, run.repo)) : startLine(dir, line, env);
+      const child = line === null ? startMaven(dir, args, env, run.maven || mavenFor(dir, run.repo)) : startLine(dir, line, env);
       run.child = child;
       const append = (chunk) => {
         const text = chunk.toString('utf8');
@@ -888,14 +924,17 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
     const run = runs.get(key(repoPath));
     const ports = portsFor(repoPath);
     const { dir, rel, lost } = chosenDir(repoPath);
-    const wrapper = findWrapper(dir, repoPath);
+    const maven = mavenFor(dir, repoPath);
+    const ij = maven.intellij;
     return {
       hasPom: fs.existsSync(path.join(dir, 'pom.xml')),
       dir: rel,
       lostDir: lost || null,
       folders: pomFolders(repoPath),
-      wrapper: Boolean(wrapper),
-      wrapperDir: wrapper ? relOf(repoPath, path.dirname(wrapper)) : null,
+      wrapper: maven.wrapper,
+      wrapperDir: maven.wrapper ? relOf(repoPath, path.dirname(maven.file)) : null,
+      // what IntelliJ's settings change in how Maven runs, and what of them could not be taken
+      intellij: ij && (ij.applies || ij.notes.length) ? { applies: ij.applies, said: ij.said, notes: ij.notes } : null,
       options: OPTIONS.map(({ id, args, label }) => ({ id, flag: args.join(' '), label })),
       profiles: pomProfiles(dir),
       // the environments with an application-<env> file: Start and Debug can take their values (the Values button)
@@ -999,14 +1038,15 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
       const current = runs.get(k);
       if (current && current.active) throw new Error('A command is already running in this repository. Stop it first.');
       const command = `mvn ${args.join(' ')}`;
+      const maven = mavenFor(dir, repoPath);
 
       if (request.external) {
-        shell.openInTerminal(dir, mavenArgv(dir, args, findWrapper(dir, repoPath)), 'maven');
+        shell.openInTerminal(dir, mavenArgv(dir, args, maven), 'maven');
         shell.stepBack();
         return { success: true, external: true, command, valuesLeft: Boolean(values), envLeft: runEnv.hasRunEnv(appEnv) };
       }
 
-      const run = newRun(repoPath, command, `> ${command}${rel ? `   (in ${rel}/)` : ''}\n${valuesLine(values, request.valuesNote)}${runEnv.runEnvLines(appEnv)}`);
+      const run = newRun(repoPath, command, `> ${command}${rel ? `   (in ${rel}/)` : ''}\n${mavenLine(maven)}${valuesLine(values, request.valuesNote)}${runEnv.runEnvLines(appEnv)}`, { maven });
       runs.set(k, run);
       announce();
       runStep(run, dir, args, env).then((code) => finishRun(run, code));
@@ -1040,8 +1080,9 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
       const env = envValues.withValues(runEnv.withRunEnv(IS_WIN ? null : await shell.loginShellEnv(), appEnv), values);
       // what the output had stays above it, with how that ended
       const before = current ? `${current.log}${current.exitCode !== null && !current.macro ? `\n[exit code ${current.exitCode}]\n` : ''}\n` : '';
-      const header = `${IS_WIN ? '>' : '$'} ${line}${rel ? `   (in ${rel}/)` : ''}\n${valuesLine(values, request.valuesNote)}${runEnv.runEnvLines(appEnv)}`;
-      const run = newRun(repoPath, line, (before + header).slice(-MAX_LOG_CHARS), { typed: true });
+      const mvnCall = maven ? mavenFor(dir, repoPath) : null;
+      const header = `${IS_WIN ? '>' : '$'} ${line}${rel ? `   (in ${rel}/)` : ''}\n${mavenLine(mvnCall)}${valuesLine(values, request.valuesNote)}${runEnv.runEnvLines(appEnv)}`;
+      const run = newRun(repoPath, line, (before + header).slice(-MAX_LOG_CHARS), { typed: true, maven: mvnCall });
       runs.set(k, run);
       announce();
       runStep(run, dir, args, env, null, maven ? null : line).then((code) => finishRun(run, code));
@@ -1151,7 +1192,8 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
       const call = await containers.engineCall();
       const values = spec.values ? envValues.cleanValues(valuesRequest && valuesRequest.values) : null;
       const command = `container ${spec.name}`;
-      const run = newRun(repoPath, command, `> Start in container: ${spec.name} (${spec.image}) with ${call.label}${rel ? `   (in ${rel}/)` : ''}\n`, { container: { name: spec.name, call, started: false } });
+      const maven = mavenFor(dir, repoPath);
+      const run = newRun(repoPath, command, `> Start in container: ${spec.name} (${spec.image}) with ${call.label}${rel ? `   (in ${rel}/)` : ''}\n`, { container: { name: spec.name, call, started: false }, maven });
       runs.set(k, run);
       announce();
       (async () => {
@@ -1160,7 +1202,7 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
         let picked = null;
         let note = '';
         if (spec.build) {
-          write(run, '\n\u25B6 mvn package -DskipTests\n');
+          write(run, `\n\u25B6 mvn package -DskipTests\n${mavenLine(maven)}`);
           const began = Date.now();
           let said = '';
           code = await runStep(run, dir, ['package', '-DskipTests'], IS_WIN ? null : await shell.loginShellEnv(), (text) => (said = (said + text).slice(-200000)));
@@ -1272,9 +1314,11 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
       const env = IS_WIN ? null : await shell.loginShellEnv();
       const values = envValues.cleanValues(valuesRequest && valuesRequest.values);
       const appEnv = runEnvFor(repoPath);
-      const run = newRun(repoPath, macro.name, `> macro ${macro.name}: ${plan.length} step${plan.length === 1 ? '' : 's'}${rel ? `   (in ${rel}/)` : ''}\n`, {
+      const maven = plan.some((p) => p.args) ? mavenFor(dir, repoPath) : null;
+      const run = newRun(repoPath, macro.name, `> macro ${macro.name}: ${plan.length} step${plan.length === 1 ? '' : 's'}${rel ? `   (in ${rel}/)` : ''}\n${mavenLine(maven)}`, {
         // marks: when each step began, and how long it took once it ended (for the list of steps by the output)
         macro: { id: macro.id, name: macro.name, step: 0, total: plan.length, steps: plan.map((p) => p.label), marks: [] },
+        maven,
       });
       if (busy) previous.muted = true;
       runs.set(k, run);
@@ -1347,4 +1391,4 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
   return { stopAll };
 }
 
-module.exports = { registerMaven, PRESETS, OPTIONS, DEFAULT_PORTS, parsePorts, tokenize, buildScript, terminalScript, pomProfiles, withOptions, findWrapper, pomFolders, cleanMacro, cleanContainerSpec, containerArgs, pastedCommand, newestJar, jarSaid, pomJava };
+module.exports = { registerMaven, PRESETS, OPTIONS, DEFAULT_PORTS, parsePorts, tokenize, buildScript, terminalScript, pomProfiles, withOptions, findWrapper, mavenFor, mavenArgs, pomFolders, cleanMacro, cleanContainerSpec, containerArgs, pastedCommand, newestJar, jarSaid, pomJava };

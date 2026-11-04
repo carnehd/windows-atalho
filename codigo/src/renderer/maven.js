@@ -1162,8 +1162,13 @@ function applyMvnInfo(info) {
   if (info.hasPom) $('#mvnCmdline').insertBefore(row, $('#mvnValuesBtn'));
   else $('#tab-maven').insertBefore(row, $('#mvnNoPom'));
   renderMvnLine(info);
-  $('#mvnWrapper').classList.toggle('hidden', !info.wrapper);
-  $('#mvnWrapper').textContent = info.wrapperDir ? `using ${info.wrapperDir}/mvnw` : 'using mvnw';
+  // the Maven the commands run with: as in IntelliJ (its settings for the project), else the project's mvnw; the
+  // detail, and what of IntelliJ's settings could not be taken, on hover
+  const ij = info.intellij && info.intellij.applies ? info.intellij : null;
+  const ijNotes = info.intellij ? info.intellij.notes.map((n) => `IntelliJ: ${n}`) : [];
+  $('#mvnWrapper').classList.toggle('hidden', !info.wrapper && !ij);
+  $('#mvnWrapper').textContent = ij ? 'Maven as in IntelliJ' : info.wrapperDir ? `using ${info.wrapperDir}/mvnw` : 'using mvnw';
+  $('#mvnWrapper').title = [...(ij ? [ij.said] : []), ...ijNotes].join('\n');
   // the same run, read while its output came: the page already has more of it than this copy
   const behind = info.run && mvnRun && mvnRun.id === info.run.id && (mvnRun.written || 0) > (info.run.written || 0);
   if (!behind) mvnStopping = false;

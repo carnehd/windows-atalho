@@ -81,6 +81,27 @@ function findIdes() {
   return found;
 }
 
+// The folders IntelliJ IDEA is installed in (where its plugins folder is), the newest version first: for the Maven it
+// comes with (intellij-maven.js).
+function intellijHomes() {
+  const home = os.homedir();
+  const toolboxApps = (base) => ['IDEA-U', 'IDEA-C'].flatMap((name) => dirs(path.join(base, 'apps', name), /^ch-/).flatMap((ch) => dirs(ch, /^\d/)));
+  let found;
+  if (isMac()) {
+    const apps = ['/Applications', path.join(home, 'Applications')].flatMap((d) => dirs(d, /^IntelliJ IDEA.*\.app$/i));
+    // the Toolbox before 2.0: apps/IDEA-U/ch-0/<version>/IntelliJ IDEA.app
+    const toolbox = toolboxApps(path.join(home, 'Library/Application Support/JetBrains/Toolbox')).flatMap((v) => dirs(v, /^IntelliJ IDEA.*\.app$/i));
+    found = [...apps, ...toolbox].map((app) => path.join(app, 'Contents'));
+  } else if (isWin()) {
+    const local = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
+    const programFiles = [process.env.ProgramFiles, process.env['ProgramFiles(x86)']].filter(Boolean);
+    found = [...dirs(path.join(local, 'Programs'), /^IntelliJ IDEA/i), ...programFiles.flatMap((p) => dirs(path.join(p, 'JetBrains'), /^IntelliJ IDEA/i)), ...toolboxApps(path.join(local, 'JetBrains', 'Toolbox'))];
+  } else {
+    found = [...dirs('/opt', /^idea/i), '/snap/intellij-idea-ultimate/current', '/snap/intellij-idea-community/current', ...toolboxApps(path.join(home, '.local/share/JetBrains/Toolbox'))];
+  }
+  return found.filter((d) => fs.existsSync(path.join(d, 'plugins')));
+}
+
 // The editor with the folder: an app bundle through "open" (macOS), which answers at once; a program or script started
 // on its own, left running. Resolves with an error text, or null.
 function launch(ide, folder) {
@@ -123,4 +144,4 @@ function registerIdeOpen({ isKnownRepo }) {
   });
 }
 
-module.exports = { registerIdeOpen, findIdes, launch };
+module.exports = { registerIdeOpen, findIdes, intellijHomes, launch };
