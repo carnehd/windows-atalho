@@ -1377,6 +1377,27 @@ class GitService {
     }
   }
 
+  // The commits that changed a file, newest first and through its renames, in one git log: each with the name the file
+  // had there (and before, when that commit renamed it), for getCommitFileDiff. Compare APIs' History.
+  async fileHistory(file, max = 200) {
+    try {
+      const target = String(file || '');
+      if (!target) return { error: 'No file' };
+      const count = Math.min(Math.max(Math.round(Number(max)) || 200, 1), 500);
+      const out = await this.git.raw(['log', '--follow', `-n${count}`, '--format=%x1e%H%x1f%h%x1f%an%x1f%ae%x1f%aI%x1f%s', '--name-status', '--', target]);
+      const commits = out.split('\x1e').filter((block) => block.trim()).map((block) => {
+        const [head, ...rest] = block.split('\n');
+        const [hash, short, author, email, date, subject] = head.split('\x1f');
+        const change = rest.map((l) => l.split('\t')).find((p) => p.length >= 2 && p[0]);
+        const renamed = Boolean(change) && /^[RC]/.test(change[0]) && change.length >= 3;
+        return { hash, short, author, email, date, subject, file: change ? change[renamed ? 2 : 1] : target, from: renamed ? change[1] : null };
+      });
+      return { commits, more: commits.length === count };
+    } catch (e) {
+      return { error: cleanError(e.message) };
+    }
+  }
+
   // -- Compare: two points of the history, each a branch (yours or on origin), a tag or any commit --
 
   // A side as the app names it: a full ref under refs/heads, refs/remotes or refs/tags, or a commit hash; never an

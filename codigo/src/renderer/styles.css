@@ -4790,6 +4790,19 @@ body.card-window .vault-card {
   flex-direction: column;
   overflow-y: auto;
 }
+/* taller than the window: the dialog scrolls as a whole (no part of it squeezed), Cancel and Start in sight under it */
+.mc-card > * {
+  flex-shrink: 0;
+}
+.mc-card .mv-actions {
+  position: sticky;
+  bottom: -18px;
+  z-index: 1;
+  margin: 12px -18px -18px;
+  padding: 10px 18px 18px;
+  background: var(--bg-surface);
+  box-shadow: 0 -1px 0 var(--border);
+}
 .mc-engine {
   margin: 0 0 10px;
 }
@@ -5035,6 +5048,49 @@ body.card-window .vault-card {
   padding: 6px 8px;
   border-bottom: 1px solid #2c2c2b;
   background: #1f1f1f;
+}
+/* the command line at the foot of the output: the folder it runs in, what is typed, Run */
+.mvn-line {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 6px 8px;
+  border-top: 1px solid #2c2c2b;
+  background: #1f1f1f;
+}
+.mvn-line-prompt {
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  color: #8ab4f8;
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mvn-line-input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid #3a3a38;
+  border-radius: 6px;
+  outline: none;
+  background: #151515;
+  color: #e8e6e1;
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+}
+.mvn-line-input::placeholder {
+  color: #77756f;
+}
+.mvn-line-input:focus {
+  border-color: var(--accent);
+}
+.mvn-line-run {
+  flex: none;
 }
 .mvn-console-head .mvn-status {
   color: #a8a6a0;
@@ -8960,6 +9016,11 @@ label.file-item {
 .api-code-btn {
   flex: none;
   margin-right: 10px;
+  padding: 4px 6px;
+}
+.btn-icon.api-code-btn svg {
+  width: 16px;
+  height: 16px;
 }
 .api-chevron {
   flex: none;
@@ -9306,6 +9367,109 @@ strong.api-code-file {
   gap: 8px;
   margin: 0;
 }
+/* History: at the end of the line under a block; the commits that changed its file, a commit what it changed */
+.tool-card-status .api-hist-btn {
+  flex: none;
+  margin-left: auto;
+  padding: 2px 8px;
+  color: var(--text);
+}
+.api-hist-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(900px, 94vw);
+  max-width: none;
+  max-height: min(640px, 86vh);
+  user-select: text;
+}
+.api-hist-where,
+.api-commit-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+  font-size: var(--fs-small);
+}
+.api-commit-meta {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.api-commit-meta strong {
+  color: var(--text);
+}
+.api-hist-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  padding: 4px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.api-hist-cols,
+.api-hist-row {
+  display: grid;
+  flex: none;
+  grid-template-columns: minmax(110px, 1fr) minmax(90px, 0.8fr) 76px minmax(0, 3fr);
+  gap: 12px;
+  align-items: baseline;
+  padding: 7px 10px;
+  text-align: left;
+}
+.api-hist-cols {
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+}
+.api-hist-row {
+  width: 100%;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.api-hist-row:hover {
+  background: var(--bg-hover);
+}
+.api-hist-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.api-hist-who {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.api-hist-when {
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+  white-space: nowrap;
+}
+.api-hist-hash {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+}
+.api-hist-msg {
+  overflow-wrap: anywhere;
+}
+.api-hist-status.error {
+  color: var(--red);
+}
+.api-commit-side {
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
 .tool-badge {
   display: inline-block;
   padding: 0 8px;
@@ -9577,10 +9741,14 @@ strong.api-code-file {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
-.an-title {
-  overflow-wrap: anywhere;
+/* under a file's name: not readable, or a part of a spec (its models), not a spec of its own */
+.an-name-note {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-small);
+  font-weight: 400;
 }
-/* a .yaml that is a part of a spec (its models), not a spec of its own */
 .an-part {
   color: var(--text-muted);
 }
@@ -9733,26 +9901,43 @@ strong.api-code-file {
 :root[data-theme='dark'] .an-ms-tag.ms7 {
   --ms: #cbd5e1;
 }
-/* one bar: Microservices and File | Compare with | the search and + Filter; it wraps a group at a time */
+/* one bar: Microservices, Swagger file | Compare with, each with its name, on top; the search and + Filter under
+   them. A row wraps a field at a time */
 .an-fieldbar {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 10px;
+  flex-direction: column;
+  gap: 8px;
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--bg-surface);
 }
-/* the lists give up room before anything goes to the next line */
+.an-fieldrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+.an-searchrow {
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.an-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+/* the lists give up room before a field goes to the next line */
 .an-fieldbar .an-group {
   flex: 1 1 200px;
   min-width: 130px;
   max-width: 220px;
 }
 .an-fieldbar .an-search {
-  flex: 2 1 160px;
+  flex: 1 1 240px;
   min-width: 120px;
+  max-width: 560px;
 }
 .an-sep {
   width: 1px;
@@ -10679,6 +10864,25 @@ strong.api-code-file {
   color: var(--text-muted);
   font-size: var(--fs-small);
   white-space: nowrap;
+}
+/* a saved command chosen: its goals, after its name */
+.mvn-saved-info {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-card.mvn-save-card {
+  width: min(520px, calc(100vw - 48px));
+}
+.mvn-save-card .mvn-save-goals {
+  font-family: var(--font-mono);
+}
+.mvn-save-card .mv-actions .mvn-save-delete {
+  margin-right: auto;
 }
 .settings-card.mvn-macro-card {
   width: min(620px, calc(100vw - 48px));
@@ -12286,6 +12490,13 @@ select optgroup {
   font-size: var(--fs-caption);
   font-weight: 400;
   white-space: nowrap;
+}
+/* a saved command's goals beside its name */
+.mvn-cmd-steps.mvn-cmd-goals {
+  max-width: 260px;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
 }
 .mvn-cmd-edit svg,
 .mvn-cmd-new svg {

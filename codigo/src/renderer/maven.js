@@ -60,6 +60,136 @@ async function loadMvnMacros() {
   renderMacroOptions();
 }
 
+// -- My commands: Maven goals saved under a name, for every repository (Save next to Custom command...). Chosen in the
+// same list and run as a custom command is, the options added; Edit and Delete next to the one chosen. --
+let mvnSaved = [];
+const savedOf = (value) => (String(value || '').startsWith('cmd:') ? mvnSaved.find((c) => `cmd:${c.id}` === value) || null : null);
+const chosenSaved = () => savedOf(mvnChoice());
+
+function renderSavedOptions() {
+  const select = $('#mvnCommand');
+  const keep = select.value;
+  $('#mvnSavedGroup').replaceChildren(
+    ...mvnSaved.map((c) => {
+      const o = new Option(c.name, `cmd:${c.id}`);
+      o.title = `mvn ${c.goals}`;
+      return o;
+    })
+  );
+  if ([...select.options].some((o) => o.value === keep)) select.value = keep;
+}
+
+async function loadMvnSaved() {
+  const r = await window.maven.commands();
+  mvnSaved = Array.isArray(r.commands) ? r.commands : [];
+  renderSavedOptions();
+}
+
+let mvnSaveEditing = null; // the saved command changed in the dialog, or null for a new one
+let mvnSaveFrom = null; // the button that opened it
+function mvnSaveModal() {
+  let modal = $('#mvnSaveModal');
+  if (modal) return modal;
+  modal = document.createElement('div');
+  modal.id = 'mvnSaveModal';
+  modal.className = 'settings-overlay hidden';
+  modal.innerHTML = `
+    <div class="settings-card mvn-save-card" role="dialog" aria-modal="true" aria-labelledby="mvnSaveTitle">
+      <h3 id="mvnSaveTitle"></h3>
+      <label class="settings-label" for="mvnSaveName">Name in the list</label>
+      <input id="mvnSaveName" class="input" maxlength="60" autocomplete="off" spellcheck="false" />
+      <label class="settings-label" for="mvnSaveGoals">Goals</label>
+      <input id="mvnSaveGoals" class="input mvn-save-goals" maxlength="400" placeholder="clean verify -Pdev" autocomplete="off" spellcheck="false" />
+      <p id="mvnSaveNote" class="me-note" aria-live="polite"></p>
+      <div class="action-row settings-actions mv-actions">
+        <button id="mvnSaveDelete" class="btn btn-danger mvn-save-delete hidden" type="button">Delete</button>
+        <span class="mv-gap"></span>
+        <button id="mvnSaveCancel" class="btn" type="button">Cancel</button>
+        <button id="mvnSaveOk" class="btn btn-primary" type="button">Save</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      closeSaveCommand();
+    } else if (e.key === 'Enter' && e.target.matches('input')) {
+      e.preventDefault();
+      saveMvnCommand();
+    }
+  });
+  modal.addEventListener('mousedown', (e) => {
+    if (e.target === modal) closeSaveCommand();
+  });
+  // an empty name shows the goals in the list
+  $('#mvnSaveGoals').addEventListener('input', () => ($('#mvnSaveName').placeholder = $('#mvnSaveGoals').value.trim() || 'Integration tests'));
+  $('#mvnSaveCancel').addEventListener('click', closeSaveCommand);
+  $('#mvnSaveOk').addEventListener('click', saveMvnCommand);
+  $('#mvnSaveDelete').addEventListener('click', async () => {
+    const command = mvnSaveEditing;
+    if (command && (await deleteSavedCommand(command))) closeSaveCommand();
+  });
+  return modal;
+}
+
+// command: a saved one to change; or null, with the goals typed in Custom command...
+function openSaveCommand(command, goals = '') {
+  const modal = mvnSaveModal();
+  mvnSaveEditing = command;
+  mvnSaveFrom = document.activeElement;
+  $('#mvnSaveTitle').textContent = command ? `Change ${command.name}` : 'Save this command';
+  $('#mvnSaveName').value = command && command.name !== command.goals ? command.name : '';
+  $('#mvnSaveGoals').value = command ? command.goals : goals;
+  $('#mvnSaveName').placeholder = $('#mvnSaveGoals').value.trim() || 'Integration tests';
+  const note = $('#mvnSaveNote');
+  note.classList.remove('error');
+  note.textContent = 'For every microservice. Empty, the name is the goals; + option still adds flags and profiles when it runs.';
+  $('#mvnSaveDelete').classList.toggle('hidden', !command);
+  modal.classList.remove('hidden');
+  $('#mvnSaveName').focus();
+}
+
+function closeSaveCommand() {
+  const modal = $('#mvnSaveModal');
+  if (!modal || modal.classList.contains('hidden')) return;
+  modal.classList.add('hidden');
+  mvnSaveEditing = null;
+  if (mvnSaveFrom && mvnSaveFrom.isConnected && !mvnSaveFrom.closest('.hidden')) mvnSaveFrom.focus();
+  else $('#mvnCommand').focus();
+}
+
+async function saveMvnCommand() {
+  const editing = mvnSaveEditing;
+  const r = await window.maven.saveCommand({ id: editing ? editing.id : undefined, name: $('#mvnSaveName').value, goals: $('#mvnSaveGoals').value });
+  if (r.error) {
+    const note = $('#mvnSaveNote');
+    note.classList.add('error');
+    note.textContent = r.error;
+    return;
+  }
+  mvnSaved = r.commands;
+  renderSavedOptions();
+  const saved = mvnSaved.find((c) => c.id === r.id);
+  closeSaveCommand();
+  chooseMvnCommand(`cmd:${r.id}`);
+  toast(`${editing ? 'Changed' : 'Saved in My commands'}: ${saved ? saved.name : ''}`, 'success', { plain: true });
+}
+
+// Out of the list, once confirmed; the one chosen goes back to Custom command..., its goals in the field.
+async function deleteSavedCommand(command) {
+  if (!(await askConfirm(`Delete ${command.name}? It goes out of My commands, for every microservice.`))) return false;
+  const r = await window.maven.deleteCommand(command.id);
+  const was = mvnChoice() === `cmd:${command.id}`;
+  mvnSaved = Array.isArray(r.commands) ? r.commands : mvnSaved.filter((c) => c.id !== command.id);
+  renderSavedOptions();
+  if (was) {
+    $('#mvnCustom').value = command.goals;
+    chooseMvnCommand('custom');
+  }
+  toast(`Deleted from My commands: ${command.name}`, 'success', { plain: true });
+  return true;
+}
+
 // -- Options under the command: flags and pom.xml profiles added to whatever runs, remembered per repository --
 const MVN_OPTIONS_KEY = 'mvnOptions';
 let mvnOptionList = []; // [{ id, flag, label }] the app accepts
@@ -231,6 +361,8 @@ function openMvnOptions() {
 
 // What Run starts before the options: the chosen command, or "mvn" and the goals typed for a custom one.
 function mvnBaseCommand() {
+  const saved = chosenSaved();
+  if (saved) return `mvn ${saved.goals}`;
   if (mvnChoice() === 'custom') {
     const goals = $('#mvnCustom').value.trim().replace(/^mvn(w)?(\.cmd)?\s+/i, '');
     return goals ? `mvn ${goals}` : '';
@@ -254,6 +386,13 @@ function fitMvnCommand() {
 // and Debug add the port arguments). "Custom command..." shows a field for the goals in the bar.
 function renderMvnPreview() {
   $('#mvnCustom').classList.toggle('hidden', mvnChoice() !== 'custom');
+  // Save next to the goals typed; a saved command chosen: its goals (unless they are its name), Edit and Delete
+  const saved = chosenSaved();
+  $('#mvnCustomSave').classList.toggle('hidden', mvnChoice() !== 'custom');
+  $('#mvnCustomSave').disabled = Boolean(mvnRun && mvnRun.running) || !$('#mvnCustom').value.trim();
+  $('#mvnSavedInfo').classList.toggle('hidden', !saved || saved.name === saved.goals);
+  $('#mvnSavedInfo').textContent = saved ? saved.goals : '';
+  ['#mvnSavedEdit', '#mvnSavedDelete'].forEach((sel) => $(sel).classList.toggle('hidden', !saved));
   fitMvnCommand();
   const macro = chosenMacro();
   const container = mvnChoice() === 'container';
@@ -715,6 +854,9 @@ function renderMvnStatus() {
   $('#mvnOptionsBtn').disabled = running;
   $$('#mvnTags button').forEach((b) => (b.disabled = running));
   $('#mvnCustom').disabled = running;
+  $('#mvnCustomSave').disabled = running || !$('#mvnCustom').value.trim();
+  ['#mvnSavedEdit', '#mvnSavedDelete'].forEach((sel) => ($(sel).disabled = running));
+  $('#mvnLineRun').disabled = running;
   updateMvnRunButton();
   $('#mvnMacroEditBtn').disabled = running;
   $('#mvnFolder').disabled = running;
@@ -865,6 +1007,7 @@ function applyMvnInfo(info) {
   const row = $('#mvnFolderRow');
   if (info.hasPom) $('#mvnCmdline').insertBefore(row, $('#mvnValuesBtn'));
   else $('#tab-maven').insertBefore(row, $('#mvnNoPom'));
+  renderMvnLine(info);
   $('#mvnWrapper').classList.toggle('hidden', !info.wrapper);
   $('#mvnWrapper').textContent = info.wrapperDir ? `using ${info.wrapperDir}/mvnw` : 'using mvnw';
   // the same run, read while its output came: the page already has more of it than this copy
@@ -918,6 +1061,62 @@ async function runMaven(request) {
     return;
   }
   startedMvnRun(r);
+}
+
+// -- The command line under the output: what is typed there runs as Run does (mvn-line in maven.js), its output after
+// what is there. ↑ and ↓ bring back the last ones typed, the newest first (kept in this window). --
+const MVN_LINE_KEY = 'mvnLineHistory';
+const MVN_LINE_MAX = 50;
+let mvnLines = (() => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(MVN_LINE_KEY) || '[]');
+    return Array.isArray(saved) ? saved.filter((x) => typeof x === 'string').slice(0, MVN_LINE_MAX) : [];
+  } catch {
+    return [];
+  }
+})();
+let mvnLineAt = -1; // where ↑ and ↓ are in that list; -1: what is being typed
+let mvnLineDraft = '';
+
+async function runMvnLine() {
+  const input = $('#mvnLine');
+  const line = input.value.trim();
+  if (!mvnRepo || !line) return;
+  const r = await window.maven.line(mvnRepo, { line, ...(await mvnValuesRequest()) });
+  if (r.error) {
+    toast(r.error, 'error');
+    return;
+  }
+  mvnLines = [line, ...mvnLines.filter((x) => x !== line)].slice(0, MVN_LINE_MAX);
+  try {
+    localStorage.setItem(MVN_LINE_KEY, JSON.stringify(mvnLines));
+  } catch {
+    // kept until the window closes
+  }
+  mvnLineAt = -1;
+  input.value = '';
+  startedMvnRun(r);
+}
+
+// by 1: an older one; by -1: a newer one, and past the newest what was being typed
+function stepMvnLine(by) {
+  const input = $('#mvnLine');
+  if (mvnLineAt === -1) mvnLineDraft = input.value;
+  const at = Math.max(-1, Math.min(mvnLines.length - 1, mvnLineAt + by));
+  if (at === mvnLineAt) return;
+  mvnLineAt = at;
+  input.value = at === -1 ? mvnLineDraft : mvnLines[at];
+  input.setSelectionRange(input.value.length, input.value.length);
+}
+
+// where a command typed there runs, before it and in the empty line
+function renderMvnLine(info) {
+  const entry = repos.find((r) => r.path === mvnRepo);
+  const where = `${entry ? displayName(entry) : repoName(mvnRepo)}${info.dir ? `/${info.dir}` : ''}`;
+  $('#mvnLinePrompt').textContent = `${where} ${window.git.platform === 'win32' ? '>' : '$'}`;
+  const input = $('#mvnLine');
+  input.placeholder = `A command in ${where}: mvn, git, java -version... ↑ for the last ones`;
+  input.title = 'Runs as Run does, in this folder: mvn is the same Maven (mvnw), with Env and Values when it starts the application; any other command goes to the system shell, with them. A cd or a variable set in a line lasts for that line only.';
 }
 
 // A run that started here: its output and status in the page.
@@ -1482,6 +1681,49 @@ function openMvnCommandMenu() {
       menu.appendChild(item(o.textContent, o.value, o.title));
       continue;
     }
+    // Podman / Docker: Start in container, in a section of its own
+    if (o.id === 'mvnContainerGroup') {
+      const head = document.createElement('div');
+      head.className = 'mvn-cmd-group';
+      head.textContent = o.label;
+      head.title = 'The jar Maven builds, run in a Java image with Podman or Docker';
+      menu.appendChild(head);
+      for (const c of o.children) menu.appendChild(item(c.textContent, c.value, c.title));
+      continue;
+    }
+    // My commands, when there are any: their goals beside a name of their own, a pencil each
+    if (o.id === 'mvnSavedGroup') {
+      if (!mvnSaved.length) continue;
+      const head = document.createElement('div');
+      head.className = 'mvn-cmd-group';
+      head.textContent = `My commands (${mvnSaved.length})`;
+      head.title = 'Maven goals saved under a name, for every repository (Save next to Custom command...)';
+      menu.appendChild(head);
+      for (const c of mvnSaved) {
+        const row = document.createElement('div');
+        row.className = 'mvn-cmd-macro';
+        const b = item(c.name, `cmd:${c.id}`, `mvn ${c.goals}`);
+        if (c.name !== c.goals) {
+          const goals = document.createElement('span');
+          goals.className = 'mvn-cmd-steps mvn-cmd-goals';
+          goals.textContent = c.goals;
+          b.appendChild(goals);
+        }
+        const edit = document.createElement('button');
+        edit.type = 'button';
+        edit.className = 'icon-action mvn-cmd-edit';
+        edit.title = `Change ${c.name}: its name and goals, or delete it`;
+        edit.setAttribute('aria-label', `Edit ${c.name}`);
+        edit.innerHTML = icon(ACTION_ICONS.edit);
+        edit.addEventListener('click', () => {
+          closeMvnCommandMenu();
+          openSaveCommand(c);
+        });
+        row.append(b, edit);
+        menu.appendChild(row);
+      }
+      continue;
+    }
     // the macros: a pencil each, then New macro...
     const head = document.createElement('div');
     head.className = 'mvn-cmd-group';
@@ -1625,6 +1867,10 @@ function setupMaven() {
   loadMvnMacros().then(() => {
     if (saved && saved.startsWith('macro:') && macroOf(saved)) chooseMvnCommand(saved);
   });
+  // and so is a saved command
+  loadMvnSaved().then(() => {
+    if (saved && saved.startsWith('cmd:') && savedOf(saved)) chooseMvnCommand(saved);
+  });
   // the app's own list, not the system's
   select.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return;
@@ -1653,8 +1899,20 @@ function setupMaven() {
     const macro = chosenMacro();
     if (macro) runMvnMacro(macro);
     else if (mvnChoice() === 'container') openMvnContainer();
-    else runMaven({ ...(mvnChoice() === 'custom' ? { custom: $('#mvnCustom').value } : { preset: mvnChoice() }), ...chosenMvnOptions() });
+    else {
+      const saved = chosenSaved();
+      runMaven({ ...(saved ? { custom: saved.goals } : mvnChoice() === 'custom' ? { custom: $('#mvnCustom').value } : { preset: mvnChoice() }), ...chosenMvnOptions() });
+    }
   };
+  $('#mvnCustomSave').addEventListener('click', () => openSaveCommand(null, $('#mvnCustom').value.trim()));
+  $('#mvnSavedEdit').addEventListener('click', () => {
+    const command = chosenSaved();
+    if (command) openSaveCommand(command);
+  });
+  $('#mvnSavedDelete').addEventListener('click', () => {
+    const command = chosenSaved();
+    if (command) deleteSavedCommand(command);
+  });
   setupMacroEditor();
   setupMacroAsk();
   $('#mvnFolder').addEventListener('change', (e) => setMvnFolder(e.target.value));
@@ -1680,6 +1938,15 @@ function setupMaven() {
   $('#mvnCustom').addEventListener('keydown', (e) => e.key === 'Enter' && runChosen());
   renderMvnPreview();
   setupMvnPorts();
+  $('#mvnLineForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    runMvnLine();
+  });
+  $('#mvnLine').addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    e.preventDefault();
+    stepMvnLine(e.key === 'ArrowUp' ? 1 : -1);
+  });
   $('#mvnClearBtn').addEventListener('click', async () => {
     await window.maven.clear(mvnRepo);
     mvnRun = null;

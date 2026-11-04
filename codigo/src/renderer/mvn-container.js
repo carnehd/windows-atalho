@@ -1,18 +1,19 @@
 // -- Start in container: the jar Maven builds, run by Docker or Podman in a Java image, with nothing added to the
 // microservice's folder. Run with it chosen opens a dialog with what the container needs (the image, its name, the
-// port, debug, build first, the variables as Env has them, the values of the Values button), the command it runs under
-// them; Start saves them for the repository and runs it, its output in the page (maven.js). --
+// port, debug, build first, the values of the Values button, this PC's proxy, the variables as Env has them), the
+// command it runs under them; Start saves them for the repository and runs it, its output in the page (maven.js). --
 let mvnContainerSpec = null; // what the dialog starts with (from the page's info): saved for the repository, or defaults
 let mcRows = []; // the variables of the dialog, { name, value, enabled }: the table changes them in place
 let mcEngine = null; // { name, label } of the engine that answers, or { error }
 let mcValues = {}; // what Values would give the application: { values, valuesNote }, or {}
 let mcPreviewTimer = 0;
+let mcProxyFound = null; // what this PC's settings say: { url, from, noProxy }
 // Java images often used, offered under the image field (a datalist's own popup takes Electron down on macOS)
 const MC_IMAGES = ['eclipse-temurin:17-jre', 'eclipse-temurin:21-jre', 'eclipse-temurin:25-jre', 'amazoncorretto:17', 'amazoncorretto:21'];
 
 // "eclipse-temurin:21-jre · :8080" next to the command list
 function mvnContainerSummary(spec) {
-  return spec ? `${spec.image} · :${spec.port}${spec.debug ? ` · debug :${spec.debugPort}` : ''}` : '';
+  return spec ? `${spec.image} · :${spec.port}${spec.debug ? ` · debug :${spec.debugPort}` : ''}${spec.proxy && spec.proxy.on ? ' · proxy' : ''}` : '';
 }
 
 function mvnContainerModal() {
@@ -42,6 +43,12 @@ function mvnContainerModal() {
         <div class="mc-line"><label class="mv-differs"><input id="mcBuild" type="checkbox" /> Build first (mvn package -DskipTests)</label><span id="mcJar" class="me-hint mc-inline-hint"></span></div>
         <span id="mcValuesKey" class="mc-key">Values</span>
         <div id="mcValuesLine" class="mc-line"><label class="mv-differs"><input id="mcValues" type="checkbox" /> <span id="mcValuesText"></span></label></div>
+        <span class="mc-key">Proxy</span>
+        <div class="mc-line"><label class="mv-differs"><input id="mcProxy" type="checkbox" /> Use this PC's proxy</label><input id="mcProxyUrl" class="input mc-wide mc-proxy" maxlength="300" placeholder="http://proxy:8080" spellcheck="false" autocomplete="off" aria-label="The proxy" aria-describedby="mcProxyHint" /></div>
+        <label class="mc-key" for="mcNoProxy">Not through it</label>
+        <div class="mc-line"><input id="mcNoProxy" class="input mc-wide" maxlength="1000" placeholder=".company.local, 10.1.2.3" spellcheck="false" autocomplete="off" /></div>
+        <span></span>
+        <p id="mcProxyHint" class="me-hint mc-inline-hint" aria-live="polite"></p>
       </div>
       <div class="me-vars-head mc-vars-head">
         <span class="settings-label">Environment variables</span>
@@ -74,6 +81,10 @@ function mvnContainerModal() {
   modal.addEventListener('input', () => previewMvnContainerLater());
   modal.addEventListener('change', () => previewMvnContainerLater());
   $('#mcDebug').addEventListener('change', () => ($('#mcDebugPort').disabled = !$('#mcDebug').checked));
+  $('#mcProxy').addEventListener('change', () => {
+    setMcProxyOn($('#mcProxy').checked);
+    if ($('#mcProxy').checked && !$('#mcProxyUrl').value.trim()) $('#mcProxyUrl').focus();
+  });
   $('#mcImagePick').addEventListener('click', () => {
     openActionMenu({
       anchor: $('#mcImagePick'),
@@ -147,8 +158,21 @@ function mcSpec() {
     debugPort: $('#mcDebugPort').value,
     build: $('#mcBuild').checked,
     values: $('#mcValues').checked,
+    proxy: { on: $('#mcProxy').checked, url: $('#mcProxyUrl').value.trim(), noProxy: $('#mcNoProxy').value.trim() },
     vars: checkMvnEnvRows(mcRows).vars,
   };
+}
+
+function setMcProxyOn(on) {
+  ['#mcProxyUrl', '#mcNoProxy'].forEach((sel) => ($(sel).disabled = !on));
+}
+
+// Under the proxy: where this PC's comes from, and what it reaches (the application, not the image's download).
+function renderMcProxyHint() {
+  const found = mcProxyFound;
+  const where = !found ? 'Looking for this PC\'s proxy...' : `${found.url ? `This PC's: ${found.url.replace(/\/\/[^@/]*@/, '//***@')}, from ${found.from}.` : 'None in this PC\'s settings: type the company\'s, if it has one.'} For the application, not the image's download.`;
+  $('#mcProxyHint').textContent = where;
+  $('#mcProxyHint').title = 'The application in the container gets HTTP_PROXY, HTTPS_PROXY, NO_PROXY and, for Java, JAVA_TOOL_OPTIONS; this PC (host.docker.internal) never goes through it. Not the download of the image: that is Docker\'s or Podman\'s own setting.';
 }
 
 function previewMvnContainerLater() {
@@ -189,11 +213,25 @@ async function openMvnContainer() {
   $('#mcJar').textContent = '';
   ['#mcValuesKey', '#mcValuesLine'].forEach((sel) => $(sel).classList.add('hidden'));
   $('#mcValues').checked = spec.values !== false;
+  const proxy = spec.proxy || {};
+  $('#mcProxy').checked = Boolean(proxy.on);
+  $('#mcProxyUrl').value = proxy.url || '';
+  $('#mcNoProxy').value = proxy.noProxy || '';
+  setMcProxyOn(Boolean(proxy.on));
+  mcProxyFound = null;
+  renderMcProxyHint();
   modal.classList.remove('hidden');
   drawMcRows();
   $('#mcStart').focus();
-  const [info, values] = await Promise.all([window.maven.containerInfo(repo), mvnValuesRequest()]);
+  const [info, values, found] = await Promise.all([window.maven.containerInfo(repo), mvnValuesRequest(), window.maven.containerProxy().catch(() => ({}))]);
   if (repo !== mvnRepo || modal.classList.contains('hidden')) return;
+  // never chosen: this PC's proxy, ready to be switched on
+  mcProxyFound = { url: (found && found.url) || '', from: (found && found.from) || '', noProxy: (found && found.noProxy) || '' };
+  if (!$('#mcProxyUrl').value.trim() && !$('#mcProxy').checked) {
+    $('#mcProxyUrl').value = mcProxyFound.url;
+    if (!$('#mcNoProxy').value.trim()) $('#mcNoProxy').value = mcProxyFound.noProxy;
+  }
+  renderMcProxyHint();
   mcEngine = (info && info.engine) || { error: (info && info.error) || 'Docker or Podman did not answer' };
   $('#mcEngine').textContent = mcEngine.error || `Runs with ${mcEngine.label}.`;
   $('#mcEngine').classList.toggle('error', Boolean(mcEngine.error));
@@ -234,7 +272,8 @@ async function startMvnContainer() {
     note.textContent = r.error;
     return;
   }
-  mvnContainerSpec = { ...spec, port: Number(spec.port), debugPort: Number(spec.debugPort) };
+  // as it was saved (the proxy's address written in full)
+  mvnContainerSpec = r.spec || { ...spec, port: Number(spec.port), debugPort: Number(spec.debugPort) };
   closeMvnContainer();
   startedMvnRun(r);
   renderMvnPreview();

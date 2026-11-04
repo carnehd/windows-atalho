@@ -165,7 +165,7 @@ function relTime(ms) {
   for (const [size, name] of units) {
     if (a >= size) {
       const n = Math.floor(a / size);
-      text = name.length > 3 ? `${n} ${name}${n === 1 ? '' : 's'}` : `${n} ${name}`;
+      text = /^(year|month|day)$/.test(name) ? `${n} ${name}${n === 1 ? '' : 's'}` : `${n} ${name}`;
       break;
     }
   }
@@ -1537,6 +1537,10 @@ function openInCompare(a, b, what) {
 // main process (src/api-diff.js): the endpoints added, removed and changed, the models changed with the endpoints that
 // use them, and which changes break a client written for the old spec. Breaking ones first and marked; a filter for them.
 const API_CHEVRON = '<svg class="api-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6l-6 6"/></svg>';
+// History: a clock with an arrow going back
+const API_HISTORY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v4l3 2"/><path d="M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5"/></svg>';
+// Before / After: a frame split in two, an arrow to each side
+const API_BEFORE_AFTER ='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 2v20"/><path d="M9 10l-2 2l2 2"/><path d="M15 10l2 2l-2 2"/></svg>';
 
 function apiChip(text, cls) {
   return tEl('span', `api-chip ${cls}`, text);
@@ -1630,9 +1634,22 @@ function buildApiDiffTool() {
   );
   selectionCopyMenu(box);
 
+  // under a block: the microservice, the spec's title and version, its path ("a-service · Billing API · 2.1.0 ·
+  // swagger/billing-api.yaml"); a spec from elsewhere, the file or address in place of the microservice and path
+  const where = (side) => (side.ms ? [side.ms, side.file] : [side.source]);
   const describe = (side, info) => {
-    const what = [info.kind, [info.title, info.version].filter(Boolean).join(' '), `${plural(info.endpoints, 'endpoint')}, ${plural(info.models, 'model')}`].filter(Boolean).join(' · ');
-    side.card.setStatus(side.source ? `${what} · from ${side.source}` : what);
+    const [ms, file] = where(side);
+    side.card.setStatus([ms, info.title, info.version, file].filter(Boolean).join(' · '));
+    addHistory(side);
+  };
+  // History at the end of that line, for a spec from a microservice: the commits that changed its file
+  const addHistory = (side) => {
+    if (!side.ms || !side.file) return;
+    const b = toolButton('History', () => openHistory(side), 'btn-icon api-hist-btn');
+    b.insertAdjacentHTML('afterbegin', API_HISTORY);
+    b.title = `Who changed ${side.file} in ${side.ms}, and when`;
+    b.setAttribute('aria-haspopup', 'dialog');
+    side.card.querySelector('.tool-card-status').appendChild(b);
   };
 
   const compare = async () => {
@@ -1641,7 +1658,11 @@ function buildApiDiffTool() {
     for (const side of [before, after]) if (!side.area.value.trim()) side.card.setStatus('Paste a spec, take it from a microservice, open a file or get it from an address', 'note');
     if (!a || !b) {
       // the one there: where it is from, until the other one comes
-      for (const side of [before, after]) if (side.area.value.trim()) side.card.setStatus(side.source ? `From ${side.source}` : '', 'note');
+      for (const side of [before, after]) {
+        if (!side.area.value.trim()) continue;
+        side.card.setStatus(where(side).filter(Boolean).join(' · '), 'note');
+        addHistory(side);
+      }
       result = null;
       out.textContent = '';
       return;
@@ -1707,8 +1728,10 @@ function buildApiDiffTool() {
     tail.appendChild(apiChip(STATE_TEXT[state], state));
     if (count) tail.appendChild(tEl('span', 'api-count', plural(count, 'change')));
     h.appendChild(tail);
-    const code = toolButton('Before / After', () => showCode(el), 'api-code-btn');
-    code.title = 'The code of both specs side by side, what differs in red and green';
+    const code = toolButton('', () => showCode(el), 'btn-icon api-code-btn');
+    code.innerHTML = API_BEFORE_AFTER;
+    code.title = 'Before / After: the code of both specs side by side, what differs in red and green';
+    code.setAttribute('aria-label', `Before / After: ${part.kind === 'model' ? `model ${part.key}` : `${part.method} ${part.path}`}`);
     code.setAttribute('aria-haspopup', 'dialog');
     top.append(h, code);
     const body = tEl('div', 'api-item-body');
@@ -2027,6 +2050,257 @@ function buildApiDiffTool() {
     closeActionMenu();
     modal.classList.add('hidden');
     if (codeFrom && codeFrom.isConnected) codeFrom.focus();
+  }
+
+  // -- History: the commits that changed the file of a side from a microservice, newest first (one git log, asked when
+  // History is pressed). A commit opens what it changed in that file, side by side (one git diff); Newer and Older go
+  // through the list. --
+  let histSide = null;
+  let histList = []; // the commits listed: { hash, short, author, email, date, subject, file, from }
+  let histSeq = 0;
+  let histFrom = null; // the button that opened it, given the focus back
+  const histModal = () => {
+    let modal = $('#apiHistModal');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'apiHistModal';
+    modal.className = 'settings-overlay hidden';
+    modal.innerHTML = `
+      <div class="settings-card api-hist-card" role="dialog" aria-modal="true" aria-labelledby="apiHistTitle">
+        <div class="api-pick-head"><h3 id="apiHistTitle"></h3><span class="api-hist-side tool-hint"></span></div>
+        <div class="api-hist-where"></div>
+        <div class="api-hist-list" role="group" aria-label="The commits that changed the file"></div>
+        <div class="action-row api-pick-foot">
+          <span class="api-hist-status tool-hint" aria-live="polite"></span>
+          <span class="mv-gap"></span>
+          <button type="button" class="btn api-hist-close">Close</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        closeHistory();
+      } else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && e.target.closest('.api-hist-row')) {
+        e.preventDefault();
+        const rows = [...modal.querySelectorAll('.api-hist-row')];
+        const next = rows[rows.indexOf(e.target.closest('.api-hist-row')) + (e.key === 'ArrowDown' ? 1 : -1)];
+        if (next) next.focus();
+      }
+    });
+    modal.addEventListener('mousedown', (e) => {
+      if (e.target === modal) closeHistory();
+    });
+    modal.querySelector('.api-hist-close').addEventListener('click', closeHistory);
+    selectionCopyMenu(modal);
+    return modal;
+  };
+  const whereLine = (box, side, file) => {
+    box.textContent = '';
+    box.append(anMsTag({ name: side.ms, path: side.msPath }), tEl('span', 'api-code-file', file));
+  };
+  const openHistory = async (side) => {
+    const modal = histModal();
+    histFrom = document.activeElement;
+    histSide = side;
+    histList = [];
+    modal.querySelector('#apiHistTitle').textContent = `History of ${side.file.split('/').pop()}`;
+    modal.querySelector('.api-hist-side').textContent = side.title;
+    whereLine(modal.querySelector('.api-hist-where'), side, side.file);
+    const list = modal.querySelector('.api-hist-list');
+    list.textContent = '';
+    const status = modal.querySelector('.api-hist-status');
+    status.classList.remove('error');
+    status.textContent = 'Reading its history...';
+    modal.classList.remove('hidden');
+    modal.querySelector('.api-hist-close').focus();
+    const mine = ++histSeq;
+    const r = await window.git.fileHistory(side.msPath, side.file);
+    if (mine !== histSeq || modal.classList.contains('hidden')) return;
+    if (r.error) {
+      status.classList.add('error');
+      status.textContent = r.error;
+      return;
+    }
+    histList = r.commits;
+    status.textContent = histList.length ? `${plural(histList.length, 'commit')}${r.more ? ', the newest' : ''} · a commit shows what it changed` : '';
+    if (!histList.length) {
+      list.appendChild(tEl('div', 'api-pick-note', `No commit has ${side.file}: it is not in git yet.`));
+      return;
+    }
+    const cols = tEl('div', 'api-hist-cols');
+    cols.append(tEl('span', '', 'Who'), tEl('span', '', 'When'), tEl('span', '', 'Commit'), tEl('span', '', 'Message'));
+    list.appendChild(cols);
+    histList.forEach((c, at) => {
+      const row = tEl('button', 'api-hist-row');
+      row.type = 'button';
+      const when = new Date(c.date);
+      const whenEl = tEl('span', 'api-hist-when', relTime(when.getTime()));
+      whenEl.title = when.toLocaleString();
+      const who = tEl('span', 'api-hist-who', c.author);
+      who.title = c.email;
+      row.append(who, whenEl, tEl('span', 'api-hist-hash', c.short), tEl('span', 'api-hist-msg', c.subject));
+      row.setAttribute('aria-label', `${c.author}, ${relTime(when.getTime())}: ${c.subject}`);
+      row.setAttribute('aria-haspopup', 'dialog');
+      // a click that ends a selection only selects
+      row.addEventListener('click', () => {
+        if (!textSelected()) showCommit(at);
+      });
+      list.appendChild(row);
+    });
+    list.querySelector('.api-hist-row').focus();
+  };
+  function closeHistory() {
+    const modal = $('#apiHistModal');
+    if (!modal || modal.classList.contains('hidden')) return;
+    histSeq++;
+    modal.classList.add('hidden');
+    const back = histFrom && histFrom.isConnected ? histFrom : histSide && histSide.fromMs;
+    if (back) back.focus();
+  }
+
+  let commitAt = -1;
+  let commitSeq = 0;
+  const commitModal = () => {
+    let modal = $('#apiCommitModal');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'apiCommitModal';
+    modal.className = 'settings-overlay hidden';
+    modal.innerHTML = `
+      <div class="settings-card api-code-card" role="dialog" aria-modal="true" aria-labelledby="apiCommitTitle">
+        <div class="api-code-head">
+          <h3 id="apiCommitTitle" class="api-code-title"></h3>
+          <span class="mv-gap"></span>
+          <span class="api-code-count tool-hint" aria-live="polite"></span>
+          <button type="button" class="btn btn-sm api-commit-newer" title="The commit after this one">‹ Newer</button>
+          <button type="button" class="btn btn-sm api-commit-older" title="The commit before this one">Older ›</button>
+        </div>
+        <div class="api-commit-meta"></div>
+        <div class="diff-cols api-code-cols">
+          <div class="api-commit-side"></div>
+          <div class="api-commit-side"></div>
+        </div>
+        <div class="diff-body api-code-body"></div>
+        <div class="action-row api-code-foot">
+          <span class="api-commit-note tool-hint"></span>
+          <span class="mv-gap"></span>
+          <button type="button" class="btn api-commit-close">Close</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      closeCommit();
+    });
+    modal.addEventListener('mousedown', (e) => {
+      if (e.target === modal) closeCommit();
+      const cell = e.target.closest && e.target.closest('.ds-cell');
+      const lines = modal.querySelector('.diff-lines.split');
+      if (lines && cell && e.button === 0) lines.dataset.select = cell.classList.contains('side-right') ? 'right' : 'left';
+    });
+    modal.querySelector('.api-commit-close').addEventListener('click', closeCommit);
+    modal.querySelector('.api-commit-newer').addEventListener('click', () => showCommit(commitAt - 1));
+    modal.querySelector('.api-commit-older').addEventListener('click', () => showCommit(commitAt + 1));
+    // copied: the lines of the side selected, without their numbers
+    const selectedCode = () => {
+      const lines = modal.querySelector('.diff-lines.split');
+      const picked = lines && splitSelection(lines);
+      return picked ? picked.text : '';
+    };
+    modal.addEventListener('copy', (e) => {
+      const text = selectedCode();
+      if (!text) return;
+      e.preventDefault();
+      e.clipboardData.setData('text/plain', text);
+    });
+    selectionCopyMenu(modal, () => selectedCode() || window.getSelection().toString());
+    return modal;
+  };
+  // full: every line of the file, not only 3 around each change ("Show" on a fold)
+  const showCommit = async (at, full = false) => {
+    const c = histList[at];
+    const side = histSide;
+    if (!c || !side) return;
+    const modal = commitModal();
+    commitAt = at;
+    modal.querySelector('#apiCommitTitle').textContent = c.subject;
+    const when = new Date(c.date);
+    const meta = modal.querySelector('.api-commit-meta');
+    const who = tEl('strong', '', c.author);
+    who.title = c.email;
+    whereLine(meta, side, c.file);
+    meta.append(tEl('span', 'mv-gap'), who, tEl('span', '', `${relTime(when.getTime())} · ${when.toLocaleString()}`), tEl('span', 'api-hist-hash', c.short), toolButton('Copy hash', () => toolCopy(c.hash, 'Commit hash'), 'api-code-copy'));
+    const [left, right] = modal.querySelectorAll('.api-commit-side');
+    left.textContent = 'Before this commit';
+    right.textContent = `After it (${c.short})`;
+    // the end reached: the focus to the other way, not lost with the button turned off
+    const newer = modal.querySelector('.api-commit-newer');
+    const older = modal.querySelector('.api-commit-older');
+    const had = document.activeElement;
+    newer.disabled = at === 0;
+    older.disabled = at === histList.length - 1;
+    if ((had === newer || had === older) && had.disabled) {
+      const other = had === newer ? older : newer;
+      (other.disabled ? modal.querySelector('.api-commit-close') : other).focus();
+    }
+    const count = modal.querySelector('.api-code-count');
+    count.textContent = `${at + 1} of ${histList.length}`;
+    const body = modal.querySelector('.api-code-body');
+    const note = modal.querySelector('.api-commit-note');
+    if (!full) {
+      body.textContent = '';
+      body.appendChild(tEl('div', 'api-code-msg', 'Reading what it changed...'));
+    }
+    note.textContent = '';
+    if (modal.classList.contains('hidden')) {
+      modal.classList.remove('hidden');
+      modal.querySelector('.api-commit-close').focus();
+    }
+    const mine = ++commitSeq;
+    const r = await window.git.commitFileDiff(side.msPath, c.hash, c.file, c.from, { full });
+    if (mine !== commitSeq || modal.classList.contains('hidden')) return;
+    const top = body.scrollTop;
+    body.textContent = '';
+    if (r.error) {
+      body.appendChild(tEl('div', 'api-code-msg error', r.error));
+      return;
+    }
+    const { meta: m, rows } = parseDiff(r.diff);
+    annotateWords(rows);
+    const added = rows.filter((x) => x.type === 'add').length;
+    const removed = rows.filter((x) => x.type === 'del').length;
+    if (added || removed) count.textContent = `${at + 1} of ${histList.length} · ${plural(removed, 'line')} removed, ${added} added`;
+    const notes = [];
+    if (m.newFile) notes.push('The file was created in this commit.');
+    if (m.deleted) notes.push('The file was deleted in this commit.');
+    if (m.renamedFrom) notes.push(`Renamed from ${m.renamedFrom}.`);
+    if (r.truncated) notes.push('Very long: only the first part is shown.');
+    note.textContent = notes.join(' ');
+    // a new (or deleted) file has one side: one column
+    const oneSide = m.newFile || m.deleted;
+    modal.querySelector('.api-code-cols').classList.toggle('hidden', oneSide || !rows.length);
+    if (!rows.length) {
+      body.appendChild(tEl('div', 'api-code-msg', m.renamedFrom ? 'Only its name changed: the content is the same.' : 'No change in the content of the file.'));
+      return;
+    }
+    const items = diffSequence(rows, m, full, () => showCommit(at, true));
+    // the renderer collects change groups for the Changes diff's J/K keys; keep that list as it was
+    const changesGroups = diffGroups;
+    diffGroups = [];
+    const view = oneSide ? renderUnified(items) : renderSplit(items);
+    diffGroups = changesGroups;
+    body.appendChild(view);
+    body.scrollTop = full ? top : 0;
+  };
+  function closeCommit() {
+    const modal = $('#apiCommitModal');
+    if (!modal || modal.classList.contains('hidden')) return;
+    commitSeq++;
+    modal.classList.add('hidden');
+    const rows = document.querySelectorAll('#apiHistModal .api-hist-row');
+    if (rows[commitAt]) rows[commitAt].focus();
   }
 
   // -- From microservice: the specs of the microservices of the list, found as the Analysis page finds them (its

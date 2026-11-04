@@ -493,28 +493,35 @@ function buildSwaggerAnalysis() {
   actions.append(foldersBtn, anywhere, rescan, copyTable);
   top.append(title, actions);
 
-  // one bar: Microservices and File, Compare with, the search and + Filter
+  // one bar: Microservices, Swagger file and Compare with, each with its name; under them the search and + Filter
   const scope = tEl('select', 'input an-group an-scope');
   scope.id = 'anScope';
   scope.dataset.search = '';
-  scope.setAttribute('aria-label', 'Which microservices');
   const fileSel = tEl('select', 'input an-group an-file');
   fileSel.id = 'anFile';
   fileSel.dataset.search = '';
-  fileSel.setAttribute('aria-label', 'Which swagger file');
   const cmpSel = tEl('select', 'input an-group an-doc');
   cmpSel.id = 'anCompare';
   cmpSel.dataset.search = '';
-  const cmpKey = tEl('label', 'an-bar-key', 'Compare with');
-  cmpKey.htmlFor = 'anCompare';
+  const field = (name, sel) => {
+    const key = tEl('label', 'an-bar-key', name);
+    key.htmlFor = sel.id;
+    const f = tEl('span', 'an-field');
+    f.append(key, sel);
+    return f;
+  };
   const search = toolInput('Search');
   search.type = 'search';
   search.classList.add('an-search');
   search.title = 'Search the microservice, file, path, title, version and state';
   search.setAttribute('aria-label', 'Search');
   const filters = anFilters(() => render());
+  const fieldRow = tEl('div', 'an-fieldrow');
+  fieldRow.append(field('Microservices', scope), field('Swagger file', fileSel), tEl('span', 'an-sep'), field('Compare with', cmpSel));
+  const searchRow = tEl('div', 'an-fieldrow an-searchrow');
+  searchRow.append(search, filters.button);
   const fieldBar = tEl('div', 'an-fieldbar');
-  fieldBar.append(scope, fileSel, tEl('span', 'an-sep'), cmpKey, cmpSel, tEl('span', 'an-sep'), search, filters.button);
+  fieldBar.append(fieldRow, searchRow);
 
   // under it: the filters, Only differences and how many
   const only = toolCheck('Only differences', false, (v) => {
@@ -653,21 +660,23 @@ function buildSwaggerAnalysis() {
     const withFiles = services.filter((s) => s.files.length);
     const files = withFiles.flatMap((s) => s.files);
     const narrowed = query() || filters.filters.length || fileSel.value;
-    state.textContent = `${files.length} file${files.length === 1 ? '' : 's'} in ${withFiles.length} microservice${withFiles.length === 1 ? '' : 's'}${narrowed ? ' match' : ''}`;
+    state.textContent = `${files.length} file${files.length === 1 ? '' : 's'}${narrowed ? ' found' : ''} in ${withFiles.length} microservice${withFiles.length === 1 ? '' : 's'}`;
     stateMore.textContent = `\u00b7 ${(data.took / 1000).toFixed(1)} s`;
     const looked = data.folders || [];
     if (!withFiles.length) {
       const why = narrowed ? 'Nothing matches the search and the filters.' : looked.length || data.anywhere ? `No swagger files in these microservices${looked.length ? ` (looked in ${anFoldersText(looked)}${data.anywhere ? ', and for specs elsewhere' : ''})` : ''}. Folders chooses where to look.` : 'No folders to look in: add one with Folders.';
       result.appendChild(tEl('div', 'tool-hint an-empty', why));
     } else {
-      const rows = table([['Microservice', 'an-col-ms'], ['Name'], ['Path'], ['Title'], ['Version', 'an-col-ver']]);
+      const rows = table([['Microservice', 'an-col-ms'], ['Name'], ['Path'], ['Version', 'an-col-ver']]);
       for (const s of withFiles) {
         for (const f of s.files) {
           const tr = rows.insertRow();
           const ms = cell(tr, 'an-ms', msTag(s));
           ms.title = `${s.path}\nIn: ${s.dirs.join(', ') || 'no folder to look in'}`;
-          const fname = cell(tr, 'an-name', f.name);
-          fname.title = [f.spec, f.found === 'content' ? `Found by its ${f.spec.startsWith('Swagger') ? 'swagger:' : 'openapi:'} line, outside the folders to look in` : ''].filter(Boolean).join('\n');
+          // under the name, what is wrong with it or that it is a part of a spec; its title in the tip
+          const why = f.error || (f.part ? AN_PART : '');
+          const fname = cell(tr, 'an-name', f.name, ...(why ? [tEl('span', `an-name-note${f.error ? ' tool-error' : ' an-part'}`, why)] : []));
+          fname.title = [f.title, f.spec, f.found === 'content' ? `Found by its ${f.spec.startsWith('Swagger') ? 'swagger:' : 'openapi:'} line, outside the folders to look in` : ''].filter(Boolean).join('\n');
           const open = tEl('button', 'an-open', f.rel);
           open.type = 'button';
           open.title = `Open ${f.rel}`;
@@ -676,7 +685,6 @@ function buildSwaggerAnalysis() {
             if (r.error) toast(r.error, 'error');
           });
           cell(tr, 'an-path', open);
-          cell(tr, `an-title${f.error ? ' tool-error' : f.part ? ' an-part' : ''}`, f.error || (f.part ? AN_PART : f.title || '—'));
           cell(tr, 'an-version', ...(f.version ? [tEl('span', 'tool-badge', f.version)] : []));
         }
       }
@@ -834,11 +842,13 @@ function buildSwaggerAnalysis() {
     const cmp = narrow(all, true);
     const inView = narrow(all, false);
     const total = inView.services.reduce((n, g) => n + g.rows.length, 0) + inView.unlinked.length;
-    state.textContent = `${total} file${total === 1 ? '' : 's'} in ${inView.services.length} microservice${inView.services.length === 1 ? '' : 's'}`;
+    const narrowed = query() || filters.filters.length || picked.size || fileSel.value || (scope.value || 'all') !== 'all';
+    // found: what the search, the filters, the states or the file chosen leave (as in the list)
+    const searched = query() || filters.filters.length || picked.size || fileSel.value;
+    state.textContent = `${total} file${total === 1 ? '' : 's'}${searched ? ' found' : ''} in ${inView.services.length} microservice${inView.services.length === 1 ? '' : 's'}`;
     stateMore.textContent = '';
     renderStates(all);
     if (all.doc && !all.doc.files.length) result.appendChild(tEl('div', 'tool-hint', `${all.doc.name} has no swagger files: Folders chooses where to look.`));
-    const narrowed = query() || filters.filters.length || picked.size || fileSel.value || (scope.value || 'all') !== 'all';
     if (!cmp.services.length && !cmp.unlinked.length && all.doc && all.doc.files.length) result.appendChild(tEl('div', 'tool-hint an-empty', onlyDiff && !narrowed ? `✓ No differences: every file is the same in ${displayName(src)}.` : 'Nothing matches the search and the filters.'));
     if (cmp.services.length || cmp.unlinked.length) {
       const rows = table([['Microservice', 'an-col-ms'], ['File'], ['Microservice', 'an-col-ver'], [displayName(src), 'an-col-ver'], ['State', 'an-col-state'], ['', 'an-col-act']]);
@@ -852,8 +862,8 @@ function buildSwaggerAnalysis() {
     if (!data) return '';
     const clean = (v) => String(v || '').replace(/[\t\n]/g, ' ');
     if (!source()) {
-      const lines = [['Microservice', 'Name', 'Path', 'Title', 'Version'].join('\t')];
-      for (const s of listed()) for (const f of s.files) lines.push([s.name, f.name, f.rel, f.error || (f.part ? AN_PART : f.title), f.version].map(clean).join('\t'));
+      const lines = [['Microservice', 'Name', 'Path', 'Version'].join('\t')];
+      for (const s of listed()) for (const f of s.files) lines.push([s.name, f.name, f.rel, f.version].map(clean).join('\t'));
       return lines.length > 1 ? `${lines.join('\n')}\n` : '';
     }
     const src = displayName(source());

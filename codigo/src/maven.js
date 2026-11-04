@@ -1,4 +1,4 @@
-const { spawn } = require('child_process');
+const { spawn, execFile } = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -9,6 +9,7 @@ const GitService = require('./git-service');
 const envValues = require('./env-values');
 const runEnv = require('./run-env');
 const containers = require('./containers');
+const { NO_QUESTIONS } = require('./terminal');
 
 const { IS_WIN, psQuote } = shell;
 // The Maven wrapper a project may carry: mvnw.cmd on Windows, the mvnw shell script elsewhere.
@@ -109,6 +110,7 @@ function parsePorts(input = {}) {
   return ports;
 }
 const MAX_LOG_CHARS = 400000;
+const MAX_LINE_CHARS = 4000;
 const UNSAFE_CHARS = /[;|&`$<>\r\n]/;
 
 function tokenize(text) {
@@ -143,6 +145,8 @@ function pomFolders(root, maxDepth = 6) {
 // the microservice's folder, and git steps in its repository (what to do with local changes, switch or create a
 // branch, pull) --
 const MACRO_LIMITS = { count: 30, steps: 15, name: 60, text: 400 };
+// My commands: Maven goals saved under a name, for every repository (the list on the Maven page)
+const SAVED_LIMITS = { count: 50, name: 60, goals: 400 };
 const SERVER_GOALS = /(^|\s)spring-boot:run(\s|$)/;
 // Under the command: the values the application gets over its files (the Values button), and where they come from.
 const valuesLine = (values, note) => (values ? `  SPRING_APPLICATION_JSON: ${String(note || `${Object.keys(values).length} values`).slice(0, 300)}\n` : '');
@@ -177,6 +181,7 @@ const containerDefaults = (dir, ports) => ({
   build: true,
   values: true,
   vars: null,
+  proxy: { on: false, url: '', noProxy: '' },
 });
 
 const portOf = (value, what) => {
@@ -199,9 +204,74 @@ function cleanContainerSpec(input = {}) {
     build: input.build !== false,
     values: input.values !== false,
     vars: runEnv.cleanRunEnv({ vars: Array.isArray(input.vars) ? input.vars : [] }).vars,
+    proxy: cleanProxy(input.proxy),
   };
   if (spec.debug && spec.debugPort === spec.port) throw new Error('The debug port has to differ from the port of the app');
   return spec;
+}
+
+// The proxy the application in the container goes out through: on or off, its address (http://host:port, a user and
+// password allowed) and the hosts it is not for (commas). Only an address in use is checked.
+function cleanProxy(input) {
+  const on = Boolean(input && input.on);
+  let url = String((input && input.url) || '').trim();
+  const noProxy = String((input && input.noProxy) || '').split(/[\s,;|]+/).filter(Boolean).join(',');
+  if (url.length > 300 || noProxy.length > 1000) throw new Error('The proxy is too long');
+  if (on) {
+    if (!url) throw new Error('Type the proxy, for example http://proxy:8080');
+    if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(url)) url = `http://${url}`;
+    let u;
+    try {
+      u = new URL(url);
+    } catch {
+      throw new Error(`"${url.slice(0, 60)}" is not a proxy address: http://host:port`);
+    }
+    if (!/^https?:$/.test(u.protocol) || !u.hostname) throw new Error('The proxy is an http:// or https:// address');
+    if (!u.port) throw new Error('The proxy needs its port, for example http://proxy:8080');
+    url = `${u.protocol}//${u.username ? `${u.username}${u.password ? `:${u.password}` : ''}@` : ''}${u.host}`;
+  }
+  return { on, url, noProxy };
+}
+
+// Inside a container, the PC and the container itself are never behind the proxy.
+const NO_PROXY_ALWAYS = ['localhost', '127.0.0.1', 'host.docker.internal', 'host.containers.internal'];
+
+// What the application in the container gets for the proxy: the variables tools read (both cases), and for Java,
+// which reads none of them, the system properties to add to JAVA_TOOL_OPTIONS.
+function proxySettings(proxy) {
+  if (!proxy || !proxy.on || !proxy.url) return null;
+  const u = new URL(proxy.url);
+  const hosts = [...new Set([...NO_PROXY_ALWAYS, ...proxy.noProxy.split(',').filter(Boolean)])];
+  // Java: | between them, *.domain for a domain, no address ranges
+  const javaHosts = hosts.filter((h) => !h.includes('/')).map((h) => (h.startsWith('.') ? `*${h}` : h)).join('|');
+  const port = u.port;
+  const java = ['http', 'https'].map((p) => `-D${p}.proxyHost=${u.hostname} -D${p}.proxyPort=${port}`).join(' ') + ` -Dhttp.nonProxyHosts=${javaHosts}`;
+  const shown = proxy.url.replace(/\/\/[^@/]*@/, '//***@');
+  const env = [];
+  for (const name of ['HTTP_PROXY', 'HTTPS_PROXY']) env.push([name, proxy.url, shown], [name.toLowerCase(), proxy.url, shown]);
+  env.push(['NO_PROXY', hosts.join(','), hosts.join(',')], ['no_proxy', hosts.join(','), hosts.join(',')]);
+  return { env, java };
+}
+
+// What docker or podman says when the image cannot be got through the network (a proxy, a certificate, no DNS).
+const NET_TROUBLE = /proxyconnect|x509|certificate|i\/o timeout|TLS handshake|no such host|connection refused|connection reset|dial tcp|context deadline exceeded/i;
+
+// After that: the image is the engine's own download, which the proxy of the dialog does not reach.
+function pullHint(engine) {
+  const own = engine === 'podman'
+    ? 'Podman: set HTTP_PROXY and HTTPS_PROXY in Windows (or your shell), then podman machine stop and podman machine start'
+    : 'Docker Desktop: Settings > Resources > Proxies';
+  return `\nThe image could not be downloaded: a proxy or a certificate is in the way. Use this PC's proxy reaches the application in the container, not this download, which is ${engine === 'podman' ? 'Podman' : 'Docker'}'s own. ${own}. Or put your company's registry in Java image (for example registry.company/eclipse-temurin:21-jre), or pull the image once by hand.\n`;
+}
+
+// Windows' "Don't use the proxy for" list (Internet Settings), as NO_PROXY reads it; [] when there is none.
+function windowsProxyOverride() {
+  return new Promise((resolve) => {
+    execFile('reg', ['query', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings', '/v', 'ProxyOverride'], { windowsHide: true, timeout: 5000 }, (err, stdout) => {
+      const m = !err && /ProxyOverride\s+REG_\w+\s+(.+)/i.exec(String(stdout || ''));
+      resolve(m ? m[1].trim().split(';') : []);
+    });
+  });
 }
 
 const OTHER_JAR = /-(sources|javadoc|tests|test-sources)\.jar$/;
@@ -263,21 +333,28 @@ function agoText(ms) {
 function containerArgs(spec, jar, values) {
   const given = spec.vars.filter((v) => v.enabled !== false);
   const own = new Map(given.map((v) => [v.name, v.value]));
+  // [name, value, shown]: what the output shows of it, its value for the app's own, … for the user's
   const env = [];
-  if (!own.has('SERVER_PORT')) env.push(['SERVER_PORT', String(spec.port), true]);
-  if (spec.debug) {
-    const jdwp = `-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:${spec.debugPort}`;
-    env.push(['JAVA_TOOL_OPTIONS', own.has('JAVA_TOOL_OPTIONS') ? `${own.get('JAVA_TOOL_OPTIONS')} ${jdwp}` : jdwp, !own.has('JAVA_TOOL_OPTIONS')]);
+  if (!own.has('SERVER_PORT')) env.push(['SERVER_PORT', String(spec.port), String(spec.port)]);
+  // JAVA_TOOL_OPTIONS: the user's, then the proxy for Java, then Debug's agent
+  const proxy = proxySettings(spec.proxy);
+  const jdwp = spec.debug ? `-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:${spec.debugPort}` : '';
+  const added = [proxy ? proxy.java : '', jdwp].filter(Boolean).join(' ');
+  if (added) {
+    const java = [own.get('JAVA_TOOL_OPTIONS'), added].filter(Boolean).join(' ');
+    env.push(['JAVA_TOOL_OPTIONS', java, own.has('JAVA_TOOL_OPTIONS') ? null : java]);
   }
-  for (const v of given) if (!(spec.debug && v.name === 'JAVA_TOOL_OPTIONS')) env.push([v.name, v.value, false]);
-  if (values) env.push(['SPRING_APPLICATION_JSON', JSON.stringify(values), false]);
+  // the user's variables win over the proxy's
+  if (proxy) for (const [name, value, shown] of proxy.env) if (!own.has(name)) env.push([name, value, shown]);
+  for (const v of given) if (!(added && v.name === 'JAVA_TOOL_OPTIONS')) env.push([v.name, v.value, null]);
+  if (values) env.push(['SPRING_APPLICATION_JSON', JSON.stringify(values), null]);
   // a field of --mount with a comma or a quote in it is quoted, as CSV
   const csv = (t) => (/[",]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t);
   const head = ['run', '--rm', '--name', spec.name, '--label', CONTAINER_LABEL, '-p', `${spec.port}:${spec.port}`, ...(spec.debug ? ['-p', `${spec.debugPort}:${spec.debugPort}`] : [])];
   const tail = ['--mount', ['type=bind', csv(`source=${jar}`), 'target=/app/app.jar', 'readonly'].join(','), spec.image, 'java', '-jar', '/app/app.jar'];
   return {
     args: [...head, ...env.flatMap(([k, v]) => ['-e', `${k}=${v}`]), ...tail],
-    shown: [...head, ...env.flatMap(([k, v, plain]) => ['-e', plain ? `${k}=${v}` : `${k}=\u2026`]), ...tail].map((a) => (/[\s"']/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a)).join(' '),
+    shown: [...head, ...env.flatMap(([k, , shown]) => ['-e', shown === null ? `${k}=\u2026` : `${k}=${shown}`]), ...tail].map((a) => (/[\s"']/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a)).join(' '),
   };
 }
 
@@ -316,6 +393,17 @@ const CHANGES_POLICIES = ['ask', 'stash', 'discard', 'stop'];
 // (check-ref-format) when the step runs.
 const branchText = (v) => String(v || '').trim().slice(0, 200);
 const isBranchName = (t) => /^[\w./-]+$/.test(t) && !t.startsWith('-') && !t.startsWith('/') && !t.endsWith('/') && !t.endsWith('.') && !t.endsWith('.lock') && !t.includes('..') && !t.includes('//');
+
+// A saved command as it is kept: its goals (without mvn) and the name the list shows, the goals when none is given.
+function cleanSavedCommand(input = {}) {
+  const goals = String(input.goals || '').trim().replace(/^mvn(w)?(\.cmd)?\s+/i, '');
+  if (!goals) throw new Error('Type the Maven goals, e.g. clean verify');
+  if (goals.length > SAVED_LIMITS.goals) throw new Error('The goals are too long');
+  if (UNSAFE_CHARS.test(goals)) throw new Error('Only Maven arguments are allowed (no ; | & ` $ < >)');
+  const name = String(input.name || '').trim().slice(0, SAVED_LIMITS.name) || goals.slice(0, SAVED_LIMITS.name);
+  const id = typeof input.id === 'string' && /^[\w-]{1,64}$/.test(input.id) ? input.id : crypto.randomUUID();
+  return { id, name, goals };
+}
 
 function cleanMacro(input = {}) {
   const name = String(input.name || '').trim().slice(0, MACRO_LIMITS.name);
@@ -426,6 +514,14 @@ function startMaven(dir, args, env, wrapper = findWrapper(dir)) {
   return spawn('mvn', args, { cwd: dir, env, detached: true });
 }
 
+// A command line typed under the output, as typed, in the system shell: PowerShell on Windows, the user's shell
+// elsewhere (in its own process group, for Stop). Nobody can answer it: git asks for nothing, no pager, no colours.
+function startLine(dir, line, env) {
+  const vars = { ...(env || process.env), ...NO_QUESTIONS };
+  if (IS_WIN) return spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `[Console]::OutputEncoding = [Text.Encoding]::UTF8; ${line}`], { cwd: dir, env: vars, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  return spawn(process.env.SHELL || '/bin/zsh', ['-c', line], { cwd: dir, env: vars, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+}
+
 // "Separate window": the same command in PowerShell (Windows) or Terminal (macOS), left open when it ends.
 const mavenArgv = (dir, args, wrapper = findWrapper(dir)) => {
   if (!wrapper) return ['mvn', ...args];
@@ -433,7 +529,7 @@ const mavenArgv = (dir, args, wrapper = findWrapper(dir)) => {
 };
 const terminalScript = (dir, args) => shell.terminalScript(dir, mavenArgv(dir, args));
 
-function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, saveDir, loadMacros, saveMacros, loadRunEnv, saveRunEnv, loadContainer, saveContainer }) {
+function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, saveDir, loadMacros, saveMacros, loadCommands, saveCommands, loadRunEnv, saveRunEnv, loadContainer, saveContainer, resolveProxy }) {
   const portsFor = (repoPath) => {
     try {
       return parsePorts(loadPorts(repoPath) || {});
@@ -479,6 +575,10 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
     const list = loadMacros ? loadMacros() : [];
     return Array.isArray(list) ? list : [];
   };
+  const commandList = () => {
+    const list = loadCommands ? loadCommands() : [];
+    return Array.isArray(list) ? list.filter((c) => c && typeof c.id === 'string' && typeof c.goals === 'string') : [];
+  };
 
   const runs = new Map();
   const key = (p) => path.resolve(p).toLowerCase();
@@ -511,8 +611,9 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
     if (!run.muted) send('mvn-output', { repo: run.repo, text, id: run.id, end: run.written });
   };
 
-  // Maven once, its output added to the run's log (and given to tap); resolves with the exit code.
-  function runStep(run, dir, args, env, tap = null) {
+  // Maven once (or, with line, that command line in the system shell), its output added to the run's log (and given to
+  // tap); resolves with the exit code.
+  function runStep(run, dir, args, env, tap = null, line = null) {
     return new Promise((resolve) => {
       let settled = false;
       const end = (code) => {
@@ -521,7 +622,7 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
         run.child = null;
         resolve(code);
       };
-      const child = startMaven(dir, args, env, findWrapper(dir, run.repo));
+      const child = line === null ? startMaven(dir, args, env, findWrapper(dir, run.repo)) : startLine(dir, line, env);
       run.child = child;
       const append = (chunk) => {
         const text = chunk.toString('utf8');
@@ -531,7 +632,7 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
       child.stdout.on('data', append);
       child.stderr.on('data', append);
       child.on('error', (e) => {
-        const why = e.code === 'ENOENT' && !IS_WIN
+        const why = e.code === 'ENOENT' && !IS_WIN && line === null
           ? 'Maven (mvn) was not found. Install it (for example: brew install maven) or add the Maven wrapper (mvnw) to the project.'
           : e.message;
         write(run, `\n[failed to start: ${why}]\n`);
@@ -556,8 +657,8 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
     if (run.child) await killTree(run.child);
   }
 
-  // docker run, its output added to the run's log; resolves with its exit code.
-  function runEngine(run, call, args) {
+  // docker run, its output added to the run's log (and given to tap); resolves with its exit code.
+  function runEngine(run, call, args, tap = null) {
     return new Promise((resolve) => {
       let settled = false;
       const end = (code) => {
@@ -568,7 +669,11 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
       };
       const child = spawn(call.exe, args, { env: call.env, windowsHide: true, detached: !IS_WIN });
       run.child = child;
-      const append = (chunk) => write(run, chunk.toString('utf8'));
+      const append = (chunk) => {
+        const text = chunk.toString('utf8');
+        write(run, text);
+        if (tap) tap(text);
+      };
       child.stdout.on('data', append);
       child.stderr.on('data', append);
       child.on('error', (e) => {
@@ -865,6 +970,70 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
     }
   });
 
+  // The line under the output: a command typed there runs as Run runs, in the folder chosen, Stop ends it, and its
+  // output comes after what is there. mvn (or mvnw) is the same Maven as Run (the project's mvnw when it has one), with
+  // the variables Run gives it: Env and Values to spring-boot:run only. Anything else goes to the system shell, with the
+  // variables of Env and the Values, as the application has them. Nothing carries to the next command: a cd or a
+  // variable set in a line is gone after it.
+  ipcMain.handle('mvn-line', async (_, repoPath, request = {}) => {
+    try {
+      if (!isKnownRepo(repoPath)) throw new Error('Unknown repository');
+      const line = String(request.line || '').trim();
+      if (!line) throw new Error('Type a command');
+      if (line.length > MAX_LINE_CHARS || line.includes('\0')) throw new Error('The command is too long');
+      const { dir, rel } = chosenDir(repoPath);
+      const k = key(repoPath);
+      const current = runs.get(k);
+      if (current && current.active) throw new Error('A command is already running in this repository. Stop it first.');
+      // mvn alone, without what only a shell reads (a pipe, a variable): Maven as Run starts it
+      const maven = /^mvnw?(\.cmd)?(\s|$)/i.test(line) && !UNSAFE_CHARS.test(line);
+      const args = maven ? tokenize(line.replace(/^\S+\s*/, '')) : null;
+      const app = !maven || SERVER_GOALS.test(args.join(' '));
+      const values = app ? envValues.cleanValues(request.values) : null;
+      const appEnv = app ? runEnvFor(repoPath) : null;
+      const env = envValues.withValues(runEnv.withRunEnv(IS_WIN ? null : await shell.loginShellEnv(), appEnv), values);
+      // what the output had stays above it, with how that ended
+      const before = current ? `${current.log}${current.exitCode !== null && !current.macro ? `\n[exit code ${current.exitCode}]\n` : ''}\n` : '';
+      const header = `${IS_WIN ? '>' : '$'} ${line}${rel ? `   (in ${rel}/)` : ''}\n${valuesLine(values, request.valuesNote)}${runEnv.runEnvLines(appEnv)}`;
+      const run = newRun(repoPath, line, (before + header).slice(-MAX_LOG_CHARS), { typed: true });
+      runs.set(k, run);
+      announce();
+      runStep(run, dir, args, env, null, maven ? null : line).then((code) => finishRun(run, code));
+      return { success: true, command: line, startedAt: run.startedAt, log: run.log, id: run.id, written: run.written };
+    } catch (e) {
+      return { error: e.message };
+    }
+  });
+
+  // The proxy this PC goes out through, for the dialog to offer: the system's, as Chromium finds it (a PAC script too),
+  // else HTTPS_PROXY or HTTP_PROXY; and the hosts not behind it (NO_PROXY, and on Windows the list of its settings).
+  ipcMain.handle('mvn-container-proxy', async () => {
+    const env = IS_WIN ? process.env : await shell.loginShellEnv().catch(() => process.env);
+    let url = '';
+    let from = '';
+    try {
+      const rule = resolveProxy ? String(await resolveProxy('https://registry-1.docker.io')) : '';
+      const m = /\b(PROXY|HTTPS)\s+([^\s;]+)/i.exec(rule);
+      if (m) {
+        url = `${m[1].toUpperCase() === 'HTTPS' ? 'https' : 'http'}://${m[2]}`;
+        from = IS_WIN ? "Windows' settings" : "the system's settings";
+      }
+    } catch {
+      // no proxy found that way
+    }
+    if (!url) {
+      const name = ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy'].find((n) => env[n]);
+      if (name) {
+        url = String(env[name]).trim();
+        from = name.toUpperCase();
+      }
+    }
+    const hosts = String(env.NO_PROXY || env.no_proxy || '').split(/[\s,;]+/);
+    if (IS_WIN) hosts.push(...(await windowsProxyOverride()));
+    const noProxy = [...new Set(hosts.map((h) => h.trim().replace(/^\*\./, '.')).filter((h) => h && h !== '<local>' && !NO_PROXY_ALWAYS.includes(h)))].join(',');
+    return { url, from, noProxy };
+  });
+
   // Start in container, the dialog: what it starts with, the engine that would run it, the jar built so far.
   ipcMain.handle('mvn-container-info', async (_, repoPath) => {
     if (!isKnownRepo(repoPath)) return { error: 'Unknown repository' };
@@ -948,14 +1117,39 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
           const { args, shown } = containerArgs(spec, jar, values);
           write(run, `\n\u25B6 ${call.name} ${shown}\n${valuesLine(values, valuesRequest && valuesRequest.valuesNote)}`);
           run.container.started = true;
-          code = await runEngine(run, call, args);
+          let said = '';
+          code = await runEngine(run, call, args, (text) => (said = (said + text).slice(-20000)));
+          // the engine could not get the image (125: docker's or podman's own error, not the application's)
+          if (code === 125 && NET_TROUBLE.test(said)) write(run, pullHint(call.name));
         }
         finishRun(run, code);
       })();
-      return { success: true, command, startedAt: run.startedAt, log: run.log, id: run.id, written: run.written };
+      return { success: true, command, startedAt: run.startedAt, log: run.log, id: run.id, written: run.written, spec };
     } catch (e) {
       return { error: e.message };
     }
+  });
+
+  // My commands: read, saved (a new one, or one changed: its id kept) and deleted; the names are not repeated
+  ipcMain.handle('mvn-commands', () => ({ commands: commandList() }));
+  ipcMain.handle('mvn-command-save', (_, input) => {
+    try {
+      const command = cleanSavedCommand(input);
+      const list = commandList();
+      const i = list.findIndex((c) => c.id === command.id);
+      if (list.some((c) => c.id !== command.id && c.name.toLowerCase() === command.name.toLowerCase())) throw new Error(`A command is already called ${command.name}`);
+      if (i === -1 && list.length >= SAVED_LIMITS.count) throw new Error(`You already have ${SAVED_LIMITS.count} commands`);
+      const next = i === -1 ? [...list, command] : list.map((c) => (c.id === command.id ? command : c));
+      saveCommands(next);
+      return { commands: next, id: command.id };
+    } catch (e) {
+      return { error: e.message };
+    }
+  });
+  ipcMain.handle('mvn-command-delete', (_, id) => {
+    const next = commandList().filter((c) => c.id !== String(id));
+    saveCommands(next);
+    return { commands: next };
   });
 
   ipcMain.handle('mvn-macros', () => ({ macros: macroList() }));

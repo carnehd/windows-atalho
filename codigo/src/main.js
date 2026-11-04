@@ -1,5 +1,5 @@
 const {
-  app, BrowserWindow, globalShortcut, ipcMain, dialog, Tray, Menu, nativeImage, clipboard, safeStorage, shell, net, Notification,
+  app, BrowserWindow, globalShortcut, ipcMain, dialog, Tray, Menu, nativeImage, clipboard, safeStorage, shell, net, Notification, session,
 } = require('electron');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -574,6 +574,11 @@ app.whenReady().then(() => {
     // macros are for every repository
     loadMacros: () => store.get('mavenMacros', []),
     saveMacros: (list) => store.set('mavenMacros', list),
+    // the system's proxy for a URL, as Chromium finds it ("PROXY host:port; DIRECT", or "DIRECT"): Start in container
+    resolveProxy: (url) => session.defaultSession.resolveProxy(url),
+    // and so are the saved commands (My commands)
+    loadCommands: () => store.get('mavenCommands', []),
+    saveCommands: (list) => store.set('mavenCommands', list),
     // the profiles and environment variables of Start and Debug (in data/, like the rest)
     loadRunEnv: (repoPath) => store.get('mavenRunEnv', {})[pathKey(String(repoPath))],
     saveRunEnv: (repoPath, value) => {
@@ -1024,6 +1029,7 @@ function setupIPC() {
   ipcMain.handle('revert-commit', repoCall((g, hash) => g.revertCommit(hash)));
   ipcMain.handle('abort-operation', repoCall((g) => g.abortOperation()));
   ipcMain.handle('log-page', repoCall((g, options) => g.getLogPage(options && typeof options === 'object' ? options : {})));
+  ipcMain.handle('file-history', repoCall((g, file) => g.fileHistory(file)));
   ipcMain.handle('commit-file-diff', repoCall((g, hash, file, from, options) => g.getCommitFileDiff(hash, file, from, { full: Boolean(options && options.full) })));
   ipcMain.handle('compare-refs', repoCall((g) => g.compareRefs()));
   // after a fetch: the branch, what it follows, ahead and behind (one git command)

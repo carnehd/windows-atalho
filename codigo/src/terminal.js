@@ -139,4 +139,4 @@ function registerTerminal({ isKnownRepo, getWindow }) {
   return { stop: stopAll };
 }
 
-module.exports = { registerTerminal, words };
+module.exports = { registerTerminal, words, NO_QUESTIONS };

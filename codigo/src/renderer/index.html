@@ -381,10 +381,13 @@
                   <option value="test">test</option>
                   <option value="start">Start</option>
                   <option value="debug">Debug :5005</option>
-                  <option value="container" title="Builds the jar and runs it in a Java image with Docker or Podman: Run asks for the image, the port and the variables">Start in container...</option>
                   <option value="spotless-apply">spotless:apply</option>
                   <option value="spotless-check">spotless:check</option>
                   <option value="custom">Custom command...</option>
+                  <optgroup id="mvnSavedGroup" label="My commands"></optgroup>
+                  <optgroup id="mvnContainerGroup" label="Podman / Docker">
+                    <option value="container" title="Builds the jar and runs it in a Java image with Docker or Podman: Run asks for the image, the port and the variables">Start in container...</option>
+                  </optgroup>
                   <optgroup id="mvnMacroGroup" label="Macros">
                     <option value="new-macro">New macro...</option>
                   </optgroup>
@@ -392,6 +395,10 @@
                 <svg class="mvn-goal-caret" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
               </span>
               <input id="mvnCustom" class="mvn-custom-input hidden" maxlength="400" placeholder="goals, e.g. clean verify" autocomplete="off" aria-label="Maven goals" />
+              <button id="mvnCustomSave" class="mvn-add-option hidden" type="button" aria-haspopup="dialog" title="Keep these goals in the list, under My commands">Save</button>
+              <span id="mvnSavedInfo" class="mvn-saved-info hidden"></span>
+              <button id="mvnSavedEdit" class="mvn-add-option hidden" type="button" aria-haspopup="dialog" title="Change its name or its goals">Edit</button>
+              <button id="mvnSavedDelete" class="mvn-add-option hidden" type="button" title="Take it out of My commands">Delete</button>
               <span id="mvnMacroInfo" class="mvn-macro-info hidden"></span>
               <button id="mvnMacroEditBtn" class="mvn-add-option hidden" type="button" title="Change the steps of this macro">Edit</button>
               <span id="mvnTags" class="mvn-tags"></span>
@@ -450,6 +457,12 @@
                 <button id="mvnClearBtn" class="mvn-head-btn" type="button" title="Clear the output" aria-label="Clear the output"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 20h-10.5l-4.21 -4.3a1 1 0 0 1 0 -1.41l10 -10a1 1 0 0 1 1.41 0l5 5a1 1 0 0 1 0 1.41l-9.2 9.3"/><path d="M18 13.3l-6.3 -6.3"/></svg></button>
               </div>
               <pre id="mvnOutput" class="mvn-output"></pre>
+              <!-- a command typed here runs like Run (maven.js, mvn-line), its output above; ↑ and ↓ bring the last ones -->
+              <form id="mvnLineForm" class="mvn-line" autocomplete="off">
+                <label id="mvnLinePrompt" class="mvn-line-prompt" for="mvnLine"></label>
+                <input id="mvnLine" class="mvn-line-input" type="text" maxlength="4000" spellcheck="false" />
+                <button id="mvnLineRun" class="btn btn-sm btn-primary mvn-line-run" type="submit">Run</button>
+              </form>
             </div>
           </div>
         </div>
