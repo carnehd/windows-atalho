@@ -614,6 +614,10 @@ button.db-col:hover .db-col-name {
   color: var(--text-muted);
   font-weight: 400;
 }
+.nd-from-line {
+  gap: 6px;
+  margin-top: -4px;
+}
 .nd-box-title {
   white-space: nowrap;
 }

@@ -51,6 +51,7 @@ function readValues(input = {}) {
     host: str(input.host) || 'localhost',
     port: Number(input.port) || 5432,
     migrations: MIGRATIONS.includes(input.migrations) ? input.migrations : 'flyway',
+    format: input.format === 'env' ? 'env' : 'props',
   };
   const problems = [];
   const name = (value, what) => {
@@ -179,16 +180,21 @@ function scriptsFor(target, sql) {
   return { powershell, bash };
 }
 
-// What the microservice needs to connect: the application as the DML user; its migrations as the DDL user.
+// What the microservice needs to connect: the application as the DML user; its migrations as the DDL user. As lines
+// of its application properties, or (format 'env') as environment variables to give it when it starts, for a
+// service that takes them from the environment (a Secret, at work): Spring's own names, which take the place of
+// what its file says whatever names that uses.
 function propsFor(v) {
+  const env = v.format === 'env';
+  const name = (key) => (env ? key.toUpperCase().replace(/[.-]/g, '_') : key);
   const lines = [
-    `spring.datasource.url=jdbc:postgresql://${V(v.host)}:${V(v.port)}/${V(v.database)}?currentSchema=${V(v.schema)}`,
-    `spring.datasource.username=${V(v.dmlUser)}`,
-    `spring.datasource.password=${P(v.dmlPassword)}`,
+    `${name('spring.datasource.url')}=jdbc:postgresql://${V(v.host)}:${V(v.port)}/${V(v.database)}?currentSchema=${V(v.schema)}`,
+    `${name('spring.datasource.username')}=${V(v.dmlUser)}`,
+    `${name('spring.datasource.password')}=${P(v.dmlPassword)}`,
   ];
   if (v.migrations !== 'none') {
     const key = `spring.${v.migrations}`;
-    lines.push(`# the migrations, as the user that makes the tables`, `${key}.user=${V(v.ddlUser)}`, `${key}.password=${P(v.ddlPassword)}`, `${key}.default-schema=${V(v.schema)}`);
+    lines.push(`# the migrations, as the user that makes the tables`, `${name(`${key}.user`)}=${V(v.ddlUser)}`, `${name(`${key}.password`)}=${P(v.ddlPassword)}`, `${name(`${key}.default-schema`)}=${V(v.schema)}`);
   }
   return lines.join('\n');
 }

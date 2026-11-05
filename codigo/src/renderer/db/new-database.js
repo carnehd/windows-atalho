@@ -9,6 +9,8 @@ const ND_KEY = 'newDb';
 const ND_PERMS = ['SELECT', 'INSERT', 'UPDATE', 'DELETE'];
 const ND_VIEWS = [['sql', 'SQL'], ['powershell', 'PowerShell'], ['bash', 'Bash'], ['output', 'Output']];
 const ND_MIGRATIONS = [['flyway', 'Flyway'], ['liquibase', 'Liquibase'], ['none', 'None']];
+// the lines of its application properties, or environment variables to give it when it starts (Spring's names)
+const ND_FORMATS = [['props', 'Properties', 'Lines for its application properties'], ['env', 'Variables', 'Environment variables to give it when it starts (Start in container, Env): Spring\'s own names, which take the place of what its file says']];
 
 // targets: where a PostgreSQL may be; view: what the box on the right shows; out: what the last run printed;
 // result: how it ended; schemaTyped: the schema was typed (it no longer follows the database)
@@ -68,7 +70,9 @@ function newDatabaseModal() {
             ${key('Admin user', 'ndAdmin')}
             <div class="mc-line"><input id="ndAdmin" class="input nd-short nd-mono" maxlength="63" spellcheck="false" placeholder="postgres" /><input id="ndAdminPass" class="input nd-pass nd-mono" type="password" maxlength="200" placeholder="password" autocomplete="new-password" aria-label="Password of the admin user" /><span class="nd-hint">only if it asks</span></div>
             ${key('Reached at', 'ndHost')}
-            <div class="mc-line"><input id="ndHost" class="input nd-short nd-mono" maxlength="255" spellcheck="false" aria-label="Host" title="Where the microservice finds PostgreSQL: localhost from this computer, host.docker.internal (Podman: host.containers.internal) from a container" /><span class="nd-at">:</span><input id="ndPort" class="input nd-mono nd-port" inputmode="numeric" maxlength="5" aria-label="Port" /><span class="nd-hint">by the microservice</span></div>
+            <div class="mc-line"><input id="ndHost" class="input mc-wide nd-mono" maxlength="255" spellcheck="false" aria-label="Host" title="Where the microservice finds PostgreSQL: localhost from this computer, host.docker.internal (Podman: host.containers.internal) from a container" /><span class="nd-at">:</span><input id="ndPort" class="input nd-mono nd-port" inputmode="numeric" maxlength="5" aria-label="Port" /></div>
+            <span></span>
+            <div class="mc-line nd-from-line"><span class="nd-hint">by the microservice, when it runs on</span><button id="ndHostHere" class="logs-form-chip" type="button" title="The microservice runs on this computer (IntelliJ, spring-boot:run): localhost">this PC</button><span class="nd-hint">or in</span><button id="ndHostBox" class="logs-form-chip" type="button" title="The microservice runs in a container: inside it localhost is the container itself">a container</button></div>
           </div>
           <p id="ndNone" class="nd-note hidden"></p>
         </form>
@@ -85,6 +89,7 @@ function newDatabaseModal() {
           <div class="nd-box">
             <div class="nd-box-head">
               <span class="nd-box-title">For the microservice</span>
+              <div id="ndFormat" class="seg" role="group" aria-label="As">${ND_FORMATS.map(([id, label, title]) => `<button class="seg-btn" type="button" data-format="${id}" aria-pressed="false" title="${title}">${label}</button>`).join('')}</div>
               <span class="nd-gap"></span>
               <div id="ndMig" class="seg" role="group" aria-label="Its migrations">${ND_MIGRATIONS.map(([id, label]) => `<button class="seg-btn" type="button" data-mig="${id}" aria-pressed="false" title="The lines of the user that makes the tables: ${label}">${label}</button>`).join('')}</div>
               <button id="ndCopyProps" class="btn btn-sm" type="button" title="Copy these lines, with their passwords, for the microservice's application properties">Copy</button>
@@ -149,6 +154,21 @@ function newDatabaseModal() {
     nd.migrations = b.dataset.mig;
     ndChanged();
   });
+  $('#ndFormat').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-format]');
+    if (!b) return;
+    nd.format = b.dataset.format;
+    ndChanged();
+  });
+  // where the microservice runs: on this computer, or in a container (the engine's name for this computer)
+  $('#ndHostHere').addEventListener('click', () => {
+    $('#ndHost').value = 'localhost';
+    ndChanged();
+  });
+  $('#ndHostBox').addEventListener('click', () => {
+    $('#ndHost').value = nd.targets && nd.targets.engine && nd.targets.engine.name === 'podman' ? 'host.containers.internal' : 'host.docker.internal';
+    ndChanged();
+  });
   $('#ndShow').addEventListener('change', () => {
     nd.showPass = $('#ndShow').checked;
     for (const id of ['#ndDdlPass', '#ndDmlPass', '#ndAdminPass']) $(id).type = nd.showPass ? 'text' : 'password';
@@ -189,7 +209,7 @@ function ndValues() {
     ddlUser: $('#ndDdlUser').value, ddlPassword: $('#ndDdlPass').value,
     dmlUser: $('#ndDmlUser').value, dmlPassword: $('#ndDmlPass').value,
     perms: [...$('#ndModal').querySelectorAll('[data-perm]')].filter((b) => b.checked).map((b) => b.dataset.perm),
-    host: $('#ndHost').value, port: $('#ndPort').value, migrations: nd.migrations,
+    host: $('#ndHost').value, port: $('#ndPort').value, migrations: nd.migrations, format: nd.format,
   };
 }
 
@@ -231,7 +251,7 @@ function ndTargetChosen(fill) {
 async function openNewDatabase() {
   const modal = newDatabaseModal();
   const saved = ndSaved();
-  Object.assign(nd, { view: ['sql', 'powershell', 'bash'].includes(saved.view) ? saved.view : 'sql', preview: null, out: '', running: null, result: null, schemaTyped: false, pod: null, showPass: false, migrations: saved.migrations || 'flyway', targets: null });
+  Object.assign(nd, { view: ['sql', 'powershell', 'bash'].includes(saved.view) ? saved.view : 'sql', preview: null, out: '', running: null, result: null, schemaTyped: false, pod: null, showPass: false, migrations: saved.migrations || 'flyway', format: saved.format === 'env' ? 'env' : 'props', targets: null });
   // the microservices of the list; the one open now first
   const list = (typeof repos !== 'undefined' ? repos : []).map((r) => ({ name: r.path.replace(/[\\/]+$/, '').split(/[\\/]/).pop(), label: displayName(r), path: r.path }));
   const ms = $('#ndMs');
@@ -299,7 +319,7 @@ function ndChanged() {
   const t = ndTargetOf();
   const kube = t && t.kind === 'kube';
   dbStore(ND_KEY, JSON.stringify({
-    ...ndSaved(), ddlUser: v.ddlUser.trim(), dmlUser: v.dmlUser.trim(), perms: v.perms, migrations: nd.migrations, view: nd.view === 'output' ? ndSaved().view : nd.view,
+    ...ndSaved(), ddlUser: v.ddlUser.trim(), dmlUser: v.dmlUser.trim(), perms: v.perms, migrations: nd.migrations, format: nd.format, view: nd.view === 'output' ? ndSaved().view : nd.view,
     target: $('#ndTarget').value, ...(t && t.kind === 'container' && t.info ? { container: t.info.name } : {}),
     ...(kube ? { context: $('#ndContext').value, namespace: $('#ndNamespace').value.trim(), label: $('#ndLabel').value.trim(), kubeAdmin: $('#ndAdmin').value.trim() } : {}),
   }));
@@ -342,6 +362,8 @@ function renderNewDatabase() {
     if (b.dataset.view === 'output') b.disabled = !nd.out && !nd.running;
   });
   $('#ndMig').querySelectorAll('[data-mig]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mig === nd.migrations)));
+  $('#ndFormat').querySelectorAll('[data-format]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.format === nd.format)));
+  $('#ndCopyProps').title = nd.format === 'env' ? 'Copy these variables, with their passwords, to Paste them in Start in container or in Env' : 'Copy these lines, with their passwords, for the microservice\'s application properties';
   const pre = $('#ndPre');
   if (nd.view === 'output') pre.textContent = nd.out || (nd.running ? 'Running...' : '');
   else pre.innerHTML = p && p[nd.view] ? ndMarked(p[nd.view]) : '';
@@ -397,8 +419,13 @@ async function findNewDatabasePod() {
 
 async function copyNewDatabase(what) {
   const r = await window.newDb.copy(ndValues(), ndWhere(), what);
-  const name = { sql: 'SQL', powershell: 'PowerShell script', bash: 'Bash script', props: 'Lines for the microservice' }[what];
-  toast(r.error || `${name} copied, with the passwords: cleared from the clipboard in half a minute`, r.error ? 'error' : 'success');
+  const vars = what === 'props' && nd.format === 'env';
+  if (vars && !r.error && nd.preview && typeof pastedMvnEnvVars === 'function') {
+    // Paste (Start in container, Env) has them after the clipboard is cleared too
+    mvnEnvCopied = nd.preview.props.replace(/[\u0001-\u0004]/g, '');
+  }
+  const name = { sql: 'SQL', powershell: 'PowerShell script', bash: 'Bash script', props: vars ? 'Variables for the microservice' : 'Lines for the microservice' }[what];
+  toast(r.error || (vars ? `${name} copied, with the passwords: Paste them in Start in container or in Env` : `${name} copied, with the passwords: cleared from the clipboard in half a minute`), r.error ? 'error' : 'success');
 }
 
 async function runNewDatabase() {
