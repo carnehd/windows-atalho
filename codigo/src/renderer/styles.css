@@ -1881,6 +1881,7 @@ body.resizing-sidebar {
 }
 /* Analyse and its gear, as tall as Push and Pull request beside them: the same padding, and a line of text in the gear */
 .push-target-area .pr-agent-btn,
+.push-target-area .pr-agent-docs,
 .push-target-area .pr-agent-gear {
   align-self: center;
   height: auto;
@@ -1894,6 +1895,7 @@ body.resizing-sidebar {
   content: '\200b';
 }
 .file-list-actions .pr-agent-btn,
+.file-list-actions .pr-agent-docs,
 .file-list-actions .pr-agent-gear {
   align-self: stretch;
   height: auto;
@@ -12678,6 +12680,7 @@ strong.api-code-file {
 
 /* The buttons at the right of a pull request, all of one size: Analyse, the gear, GitHub */
 .pr-agent-btn,
+.pr-agent-docs,
 .pr-agent-gear,
 .pr-open-btn {
   display: inline-flex;
@@ -12693,8 +12696,16 @@ strong.api-code-file {
   width: 28px;
   padding: 0;
 }
-.pr-agent-btn {
+.pr-agent-btn,
+.pr-agent-docs {
   padding: 0 10px;
+}
+.pr-agent-docs {
+  gap: 4px;
+}
+/* a skill needs documentation, and there is none yet */
+.pr-agent-docs.needs {
+  border-color: var(--orange);
 }
 .pr-open-btn svg {
   width: 15px;
@@ -13046,6 +13057,131 @@ strong.api-code-file {
 }
 .pr-agent-menu-hint {
   margin: 8px 0 0;
+}
+/* Documents: what a skill asks for, given before the analysis */
+.pr-docs-menu {
+  width: 400px;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+}
+.pr-docs-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.pr-docs-title {
+  font-weight: 600;
+}
+.pr-docs-branch {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pr-docs-ask {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  line-height: 1.4;
+}
+.pr-docs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.pr-docs-none {
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+.pr-doc {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: 1fr auto;
+  align-items: center;
+  column-gap: 6px;
+  padding: 4px 4px 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.pr-doc.bad {
+  border-color: var(--orange);
+}
+.pr-doc-what {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.pr-doc-kind {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+}
+.pr-doc-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--fs-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pr-doc-note {
+  grid-column: 1;
+  grid-row: 2;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  line-height: 1.35;
+}
+.pr-doc.bad .pr-doc-note {
+  color: var(--orange);
+}
+.pr-doc-drop {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+.pr-docs-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pr-docs-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.pr-docs-form-line {
+  flex-direction: row;
+}
+.pr-docs-input-link {
+  flex: 1;
+  min-width: 0;
+}
+.pr-docs-input-text {
+  resize: vertical;
+}
+.pr-docs-save {
+  align-self: flex-end;
+}
+.pr-docs-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+.pr-agent-docs-used {
+  display: block;
+  padding: 6px 12px 0;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+}
+/* Refresh: an icon, as tall as the buttons with text beside it */
+.pr-agent-again {
+  align-self: stretch;
 }
 
 /* All pull requests: the filters and the search on top; a list only after Search */

@@ -193,10 +193,11 @@
               <div class="file-list-actions">
                 <button id="parkBtn" class="btn btn-sm btn-icon" type="button" title="Move the selected files to a folder that Git ignores in this repository, so they are left out of commits" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M19 19h-14a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 1.172 -1.821m3.828 -.179h1l3 3h7a2 2 0 0 1 2 2v8"/></svg>Move to ignored folder...</button>
                 <button id="revertBtn" class="btn btn-sm btn-danger btn-icon" type="button" title="Throw away the changes in the selected files and go back to the last commit" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14l-4 -4l4 -4"/><path d="M5 10h11a4 4 0 1 1 0 8h-1"/></svg><span class="btn-label">Revert...</span></button>
-                <button id="groupFoldersBtn" class="btn btn-sm btn-icon group-folders-btn" type="button" aria-pressed="false" aria-label="Group by folder" title="Group the files by folder, as a tree"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5.5a1.5 1.5 0 0 1 1.5 -1.5h3l2 2h3.5a1.5 1.5 0 0 1 1.5 1.5v1a1.5 1.5 0 0 1 -1.5 1.5h-8.5a1.5 1.5 0 0 1 -1.5 -1.5z"/><path d="M6 10v7.5a1.5 1.5 0 0 0 1.5 1.5h3.5"/><path d="M6 14h5"/><path d="M15 14h6"/><path d="M15 19h6"/></svg></button>
-                <button id="refreshChangesBtn" class="btn btn-sm btn-icon refresh-changes-btn" type="button" aria-label="Refresh the changes" title="Refresh: read the changes again, now"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg></button>
+                <button id="changesAgentDocs" class="btn btn-sm btn-icon pr-agent-docs hidden" type="button" aria-haspopup="dialog"></button>
                 <button id="changesAgentBtn" class="btn btn-sm btn-icon pr-agent-btn hidden" type="button" disabled>Analyse</button>
                 <button id="changesAgentGear" class="btn btn-sm btn-icon pr-agent-gear hidden" type="button" aria-haspopup="dialog"></button>
+                <button id="groupFoldersBtn" class="btn btn-sm btn-icon group-folders-btn" type="button" aria-pressed="false" aria-label="Group by folder" title="Group the files by folder, as a tree"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5.5a1.5 1.5 0 0 1 1.5 -1.5h3l2 2h3.5a1.5 1.5 0 0 1 1.5 1.5v1a1.5 1.5 0 0 1 -1.5 1.5h-8.5a1.5 1.5 0 0 1 -1.5 -1.5z"/><path d="M6 10v7.5a1.5 1.5 0 0 0 1.5 1.5h3.5"/><path d="M6 14h5"/><path d="M15 14h6"/><path d="M15 19h6"/></svg></button>
+                <button id="refreshChangesBtn" class="btn btn-sm btn-icon refresh-changes-btn" type="button" aria-label="Refresh the changes" title="Refresh: read the changes again, now"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg></button>
               </div>
             </div>
             <div id="changesAgent" class="pr-agent tab-agent hidden"></div>
@@ -251,6 +252,7 @@
           </span>
           <button id="pushNowBtn" class="btn btn-primary" type="button" disabled>Push</button>
           <button id="pushPrBtn" class="btn btn-icon" type="button" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 18m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M6 6m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M18 18m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M6 8l0 8"/><path d="M11 6h5a2 2 0 0 1 2 2v8"/><path d="M14 9l-3 -3l3 -3"/></svg>Pull request</button>
+          <button id="pushAgentDocs" class="btn btn-icon pr-agent-docs hidden" type="button" aria-haspopup="dialog"></button>
           <button id="pushAgentBtn" class="btn btn-icon pr-agent-btn hidden" type="button" disabled>Analyse</button>
           <button id="pushAgentGear" class="btn btn-icon pr-agent-gear hidden" type="button" aria-haspopup="dialog"></button>
         </div>

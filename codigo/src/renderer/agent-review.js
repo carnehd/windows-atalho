@@ -77,6 +77,16 @@ async function loadPullReviews() {
 // On the row of a pull request: Analyse, and the gear of the agent and its skill.
 function pullAgentButtons(p) {
   if (!agentFound()) return [];
+  if (agentDocs.repo !== currentRepo) loadAgentDocs(currentRepo);
+  const docs = document.createElement('button');
+  docs.type = 'button';
+  docs.className = 'btn btn-sm btn-icon pr-agent-docs';
+  docs.setAttribute('aria-haspopup', 'dialog');
+  fillDocsBtn(docs, p.head.ref);
+  docs.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openAgentDocs(docs, p.head.ref, () => startPullReview(p));
+  });
   const run = prState.runs.get(p.number);
   const busy = Boolean(run && !run.error);
   const go = document.createElement('button');
@@ -85,10 +95,10 @@ function pullAgentButtons(p) {
   go.innerHTML = AGENT_ICON;
   go.append(busy ? 'Analysing...' : 'Analyse');
   go.disabled = busy;
-  go.title = prState.reviews.has(p.number) ? `Show the review of #${p.number}` : `Have ${agentName()} read #${p.number} and look for errors and improvements`;
+  go.title = reviewOfSkill(prState.reviews.get(p.number)) ? `Show the review of #${p.number}` : `Have ${agentName()} read #${p.number} and look for errors and improvements`;
   go.addEventListener('click', (e) => {
     e.stopPropagation();
-    if (prState.reviews.has(p.number)) showPullReview(p);
+    if (reviewOfSkill(prState.reviews.get(p.number))) showPullReview(p);
     else startPullReview(p);
   });
   const gear = document.createElement('button');
@@ -102,7 +112,7 @@ function pullAgentButtons(p) {
     e.stopPropagation();
     openAgentMenu(gear);
   });
-  return [go, gear];
+  return [docs, go, gear];
 }
 
 function agentName() {
@@ -150,13 +160,18 @@ async function startPullReview(p) {
   const state = prState;
   const now = state.runs.get(p.number);
   if (now && !now.error) return;
+  if (needsDocs(p.head.ref)) {
+    const docs = pullItemEl(p.number) && pullItemEl(p.number).querySelector('.pr-agent-docs');
+    if (docs) openAgentDocs(docs, p.head.ref, () => startPullReview(p));
+    return;
+  }
   state.runs.set(p.number, { since: Date.now(), text: 'Starting', agent: agentName() });
   redrawPullAgent(p.number);
   showPullReview(p);
   tickAgentRuns();
   let got;
   try {
-    got = await window.agent.start(repoPath, { number: p.number, head: p.head.sha, base: p.base.sha, baseRef: p.base.ref, title: p.title, headLabel: p.head.label });
+    got = await window.agent.start(repoPath, { number: p.number, head: p.head.sha, base: p.base.sha, baseRef: p.base.ref, title: p.title, headLabel: p.head.label, headRef: p.head.ref });
   } catch (e) {
     got = { error: e.message };
   }
@@ -200,7 +215,7 @@ function redrawPullAgent(number) {
   if (!p || !item) return;
   const old = item.querySelector('.log-item-head .pr-agent-btn');
   if (old) {
-    const [go] = pullAgentButtons(p);
+    const go = pullAgentButtons(p).find((b) => b.classList.contains('pr-agent-btn'));
     if (go) old.replaceWith(go);
   }
   const meta = item.querySelector('.log-meta');
@@ -336,6 +351,7 @@ function fillAgentCard(box, host) {
   copy.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${ACTION_ICONS.copy}</svg>`;
   acts.append(copy, ...host.moreActs());
   if (host.old) card.appendChild(diffSpan('pr-agent-old', host.old));
+  if (review.documents && review.documents.length) card.appendChild(diffSpan('pr-agent-docs-used', `Compared with: ${review.documents.join(', ')}`));
   if (review.summary) card.appendChild(summaryEl(review.summary));
   for (const [kind, title] of [['error', 'Errors'], ['improvement', 'Improvements']]) {
     const list = live.filter((f) => f.kind === kind);
@@ -397,6 +413,7 @@ function summaryEl(text) {
 
 // "store/CatalogStore.java:160": the last folder, the file and the line.
 function findingPlace(f) {
+  if (!f.file) return 'no file';
   const parts = f.file.split('/');
   return `${parts.slice(-2).join('/')}${f.line ? `:${f.line}` : ''}`;
 }
@@ -434,7 +451,7 @@ function agentFindingEl(f, { open, toggle, again, notHere, acts: actsOf }) {
   const dot = diffSpan('pr-finding-dot', '');
   dot.title = f.kind === 'error' ? 'An error: it can give a wrong result' : 'An improvement: it works, and could be better';
   const place = diffSpan('pr-finding-place', findingPlace(f));
-  place.title = `${f.file}${f.line ? `, line ${f.line}${f.side === 'LEFT' ? ' (as it was)' : ''}` : ''}${f.known ? '' : ` (${notHere})`}`;
+  place.title = f.file ? `${f.file}${f.line ? `, line ${f.line}${f.side === 'LEFT' ? ' (as it was)' : ''}` : ''}${f.known ? '' : ` (${notHere})`}` : 'Not in a file: something nothing does yet';
   row.append(dot, diffSpan('pr-finding-title', f.title), place);
   row.addEventListener('click', () => {
     toggle(!open);
@@ -481,13 +498,13 @@ function pullReviewText(p, review) {
 
 function agentReviewText(what, review) {
   const live = liveFindings(review);
-  const out = [`## Agent review of ${what}`, '', review.summary || ''];
+  const out = [`## Agent review of ${what}`, '', ...(review.documents && review.documents.length ? [`Compared with: ${review.documents.join(', ')}`, ''] : []), review.summary || ''];
   for (const [kind, title] of [['error', 'Errors'], ['improvement', 'Improvements']]) {
     const list = live.filter((f) => f.kind === kind);
     if (!list.length) continue;
     out.push('', `### ${title} (${list.length})`);
     for (const f of list) {
-      out.push('', `- **${f.title}** (\`${f.file}${f.line ? `:${f.line}` : ''}\`)`, `  ${f.detail.replace(/\n/g, '\n  ')}`);
+      out.push('', `- **${f.title}**${f.file ? ` (\`${f.file}${f.line ? `:${f.line}` : ''}\`)` : ''}`, `  ${f.detail.replace(/\n/g, '\n  ')}`);
       if (f.suggestion) out.push('', '  ```', ...f.suggestion.split('\n').map((l) => `  ${l}`), '  ```');
     }
   }
@@ -629,6 +646,7 @@ function openAgentMenu(anchor) {
   const was = $('#agentMenu');
   const same = was && was.anchor === anchor;
   closeAgentMenu();
+  closeAgentDocs();
   if (same) return;
   const menu = document.createElement('div');
   menu.id = 'agentMenu';
@@ -644,6 +662,34 @@ function openAgentMenu(anchor) {
   menu.style.top = `${Math.round(Math.min(a.bottom + 6, window.innerHeight - m.height - 8))}px`;
   document.addEventListener('mousedown', agentMenuOutside, true);
   document.addEventListener('keydown', agentMenuKey, true);
+  // the skills as the folder has them now: one put there since shows as it opens
+  window.agent.info(false).then((got) => {
+    if (got.error || (agentInfo && JSON.stringify([got.skills, got.skill]) === JSON.stringify([agentInfo.skills, agentInfo.skill]))) return;
+    agentInfo = got;
+    drawAllDocs();
+    if (menu.isConnected) fillAgentMenu(menu);
+  }).catch(() => {});
+}
+
+// Refresh in the gear: the folder of the skills read again, and the agents looked for again (one just installed).
+async function refreshAgentMenu(menu, btn) {
+  if (btn.classList.contains('busy')) return;
+  btn.classList.add('busy');
+  const before = new Set((agentInfo ? agentInfo.skills : []).map((s) => s.name));
+  const seen = new Promise((resolve) => setTimeout(resolve, 400));
+  const got = await window.agent.info(true).catch((e) => ({ error: e.message }));
+  await seen;
+  btn.classList.remove('busy');
+  if (got.error) {
+    toast(got.error, 'error');
+    return;
+  }
+  agentInfo = got;
+  drawAllPanels();
+  drawAllDocs();
+  if (menu.isConnected) fillAgentMenu(menu);
+  const fresh = got.skills.map((s) => s.name).filter((name) => !before.has(name));
+  toast(fresh.length ? `New skill: ${fresh.join(', ')}` : 'No new skills', fresh.length ? 'success' : 'info', { plain: true });
 }
 
 function fillAgentMenu(menu) {
@@ -662,6 +708,7 @@ function fillAgentMenu(menu) {
       if (got.agents) {
         agentInfo = got;
         drawAllPanels();
+        drawAllDocs();
       }
       if (got.loaded) toast(`Skill ${got.loaded} loaded`, 'success');
       if (menu.isConnected) fillAgentMenu(menu);
@@ -691,18 +738,243 @@ function fillAgentMenu(menu) {
   skill.value = info.skill;
   skill.addEventListener('change', () => apply(window.agent.setSettings({ agent: info.agent, skill: skill.value })));
   row('Skill', skill);
+  const again = agentBtn('', 'Refresh: read the folder of the skills again, and look for the agents again', () => refreshAgentMenu(menu, again), 'btn-icon refresh-changes-btn pr-agent-again');
+  again.setAttribute('aria-label', 'Refresh');
+  again.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg>';
   row('',
     agentBtn('Load skill...', 'Take a SKILL.md file from this computer into the app', () => apply(window.agent.loadSkill())),
     agentBtn('Edit', 'Open the SKILL.md of this skill, to change what the agent looks for', () => apply(window.agent.editSkill(skill.value))),
     agentBtn('Open folder', 'The folder the skills are kept in', () => apply(window.agent.openSkills())),
+    again,
   );
   const chosen = info.skills.find((s) => s.name === info.skill);
   const found = info.agents.find((a) => a.id === info.agent);
   const hint = document.createElement('p');
   hint.className = 'settings-hint pr-agent-menu-hint';
-  hint.textContent = `${chosen && chosen.description ? `${chosen.description}. ` : ''}A skill is a SKILL.md file with what to look for. `
+  hint.textContent = `${chosen && chosen.description ? `${chosen.description}. ` : ''}${chosen && chosen.documentation ? `It ${chosen.documentation === 'required' ? 'needs' : 'can use'} documentation: Documents, beside Analyse. ` : ''}A skill is a SKILL.md file with what to look for. `
     + `${info.agents.filter((a) => a.found).map((a) => `${a.name}${a.version ? ` ${a.version}` : ''}`).join(' and ') || 'No agent'} ${info.agents.filter((a) => a.found).length === 1 ? 'was' : 'were'} found on this computer${found && found.found ? '' : ' (not the one chosen)'}: the code under review goes to the provider of the agent used, with your account there.`;
   menu.appendChild(hint);
+}
+
+// -- Documents: what a skill asks for before it runs (the documentation: line at the top of its SKILL.md). The button
+// shows beside Analyse only then, and they are given before the analysis starts: files, folders, text pasted, links. Kept by
+// branch, so they follow the work from Changes to Push to its pull request. With documentation: required, Analyse
+// opens this first when there are none. --
+const DOC_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z"/><path d="M9 9l1 0"/><path d="M9 13l6 0"/><path d="M9 17l6 0"/></svg>';
+let agentDocs = { repo: null, by: {} };
+let agentDocsAsked = null; // the repository being asked for
+
+const skillNow = () => (agentInfo && agentInfo.skills.find((s) => s.name === agentInfo.skill)) || null;
+const skillAsks = () => (skillNow() ? skillNow().documentation || '' : '');
+const docsOf = (branch) => (agentDocs.repo === currentRepo ? agentDocs.by[branch] || [] : []);
+const needsDocs = (branch) => skillAsks() === 'required' && docsOf(branch).length === 0;
+// A review kept is what Analyse shows only when it was made with the skill chosen now: with another one, it analyses.
+const reviewOfSkill = (review) => (review && (!agentInfo || review.skill === agentInfo.skill) ? review : null);
+
+async function loadAgentDocs(repo = currentRepo) {
+  if (!repo || agentDocsAsked === repo) return;
+  agentDocsAsked = repo;
+  const got = await window.agent.documents(repo).catch((e) => ({ error: e.message }));
+  agentDocsAsked = null;
+  if (got.error || repo !== currentRepo) return;
+  agentDocs = { repo, by: got.byBranch || {} };
+  drawAllDocs();
+}
+
+function fillDocsBtn(btn, branch, show = true) {
+  const asks = skillAsks();
+  const n = docsOf(branch).length;
+  btn.dataset.branch = branch;
+  btn.classList.toggle('hidden', !show || !asks);
+  btn.classList.toggle('needs', asks === 'required' && n === 0);
+  btn.innerHTML = DOC_ICON;
+  btn.append(n ? `Documents (${n})` : 'Documents');
+  btn.title = `${asks === 'required' ? `The skill ${agentInfo.skill} needs documentation` : `The skill ${agentInfo ? agentInfo.skill : ''} can use documentation`}: what the agent compares the code with. For the branch ${branch || '(none)'}.`;
+}
+
+// Every Documents button there is: on the tabs, and on the rows of the pull requests.
+function drawAllDocs() {
+  AGENT_PANELS.forEach(drawAgentButtons);
+  for (const btn of $$('#prList .pr-agent-docs, #apList .pr-agent-docs')) fillDocsBtn(btn, btn.dataset.branch);
+  const menu = $('#agentDocsMenu');
+  if (menu) fillAgentDocs(menu);
+}
+
+function closeAgentDocs(refocus = false) {
+  const menu = $('#agentDocsMenu');
+  if (!menu) return;
+  document.removeEventListener('mousedown', agentDocsOutside, true);
+  document.removeEventListener('keydown', agentDocsKey, true);
+  const { anchor } = menu;
+  menu.remove();
+  if (refocus && anchor && anchor.isConnected) anchor.focus();
+}
+
+function agentDocsOutside(e) {
+  const menu = $('#agentDocsMenu');
+  if (menu && !menu.contains(e.target) && !(e.target.closest && e.target.closest('.pr-agent-docs'))) closeAgentDocs();
+}
+
+function agentDocsKey(e) {
+  if (e.key !== 'Escape') return;
+  e.preventDefault();
+  e.stopPropagation();
+  closeAgentDocs(true);
+}
+
+function placeAgentDocs(menu) {
+  const a = menu.anchor.getBoundingClientRect();
+  const m = menu.getBoundingClientRect();
+  menu.style.left = `${Math.round(Math.max(8, Math.min(a.right - m.width, window.innerWidth - m.width - 8)))}px`;
+  menu.style.top = `${Math.round(Math.max(8, Math.min(a.bottom + 6, window.innerHeight - m.height - 8)))}px`;
+}
+
+// start: what Analyse in it does, the analysis this was opened for.
+function openAgentDocs(anchor, branch, start) {
+  const was = $('#agentDocsMenu');
+  const same = was && was.anchor === anchor;
+  closeAgentDocs();
+  closeAgentMenu();
+  if (same) return;
+  const menu = document.createElement('div');
+  menu.id = 'agentDocsMenu';
+  menu.className = 'clip-menu pr-agent-menu pr-docs-menu';
+  menu.setAttribute('role', 'dialog');
+  menu.setAttribute('aria-label', 'Documents for the analysis');
+  Object.assign(menu, { anchor, branch, start, adding: '', error: '', draftName: '', draftText: '', draftLink: '' });
+  document.body.appendChild(menu);
+  fillAgentDocs(menu);
+  document.addEventListener('mousedown', agentDocsOutside, true);
+  document.addEventListener('keydown', agentDocsKey, true);
+}
+
+// What was added or taken out: what the main process says the branch has now.
+async function changeAgentDocs(menu, call) {
+  const got = await call.catch((e) => ({ error: e.message }));
+  if (got.canceled) return;
+  menu.error = got.error || '';
+  if (!got.error) {
+    agentDocs.repo = currentRepo;
+    agentDocs.by[menu.branch] = got.docs;
+    menu.adding = '';
+    menu.draftName = '';
+    menu.draftText = '';
+    menu.draftLink = '';
+  }
+  drawAllDocs();
+}
+
+function agentDocRow(menu, doc) {
+  const row = document.createElement('div');
+  const folderBad = doc.kind === 'folder' && !doc.missing && (doc.more || doc.files === 0);
+  row.className = `pr-doc${doc.missing || folderBad ? ' bad' : ''}`;
+  row.dataset.id = doc.id;
+  const what = document.createElement('div');
+  what.className = 'pr-doc-what';
+  const name = diffSpan('pr-doc-name', doc.name);
+  name.title = doc.detail;
+  what.append(diffSpan('pr-doc-kind', doc.kind), name);
+  row.appendChild(what);
+  if (doc.missing) row.appendChild(diffSpan('pr-doc-note', 'Not found where it was: add it again, or remove it.'));
+  else if (doc.kind === 'folder') {
+    const say = doc.more ? 'More than 300 files: choose a folder with only what the agent needs.'
+      : doc.files === 0 ? 'No files in it yet.'
+        : `${plural(doc.files, 'file')}, as they are when the analysis starts.${doc.unreadableFiles ? ` The agent may not read ${doc.unreadableFiles === 1 ? 'one of them' : `${doc.unreadableFiles} of them`} (Word, Excel...): save as PDF or text.` : ''}`;
+    row.appendChild(diffSpan('pr-doc-note', say));
+  } else if (doc.unreadable) row.appendChild(diffSpan('pr-doc-note', 'The agent may not read this kind of file: save it as PDF or text, or paste its text.'));
+  else if (doc.kind === 'link') row.appendChild(diffSpan('pr-doc-note', 'Only named to the agent: it cannot open it.'));
+  const drop = document.createElement('button');
+  drop.type = 'button';
+  drop.className = 'icon-action pr-doc-drop';
+  drop.title = `Take ${doc.name} out`;
+  drop.setAttribute('aria-label', drop.title);
+  drop.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6l-12 12"/><path d="M6 6l12 12"/></svg>';
+  drop.addEventListener('click', () => changeAgentDocs(menu, window.agent.removeDocument(currentRepo, menu.branch, doc.id)));
+  row.appendChild(drop);
+  return row;
+}
+
+function fillAgentDocs(menu) {
+  const skill = skillNow();
+  const docs = docsOf(menu.branch);
+  menu.textContent = '';
+  const head = document.createElement('div');
+  head.className = 'pr-docs-head';
+  head.append(diffSpan('pr-docs-title', 'Documents'), diffSpan('pr-docs-branch', menu.branch || 'no branch'));
+  menu.appendChild(head);
+  if (skill && skill.documentationNote) menu.appendChild(diffSpan('pr-docs-ask', `${skill.name}: ${skill.documentationNote}`));
+  const list = document.createElement('div');
+  list.className = 'pr-docs-list';
+  for (const doc of docs) list.appendChild(agentDocRow(menu, doc));
+  if (!docs.length) list.appendChild(diffSpan('pr-docs-none', skillAsks() === 'required' ? 'None yet. This skill needs at least one to analyse.' : 'None yet. This skill can analyse without them.'));
+  menu.appendChild(list);
+  const add = document.createElement('div');
+  add.className = 'pr-docs-add';
+  const toggle = (what) => {
+    menu.adding = menu.adding === what ? '' : what;
+    menu.error = '';
+    fillAgentDocs(menu);
+  };
+  add.append(
+    agentBtn('Add files...', 'Choose files on this computer. They are read when the analysis starts, as they are then', () => changeAgentDocs(menu, window.agent.addDocumentFiles(currentRepo, menu.branch))),
+    agentBtn('Add folder...', 'Choose a folder: the agent gets every file in it and in its folders, as they are when the analysis starts', () => changeAgentDocs(menu, window.agent.addDocumentFolder(currentRepo, menu.branch))),
+    agentBtn('Paste text', 'Paste the text of a ticket, say', () => toggle('text')),
+    agentBtn('Add link', 'Name a link to the agent, as a reference', () => toggle('link')),
+  );
+  menu.appendChild(add);
+  if (menu.adding === 'text') {
+    const form = document.createElement('div');
+    form.className = 'pr-docs-form';
+    const name = document.createElement('input');
+    name.className = 'input pr-docs-input-name';
+    name.placeholder = 'A name for it (optional)';
+    name.maxLength = 80;
+    name.value = menu.draftName;
+    name.addEventListener('input', () => { menu.draftName = name.value; });
+    const text = document.createElement('textarea');
+    text.className = 'input pr-docs-input-text';
+    text.rows = 6;
+    text.placeholder = 'The text of the ticket, its requirements...';
+    text.value = menu.draftText;
+    text.addEventListener('input', () => { menu.draftText = text.value; });
+    form.append(name, text, agentBtn('Add', '', () => changeAgentDocs(menu, window.agent.addDocumentText(currentRepo, menu.branch, name.value, text.value)), 'pr-docs-save'));
+    menu.appendChild(form);
+    text.focus();
+  } else if (menu.adding === 'link') {
+    const form = document.createElement('div');
+    form.className = 'pr-docs-form pr-docs-form-line';
+    const link = document.createElement('input');
+    link.className = 'input pr-docs-input-link';
+    link.placeholder = 'https://...';
+    link.value = menu.draftLink;
+    link.addEventListener('input', () => { menu.draftLink = link.value; });
+    const save = () => changeAgentDocs(menu, window.agent.addDocumentLink(currentRepo, menu.branch, link.value));
+    link.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        save();
+      }
+    });
+    form.append(link, agentBtn('Add', '', save, 'pr-docs-save'));
+    menu.appendChild(form);
+    link.focus();
+  }
+  if (menu.error) menu.appendChild(diffSpan('pr-token-error', menu.error));
+  const hint = document.createElement('p');
+  hint.className = 'settings-hint pr-agent-menu-hint';
+  hint.textContent = 'They go to the provider of the agent, with the code, and the agent reads all of them. The agent cannot open links: for what is behind a login, as a ticket in Jira, add a file or paste its text.';
+  menu.appendChild(hint);
+  const foot = document.createElement('div');
+  foot.className = 'pr-docs-foot';
+  const go = agentBtn('Analyse', needsDocs(menu.branch) ? 'Add a document first' : 'Start the analysis with these documents', () => {
+    const { start } = menu;
+    closeAgentDocs();
+    start();
+  }, 'btn-primary pr-docs-go');
+  go.disabled = needsDocs(menu.branch);
+  foot.appendChild(go);
+  menu.appendChild(foot);
+  placeAgentDocs(menu);
 }
 
 // -- Analyse on the tabs with no pull request: Push (what the branch is about to push) and Changes (the ticked files,
@@ -715,6 +987,7 @@ const pushAgent = agentPanel({
   box: '#pushAgent',
   go: '#pushAgentBtn',
   gear: '#pushAgentGear',
+  docs: '#pushAgentDocs',
   subject: () => `push:${pushAgent.branch}`,
   done: 'Push analysed',
   againTitle: 'Analyse what this push sends again, as it is now',
@@ -736,6 +1009,7 @@ const changesAgent = agentPanel({
   box: '#changesAgent',
   go: '#changesAgentBtn',
   gear: '#changesAgentGear',
+  docs: '#changesAgentDocs',
   current: '', // what the files it read are now, to tell whether it is about them as they are
   subject: () => 'changes',
   done: 'Changes analysed',
@@ -773,6 +1047,7 @@ function syncPushAgent(info) {
     if (branch) loadPushAgent();
   }
   if (!agentInfo && $('#pushTab').classList.contains('active')) loadAgentInfo().then(drawAllPanels);
+  if (agentDocs.repo !== currentRepo) loadAgentDocs();
   drawPushAgent();
 }
 
@@ -790,10 +1065,12 @@ async function loadPushAgent() {
 // agents are looked for once, a moment after the app has its first changes on screen.
 let agentLookup = null;
 
-async function syncChangesAgent() {
+async function syncChangesAgent(status) {
   const p = changesAgent;
   const repo = currentRepo;
   if (p.repo !== repo) Object.assign(p, { repo, review: null, current: '', run: null, folded: false, openFindings: new Set() });
+  p.branch = (status && status.branch) || '';
+  if (agentDocs.repo !== repo) loadAgentDocs();
   if (!agentInfo && !agentLookup) agentLookup = setTimeout(() => loadAgentInfo().then(drawAllPanels), 1200);
   const got = await window.agent.changesReview(repo).catch((e) => ({ error: e.message }));
   if (got.error || p.repo !== repo) return;
@@ -813,10 +1090,11 @@ function drawAgentButtons(p) {
   const show = agentFound() && (busy || p.buttonsShow());
   go.classList.toggle('hidden', !show);
   $(p.gear).classList.toggle('hidden', !show);
+  fillDocsBtn($(p.docs), p.branch, show);
   go.innerHTML = AGENT_ICON;
   go.append(busy ? 'Analysing...' : 'Analyse');
   go.disabled = busy || (!n && !review);
-  go.title = p.goTitle(review, n);
+  go.title = p.goTitle(reviewOfSkill(review), n);
 }
 
 // The buttons, the section of the review over the list, and how many findings each file has.
@@ -855,6 +1133,10 @@ function drawAgentPanel(p) {
 async function startAgentPanel(p) {
   const { repo, branch, run } = p;
   if (run && !run.error) return;
+  if (needsDocs(branch)) {
+    openAgentDocs($(p.docs), branch, () => startAgentPanel(p));
+    return;
+  }
   p.run = { since: Date.now(), text: 'Starting', agent: agentName() };
   p.folded = false;
   drawAgentPanel(p);
@@ -880,7 +1162,7 @@ function onPanelEvent(event) {
     p.review = event.review;
     p.folded = false;
     toast(`${p.done}: ${findingsText(liveFindings(event.review))}`, 'success', { plain: true });
-    if (p === changesAgent) syncChangesAgent(); // the files may have changed while it read them
+    if (p === changesAgent) syncChangesAgent({ branch: p.branch }); // the files may have changed while it read them
   } else if (event.type === 'failed') {
     p.run = event.code === 'stopped' ? null : { error: event.error, code: event.code };
   }
@@ -979,8 +1261,9 @@ function setupAgentReview() {
     gear.title = 'The agent that analyses, and the skill it follows';
     gear.setAttribute('aria-label', gear.title);
     gear.addEventListener('click', () => openAgentMenu(gear));
+    $(p.docs).addEventListener('click', () => openAgentDocs($(p.docs), p.branch, () => startAgentPanel(p)));
     $(p.go).addEventListener('click', () => {
-      if (!p.shown()) {
+      if (!reviewOfSkill(p.shown())) {
         startAgentPanel(p);
         return;
       }

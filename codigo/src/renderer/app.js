@@ -1533,7 +1533,7 @@ async function refreshStatus() {
   if (!currentRepo) return;
   const repoPath = currentRepo;
   const status = await window.git.getStatus(repoPath);
-  if (repoPath === currentRepo) syncChangesAgent();
+  if (repoPath === currentRepo) syncChangesAgent(status);
   if (status.error) {
     toast(status.error, 'error');
     return;
