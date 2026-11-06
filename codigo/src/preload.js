@@ -278,6 +278,37 @@ contextBridge.exposeInMainWorld('tools', {
   copySecret: (text) => ipcRenderer.invoke('tools-copy-secret', text),
 });
 
+// Git > Pull requests: the list comes from GitHub (the token stays in the main process), the commits from origin
+contextBridge.exposeInMainWorld('github', {
+  pulls: (path, options) => ipcRenderer.invoke('github-pulls', path, options),
+  setToken: (path, token) => ipcRenderer.invoke('github-token-set', path, token),
+  clearToken: (path) => ipcRenderer.invoke('github-token-clear', path),
+  open: (path, number) => ipcRenderer.invoke('github-open', path, number),
+  openTokens: (path) => ipcRenderer.invoke('github-open-tokens', path),
+  openCompare: (path, branch) => ipcRenderer.invoke('github-open-compare', path, branch),
+  me: (path) => ipcRenderer.invoke('github-me', path),
+  comments: (path, number) => ipcRenderer.invoke('github-comments', path, number),
+  addComment: (path, number, text) => ipcRenderer.invoke('github-comment-add', path, number, text),
+  lineComments: (path, number) => ipcRenderer.invoke('github-line-comments', path, number),
+  addLineComment: (path, number, input) => ipcRenderer.invoke('github-line-comment-add', path, number, input),
+  fetchPull: (path, number, head, base, baseRef) => ipcRenderer.invoke('pull-request-fetch', path, number, head, base, baseRef),
+});
+
+// Git > Pull requests > Analyse: an agent's command line reads a pull request (agent-review.js); its answer comes
+// in events
+contextBridge.exposeInMainWorld('agent', {
+  info: (again) => ipcRenderer.invoke('agent-info', again),
+  setSettings: (settings) => ipcRenderer.invoke('agent-settings-set', settings),
+  loadSkill: () => ipcRenderer.invoke('agent-skill-load'),
+  editSkill: (name) => ipcRenderer.invoke('agent-skill-edit', name),
+  openSkills: () => ipcRenderer.invoke('agent-skills-folder'),
+  reviews: (path, numbers) => ipcRenderer.invoke('agent-reviews', path, numbers),
+  start: (path, pull) => ipcRenderer.invoke('agent-review-start', path, pull),
+  stop: (path, number) => ipcRenderer.invoke('agent-review-stop', path, number),
+  dismiss: (path, number, id, on) => ipcRenderer.invoke('agent-review-dismiss', path, number, id, on),
+  onEvent: (cb) => ipcRenderer.on('agent-review-event', (_, data) => cb(data)),
+});
+
 contextBridge.exposeInMainWorld('newDb', {
   targets: () => ipcRenderer.invoke('newdb-targets'),
   preview: (values, where) => ipcRenderer.invoke('newdb-preview', values, where),

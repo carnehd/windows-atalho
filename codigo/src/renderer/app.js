@@ -233,6 +233,7 @@ async function init() {
   setupPush();
   setupDiff();
   setupGitBasics();
+  setupPulls();
   resetCommitMsg();
   setupModes();
   setupPin();
@@ -1230,7 +1231,7 @@ async function refresh() {
   const isGit = !entry || entry.isGit !== false;
   setFolderMode(!isGit);
   const parts = isGit
-    ? { status: refreshStatus, log: refreshLog, stash: refreshStash, push: refreshPush, maven: refreshMaven, ignored: refreshIgnored, refs: refreshCmpRefs, bruno: refreshBruno }
+    ? { status: refreshStatus, log: refreshLog, stash: refreshStash, push: refreshPush, maven: refreshMaven, ignored: refreshIgnored, refs: refreshCmpRefs, bruno: refreshBruno, pulls: refreshPulls }
     : { maven: refreshMaven, bruno: refreshBruno };
   // the count of changes on disk now (asked before any git command of this refresh): what it shows is as of it
   const seenAt = isGit ? repoChanges([repoPath]) : null;
@@ -1676,6 +1677,22 @@ function setChangesGrouped(on) {
     // only for this session
   }
   renderFileList();
+}
+
+// The button at the right of the changes: the repository read again now, as when the window gets the focus. It turns
+// while it does, long enough to be seen (Git answers in a moment).
+async function refreshChangesNow() {
+  const btn = $('#refreshChangesBtn');
+  if (btn.classList.contains('busy')) return;
+  btn.classList.add('busy');
+  const seen = new Promise((resolve) => setTimeout(resolve, 400));
+  try {
+    await refresh();
+  } catch (e) {
+    toast(e.message, 'error', { title: "Couldn't refresh" });
+  }
+  await seen;
+  btn.classList.remove('busy');
 }
 
 function renderGroupBtn() {
@@ -2168,6 +2185,22 @@ function foldEl(item) {
   return el;
 }
 
+// While the whole file is shown: the way back to the changes only, in a row like the folds, where Show was. It
+// stays at the top while the file scrolls.
+function wholeFileEl(label, onBack) {
+  const el = document.createElement('div');
+  el.className = 'df df-full';
+  el.appendChild(diffSpan('', 'Showing the whole file'));
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'df-show df-back';
+  back.textContent = label;
+  back.title = 'Fold the unchanged lines again';
+  back.addEventListener('click', onBack);
+  el.appendChild(back);
+  return el;
+}
+
 function noteRowEl(row) {
   const el = document.createElement('div');
   el.className = 'dl-note';
@@ -2500,19 +2533,7 @@ function renderDiffBody() {
   if (meta.renamedFrom) notes.push(`Renamed from ${meta.renamedFrom}.`);
   if (meta.oldMode && meta.newMode) notes.push(`File mode changed from ${meta.oldMode} to ${meta.newMode}.`);
   if (result.truncated || rows.length > DIFF_MAX_LINES) notes.push('The diff is very long, so only the first part is shown.');
-  if (diffFull) notes.push('Showing the whole file.');
   if (notes.length) note.append(notes.join(' '));
-  if (diffFull) {
-    const back = document.createElement('button');
-    back.type = 'button';
-    back.className = 'diff-note-link';
-    back.textContent = 'Only the changes';
-    back.addEventListener('click', () => {
-      diffFull = false;
-      loadDiff();
-    });
-    note.append(' ', back);
-  }
   note.classList.toggle('hidden', notes.length === 0);
 
   // A new or deleted file has only one side, which reads better in one column.
@@ -2529,9 +2550,16 @@ function renderDiffBody() {
   else {
     const items = diffSequence(rows.slice(0, DIFF_MAX_LINES), meta);
     diffTarget = layout === 'split' && diffEntry && !diffCommit ? diffTargetForChanges(diffEntry) : null;
+    if (diffFull) {
+      body.appendChild(wholeFileEl('Only the changes', () => {
+        diffFull = false;
+        loadDiff();
+      }));
+    }
     body.appendChild(layout === 'split' ? renderSplit(items, diffTarget) : renderUnified(items));
   }
   updateDiffPos();
+  decoratePullDiff(); // a file of a pull request: the comments on its lines
 }
 
 function showDiffHeader(entry) {
@@ -2598,7 +2626,7 @@ function setDiffOpen(open) {
 function markSelectedFile() {
   $$('#fileList .file-item').forEach((el) => el.classList.toggle('selected', !diffCommit && el.dataset.file === diffFile));
   $$('#logList .log-file:not(.cmp-file), .push-file[data-hash]').forEach((el) => el.classList.toggle('selected', Boolean(diffCommit) && el.dataset.hash === diffCommit.hash && el.dataset.file === diffFile));
-  $$('#logList .cmp-file').forEach((el) => el.classList.toggle('selected', Boolean(diffCommit && diffCommit.compare) && el.dataset.file === diffFile && el.dataset.base === diffCommit.base && el.dataset.to === diffCommit.hash));
+  $$('#logList .cmp-file, #prList .cmp-file, #apList .cmp-file').forEach((el) => el.classList.toggle('selected', Boolean(diffCommit && diffCommit.compare) && el.dataset.file === diffFile && el.dataset.base === diffCommit.base && el.dataset.to === diffCommit.hash));
 }
 
 // What the two columns are: the last commit and your copy, a commit and the one before it, or the two sides of Compare
@@ -2647,6 +2675,7 @@ function openDiff(entry) {
 
 function closeDiff() {
   if (!diffFile) return;
+  closePullLinePop(); // the comments of a line of a pull request, when their balloon is open
   diffRequest++;
   diffFile = null;
   diffRepo = null;
@@ -2727,7 +2756,7 @@ function setupDiff() {
   });
   // Esc closes the diff, J and K move between changes (not while typing, nor over another dialog or a menu).
   document.addEventListener('keydown', (e) => {
-    if (!diffFile || currentMode !== 'git' || $('#diffPanel').classList.contains('hidden')) return;
+    if (!diffFile || (currentMode !== 'git' && currentMode !== 'pulls') || $('#diffPanel').classList.contains('hidden')) return;
     if (document.querySelector('.settings-overlay:not(.hidden):not(#diffModal)') || $('#repoMenu')) return;
     if (e.target.closest && e.target.closest('input, textarea, select')) return;
     if (e.key === 'Escape') {
@@ -4941,6 +4970,20 @@ async function refreshPush() {
   renderPush(info);
 }
 
+// Beside Push: the page of GitHub that creates a pull request from the branch, once origin has it. The branches pull
+// requests go into have nothing to ask for.
+const PUSH_NO_PR = new Set(['main', 'master']);
+
+function renderPushPrBtn(info) {
+  const btn = $('#pushPrBtn');
+  const target = info && !info.error ? info.target : '';
+  const can = Boolean(target && info.targetExists && !PUSH_NO_PR.has(target));
+  btn.disabled = !can;
+  if (can) btn.title = `Create a pull request from origin/${target}, on the page of GitHub`;
+  else if (!target) btn.title = 'Create a pull request, on the page of GitHub';
+  else btn.title = info.targetExists ? `origin/${target} is where pull requests go: choose another branch` : `origin/${target} does not exist yet: push it first`;
+}
+
 function renderPush(info) {
   const input = $('#pushTarget');
   const summary = $('#pushSummary');
@@ -4949,6 +4992,7 @@ function renderPush(info) {
   const typing = document.activeElement === input;
   summary.className = 'push-summary';
   list.innerHTML = '';
+  renderPushPrBtn(info);
 
   if (info.error) {
     setPushTabLabel(0);
@@ -4967,7 +5011,8 @@ function renderPush(info) {
   const createOnly = n === 0 && !info.targetExists && info.behind === 0;
   // pointed at another branch than the usual one, it stays too: else there would be no way back to change it
   const chosen = info.target !== (info.upstream || info.current);
-  setPushTabLabel(n, n > 0 || createOnly || chosen);
+  // a branch on origin keeps it too: after its push, the way to its pull request is here
+  setPushTabLabel(n, n > 0 || createOnly || chosen || !$('#pushPrBtn').disabled);
   const parts = [];
   if (n === 0) {
     parts.push(
@@ -5141,6 +5186,11 @@ function setupPush() {
   });
   window.addEventListener('resize', closePushTargetMenu);
   $('#pushNowBtn').addEventListener('click', pushNow);
+  $('#pushPrBtn').addEventListener('click', async () => {
+    if (!pushInfo || !currentRepo) return;
+    const result = await window.github.openCompare(currentRepo, pushInfo.target);
+    if (result.error) toast(result.error, 'error', { title: "Couldn't open GitHub" });
+  });
 }
 
 // -- Move selected files to a folder Git ignores: they leave the commit list but stay on disk --
@@ -5426,19 +5476,7 @@ function renderIgnoredDiff() {
   if (!result.inProject) notes.push(`${result.original} is not in the project, so the whole copy is shown.`);
   else if (result.original !== result.file) notes.push(`A second copy of ${result.original}.`);
   if (result.truncated || rows.length > DIFF_MAX_LINES) notes.push('The diff is very long, so only the first part is shown.');
-  if (ignoredFull) notes.push('Showing the whole file.');
   if (notes.length) note.append(notes.join(' '));
-  if (ignoredFull) {
-    const back = document.createElement('button');
-    back.type = 'button';
-    back.className = 'diff-note-link';
-    back.textContent = 'Only the differences';
-    back.addEventListener('click', () => {
-      ignoredFull = false;
-      loadIgnoredDiff();
-    });
-    note.append(' ', back);
-  }
   note.classList.toggle('hidden', notes.length === 0);
 
   const oneSide = !result.inProject;
@@ -5461,6 +5499,12 @@ function renderIgnoredDiff() {
     const changesGroups = diffGroups;
     diffGroups = [];
     ignoredTarget = layout === 'split' && ignoredSel ? diffTargetForIgnored(ignoredSel) : null;
+    if (ignoredFull) {
+      body.appendChild(wholeFileEl('Only the differences', () => {
+        ignoredFull = false;
+        loadIgnoredDiff();
+      }));
+    }
     body.appendChild(layout === 'split' ? renderSplit(items, ignoredTarget) : renderUnified(items));
     diffGroups = changesGroups;
   }
@@ -5516,6 +5560,7 @@ function setupIgnored() {
 function setupPark() {
   $('#parkBtn').addEventListener('click', openParkModal);
   $('#groupFoldersBtn').addEventListener('click', () => setChangesGrouped(!changesGrouped));
+  $('#refreshChangesBtn').addEventListener('click', refreshChangesNow);
   $('#parkCancelBtn').addEventListener('click', closeParkModal);
   $('#parkConfirmBtn').addEventListener('click', confirmPark);
   $('#parkFolder').addEventListener('input', renderParkFiles);
@@ -5561,6 +5606,9 @@ function updateCrumb() {
   } else if (currentMode === 'search') {
     mode = 'Search';
     ctx = searchCrumb();
+  } else if (currentMode === 'pulls') {
+    mode = 'Pull requests';
+    ctx = allPullsCrumb();
   } else {
     mode = 'Tasks';
     const open = todoTasks.filter((t) => t.status !== 'done').length;
@@ -5572,7 +5620,9 @@ function updateCrumb() {
 }
 
 function setMode(mode) {
-  currentMode = ['vault', 'todo', 'clip', 'help', 'logs', 'docker', 'tools', 'analysis', 'search', 'db'].includes(mode) ? mode : 'git';
+  const before = currentMode;
+  currentMode = ['pulls', 'vault', 'todo', 'clip', 'help', 'logs', 'docker', 'tools', 'analysis', 'search', 'db'].includes(mode) ? mode : 'git';
+  if (before === 'pulls' && currentMode !== 'pulls') allPullsLeft();
   $('#gitView').classList.toggle('hidden', currentMode !== 'git');
   $('#vaultView').classList.toggle('hidden', currentMode !== 'vault');
   $('#todoView').classList.toggle('hidden', currentMode !== 'todo');
@@ -5584,6 +5634,8 @@ function setMode(mode) {
   $('#analysisView').classList.toggle('hidden', currentMode !== 'analysis');
   $('#searchView').classList.toggle('hidden', currentMode !== 'search');
   $('#dbView').classList.toggle('hidden', currentMode !== 'db');
+  $('#pullsView').classList.toggle('hidden', currentMode !== 'pulls');
+  if (currentMode === 'pulls' && before !== 'pulls') allPullsEntered();
   $$('.mode-tab').forEach((t) => t.classList.toggle('active', t.dataset.mode === currentMode));
   updateHotkeyBadge();
   updateCrumb();

@@ -79,7 +79,8 @@ function openCompareDiff(f, ctx) {
   if (!currentRepo) return;
   const same = Boolean(diffCommit) && diffCommit.compare && diffCommit.base === ctx.from && diffCommit.hash === ctx.to && diffFile === f.file && diffRepo === currentRepo;
   if (!same) diffFull = false;
-  diffCommit = { compare: true, base: ctx.from, hash: ctx.to, short: ctx.to.slice(0, 7), files: ctx.files, baseLabel: ctx.fromLabel, label: ctx.toLabel };
+  // pull: a file of a pull request (its number and last commit), where lines can be commented on (pull-requests.js)
+  diffCommit = { compare: true, base: ctx.from, hash: ctx.to, short: ctx.to.slice(0, 7), files: ctx.files, baseLabel: ctx.fromLabel, label: ctx.toLabel, pull: ctx.pull || null };
   diffFile = f.file;
   diffRepo = currentRepo;
   setDiffOpen(true);

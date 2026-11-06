@@ -238,6 +238,11 @@
     if (open && !open.menu.contains(e.target)) closeSelectMenu();
   }
 
+  // A press in the list is a press on its dropdown, as in the system's list: the page does not hear it, so a menu or a
+  // form the dropdown is in (New branch..., in the branch list) does not take it for a press outside and close.
+  window.addEventListener('mousedown', (e) => {
+    if (open && open.menu.contains(e.target)) e.stopPropagation();
+  }, true);
   document.addEventListener('mousedown', (e) => {
     const select = e.target.closest ? e.target.closest('select') : null;
     if (!select || e.button !== 0 || !ours(select)) return;

@@ -2049,14 +2049,19 @@ button.push-file:hover {
 
 /* Group by folder: the button in the list bar (an icon, lit while on) and the tree. Each level is 16px further in; a
    folder row has an arrow and a folder before its name, and the files under it line up with the folder icon. */
-.group-folders-btn {
+.group-folders-btn,
+.refresh-changes-btn {
   width: 28px;
   justify-content: center;
   padding: 0;
 }
-.group-folders-btn svg {
+.group-folders-btn svg,
+.refresh-changes-btn svg {
   width: 16px;
   height: 16px;
+}
+.refresh-changes-btn.busy svg {
+  animation: spin 0.8s linear infinite;
 }
 .group-folders-btn[aria-pressed='true'] {
   background: color-mix(in srgb, var(--accent) 14%, var(--bg));
@@ -2244,11 +2249,12 @@ button.push-file:hover {
   font-size: var(--fs-small);
   cursor: pointer;
 }
+/* the one chosen, in the accent colour (Open / Closed / All, Commits / Files, Split / Unified) */
 .seg-btn[aria-pressed='true'] {
-  background: var(--bg);
-  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+  color: var(--accent);
   font-weight: 600;
-  box-shadow: var(--shadow);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 .seg-btn:disabled {
   opacity: 0.5;
@@ -2276,14 +2282,6 @@ button.push-file:hover {
   color: var(--text-muted);
   border-bottom: 1px solid var(--border);
   background: var(--bg-surface);
-}
-.diff-note-link {
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--accent);
-  font: inherit;
-  cursor: pointer;
 }
 .diff-cols {
   display: grid;
@@ -2357,10 +2355,11 @@ button.push-file:hover {
   color: var(--text-muted);
 }
 .df {
-  display: flex;
+  /* the words end at the middle and the button starts there: Show and the way back from it are in the same place */
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   align-items: center;
-  justify-content: center;
-  gap: 10px;
+  column-gap: 10px;
   min-height: 30px;
   background: var(--bg-surface);
   border-top: 1px dashed var(--border);
@@ -2369,7 +2368,18 @@ button.push-file:hover {
   font-size: var(--fs-small);
   color: var(--text-muted);
 }
+/* the whole file: the way back, where Show was, kept in sight while the file scrolls */
+.df-full {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  border-top: none;
+}
+.df > :first-child {
+  justify-self: end;
+}
 .df-show {
+  justify-self: start;
   padding: 2px 8px;
   border: 1px solid var(--border);
   border-radius: 5px;
@@ -6554,6 +6564,7 @@ body.card-window .vault-card {
 #gitView.folder-mode .tab[data-tab="stash"],
 #gitView.folder-mode .tab[data-tab="ignored"],
 #gitView.folder-mode .tab[data-tab="log"],
+#gitView.folder-mode .tab[data-tab="pulls"],
 #gitView.folder-mode .branch-actions {
   display: none;
 }
@@ -12309,6 +12320,870 @@ strong.api-code-file {
 }
 .log-list .cmp-head {
   padding-top: 2px;
+}
+
+/* Pull requests: the list from GitHub, each with the icon of its state; a click on one shows the files it changes */
+.pr-state {
+  display: flex;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.pr-state svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.pr-state.open { color: var(--green); }
+.pr-state.draft { color: var(--text-muted); }
+.pr-state.merged { color: var(--mauve); }
+.pr-state.closed { color: var(--red); }
+.pr-number {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+/* the branch it comes from, then (marked) the one it is merged into */
+.pr-from,
+.pr-into {
+  font-family: var(--font-mono);
+}
+.pr-from {
+  color: var(--text);
+}
+.pr-arrow {
+  align-self: center;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+.pr-into {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg));
+  color: var(--accent);
+}
+.pr-into .pr-base {
+  font-weight: 700;
+}
+.pr-chip.draft {
+  border-style: dashed;
+}
+.pr-chip.merged {
+  border-color: color-mix(in srgb, var(--mauve) 45%, var(--border));
+  color: var(--mauve);
+}
+.pr-chip.closed {
+  border-color: color-mix(in srgb, var(--red) 45%, var(--border));
+  color: var(--red);
+}
+.pr-files {
+  padding-left: 34px;
+}
+.pr-files .list-note {
+  padding: 10px;
+  text-align: left;
+}
+.pr-files .log-more {
+  margin: 0 0 4px 10px;
+}
+.pr-group-btn {
+  margin-left: auto;
+}
+/* the files as a tree of their folders: a folder's name lines up with the paths, its files go under it */
+.pr-dir {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-left: 32px;
+}
+.pr-dir .dir-name {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  padding-left: calc(var(--depth) * 16px);
+}
+.pr-files .cmp-file.in-tree .file-path {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  padding-left: calc(var(--depth) * 16px + 16px);
+}
+/* "old name → " before the new one: its last space counts */
+.pr-files .cmp-file.in-tree .fp-dir {
+  white-space: pre;
+}
+/* its comments on GitHub, oldest first, and the box to add one */
+.pr-comments-head {
+  margin-top: 6px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.pr-comments .list-note {
+  padding: 6px 8px;
+  text-align: left;
+}
+.pr-comment {
+  max-width: 820px;
+  margin: 4px 8px 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+.pr-comment-who {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: var(--fs-small);
+}
+.pr-comment-author {
+  font-weight: 600;
+}
+.pr-comment-when {
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+}
+.pr-comment-text {
+  display: block;
+  font-size: var(--fs-small);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.pr-comment-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 8px 4px;
+  max-width: 820px;
+}
+.pr-comment-input {
+  width: 100%;
+  min-height: 64px;
+  resize: vertical;
+  font: inherit;
+  font-size: var(--fs-small);
+}
+.pr-comment-line {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.pr-comment-line .pr-token-error {
+  flex: 1;
+}
+/* on the row of a file: how many comments its lines have */
+.pr-file-talk {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 3px;
+  color: var(--accent);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+}
+.pr-file-talk svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* In the diff of a file of a pull request: a line number takes a click to comment on its line */
+.diff-body.can-comment .can-talk .dl-no {
+  cursor: pointer;
+}
+.diff-body.can-comment .can-talk .dl-no:hover {
+  border-radius: 3px;
+  background: var(--accent);
+  color: #fff;
+}
+.diff-body.can-comment .can-talk .dl-no:not(:empty):hover::before {
+  content: '+ ';
+  font-weight: 700;
+}
+/* a line with comments: a marker at its end; the line whose balloon is open has a ring */
+.dl.has-talk {
+  position: relative;
+}
+.has-talk .dl-code {
+  padding-right: 58px;
+}
+.pr-line-mark {
+  position: absolute;
+  top: 1px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 17px;
+  padding: 0 7px;
+  border: none;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font: 700 11px/1 var(--font-ui);
+  cursor: pointer;
+  user-select: none;
+}
+.pr-line-mark svg {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.pr-line-mark.draft {
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  color: var(--accent);
+}
+.pr-line-mark:hover {
+  filter: brightness(1.12);
+}
+.pr-line-mark:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 1px;
+}
+.pr-line-on {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+/* above the diff: the comments whose line changed since */
+.pr-line-elsewhere {
+  position: sticky;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+}
+.pr-line-elsewhere .pr-line-mark {
+  position: static;
+}
+/* the balloon of a line: its comments, and the box to answer or to comment */
+.pr-line-pop {
+  position: absolute;
+  z-index: 5;
+  width: 420px;
+  max-width: calc(100% - 16px);
+  padding: 8px 12px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+  font-family: var(--font-ui);
+  line-height: 1.45;
+  white-space: normal;
+}
+.pr-line-pop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 2px;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+}
+.pr-line-pop-close svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.pr-line-pop-list {
+  max-height: 340px;
+  overflow-y: auto;
+}
+.pr-line-pop .pr-comment {
+  max-width: none;
+  margin: 0;
+  padding: 6px 0;
+  border: none;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: none;
+}
+.pr-line-pop-note {
+  display: block;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+.pr-line-form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 4px 0 2px;
+}
+.pr-line-form-line {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+.pr-line-form .pr-comment-input {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  min-height: 28px;
+  resize: none;
+}
+
+/* The buttons at the right of a pull request, all of one size: Analyse, the gear, GitHub */
+.pr-agent-btn,
+.pr-agent-gear,
+.pr-open-btn {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-self: flex-start;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  height: 26px;
+}
+.pr-agent-gear,
+.pr-open-btn {
+  width: 28px;
+  padding: 0;
+}
+.pr-agent-btn {
+  padding: 0 10px;
+}
+.pr-open-btn svg {
+  width: 15px;
+  height: 15px;
+}
+/* Analyse: a pull request read by an agent. Its own colour, apart from the blue of the comments of GitHub */
+.pr-agent-btn {
+  border-color: color-mix(in srgb, var(--mauve) 45%, var(--border));
+  color: var(--mauve);
+  font-weight: 600;
+}
+.pr-agent-btn svg,
+.pr-agent-name svg,
+.pr-agent-chip svg,
+.pr-file-agent svg,
+.pr-line-finding-head svg,
+.pr-line-mark.agent svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.pr-agent-btn svg {
+  color: var(--mauve);
+}
+.pr-agent-chip {
+  border-color: color-mix(in srgb, var(--mauve) 40%, var(--border));
+  background: color-mix(in srgb, var(--mauve) 8%, var(--bg));
+  color: var(--mauve);
+  font-weight: 600;
+}
+.pr-agent {
+  margin: 0 0 8px;
+}
+.pr-agent-card {
+  max-width: 1100px;
+  border: 1px solid color-mix(in srgb, var(--mauve) 30%, var(--border));
+  border-radius: 8px;
+  background: var(--bg);
+  overflow: hidden;
+}
+/* one line: the words about the review give way (cut with ...) before the buttons do */
+.pr-agent-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--mauve) 18%, var(--border));
+  background: color-mix(in srgb, var(--mauve) 6%, var(--bg));
+  font-size: var(--fs-small);
+}
+.pr-agent-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--mauve);
+}
+.pr-agent-name svg {
+  width: 14px;
+  height: 14px;
+}
+.pr-agent-about,
+.pr-agent-time {
+  color: var(--text-muted);
+}
+.pr-agent-name,
+.pr-agent-acts,
+.pr-agent-time {
+  flex-shrink: 0;
+}
+.pr-agent-about {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pr-agent-copy {
+  width: 28px;
+  padding: 0;
+  justify-content: center;
+}
+.pr-agent-copy svg {
+  width: 14px;
+  height: 14px;
+}
+.pr-agent-time {
+  font-variant-numeric: tabular-nums;
+}
+.pr-agent-acts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.pr-agent-run {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+}
+.pr-agent-spin {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  border: 2px solid color-mix(in srgb, var(--mauve) 25%, transparent);
+  border-top-color: var(--mauve);
+  border-radius: 50%;
+  animation: pr-agent-spin 0.9s linear infinite;
+}
+@keyframes pr-agent-spin {
+  to { transform: rotate(360deg); }
+}
+.pr-agent-now {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+}
+.pr-agent-bar {
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--mauve), transparent);
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  animation: pr-agent-bar 1.6s ease-in-out infinite;
+}
+@keyframes pr-agent-bar {
+  from { background-position: -40% 0; }
+  to { background-position: 140% 0; }
+}
+.pr-agent-error,
+.pr-agent-old,
+.pr-agent-summary,
+.pr-agent-none,
+.pr-agent-gone {
+  display: block;
+  padding: 8px 12px;
+  font-size: var(--fs-small);
+  line-height: 1.5;
+}
+.pr-agent-error {
+  color: var(--red);
+}
+.pr-agent-old {
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--orange) 8%, var(--bg));
+  color: var(--text-muted);
+}
+.pr-agent-summary {
+  border-bottom: 1px solid var(--border);
+  white-space: pre-wrap;
+}
+.pr-agent-summary ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.pr-agent-summary li + li {
+  margin-top: 2px;
+}
+.pr-agent-summary-line {
+  display: block;
+}
+.pr-agent-none,
+.pr-agent-gone {
+  color: var(--text-muted);
+}
+.pr-agent-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 10px 8px;
+  border-top: 1px solid var(--border);
+}
+.pr-agent-card.folded .pr-agent-head {
+  border-bottom: none;
+}
+.pr-agent-back {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+.pr-agent-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px 3px;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+}
+.pr-finding-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 12px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-small);
+  text-align: left;
+  cursor: pointer;
+}
+.pr-finding-row:hover,
+.pr-finding.open > .pr-finding-row {
+  background: color-mix(in srgb, var(--mauve) 5%, var(--bg));
+}
+.pr-finding-row .dir-caret {
+  align-self: center;
+}
+.pr-finding.open .dir-caret {
+  transform: rotate(90deg);
+}
+.pr-finding-dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  background: var(--accent);
+}
+.pr-finding.error .pr-finding-dot {
+  background: var(--red);
+}
+.pr-finding-title {
+  flex: 1;
+  min-width: 0;
+}
+.pr-finding-place {
+  flex-shrink: 0;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+}
+.pr-finding-more {
+  margin: 2px 12px 8px 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+}
+.pr-finding-detail,
+.pr-line-finding-detail {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.pr-finding-code {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  line-height: 1.5;
+  white-space: pre;
+}
+.pr-finding-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.pr-file-agent {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 3px;
+  color: var(--mauve);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+}
+.pr-file-agent svg {
+  width: 12px;
+  height: 12px;
+}
+/* in the diff: the agent's marker, before the one of the comments when the line has both */
+.pr-line-mark.agent {
+  background: var(--mauve);
+}
+.pr-line-mark.agent.second {
+  right: 50px;
+}
+.has-two .dl-code {
+  padding-right: 100px;
+}
+.pr-line-finding {
+  padding: 6px 0 8px;
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-small);
+}
+.pr-line-finding-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--mauve);
+  font-size: var(--fs-caption);
+  font-weight: 700;
+}
+.pr-line-finding-head svg {
+  width: 12px;
+  height: 12px;
+}
+.pr-line-finding.error .pr-line-finding-head {
+  color: var(--red);
+}
+.pr-line-finding-title {
+  display: block;
+  margin: 2px 0;
+  font-weight: 600;
+}
+/* the gear: the agent and its skill */
+.pr-agent-menu {
+  width: 340px;
+  padding: 10px 12px;
+}
+.pr-agent-menu-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0;
+}
+.pr-agent-menu-label {
+  width: 44px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+}
+.pr-agent-menu-row .input {
+  flex: 1;
+  min-width: 0;
+}
+.pr-agent-menu-hint {
+  margin: 8px 0 0;
+}
+
+/* All pull requests: the filters and the search on top; a list only after Search */
+.ap-page {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.ap-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 8px 14px;
+}
+.ap-bar .log-search-box {
+  flex: 1 1 220px;
+}
+.ap-select {
+  width: 185px;
+  flex-shrink: 0;
+}
+.ap-bar-sub {
+  padding-top: 0;
+  border-bottom: 1px solid var(--border);
+}
+.ap-count {
+  flex: 1;
+  min-width: 0;
+}
+.ap-progress {
+  height: 3px;
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+}
+.ap-progress i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.15s;
+}
+.ap-list .pr-agent-gear {
+  display: none;
+}
+.ap-list > .list-note {
+  max-width: 560px;
+  margin: 0 auto;
+  line-height: 1.5;
+}
+.ap-svc {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px 5px;
+  border-radius: 6px;
+  font-size: var(--fs-small);
+  cursor: pointer;
+}
+.ap-svc:hover {
+  background: var(--bg-hover);
+}
+.ap-svc:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: -2px;
+}
+.ap-svc:not(.shut) .dir-caret {
+  transform: rotate(90deg);
+}
+.ap-svc-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+.ap-grow {
+  flex: 1;
+}
+.ap-link {
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--fs-caption);
+  cursor: pointer;
+}
+.ap-list .log-item.ap-in {
+  margin-left: 18px;
+}
+.ap-ms {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+.ap-warn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 3px 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--red) 7%, var(--bg));
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+  line-height: 1.45;
+}
+.ap-warn.quiet {
+  background: var(--bg-surface);
+}
+.ap-warn-names {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+.ap-warn-text {
+  flex: 1;
+  min-width: 0;
+}
+.ap-warn .btn {
+  flex-shrink: 0;
+}
+.ap-foot {
+  padding: 8px;
+  color: var(--text-dim);
+  font-size: var(--fs-small);
+}
+.pr-token-btn.has-token svg {
+  color: var(--green);
+}
+/* The token of this GitHub: one field, what it needs, where it is made */
+.pr-token {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 720px;
+  margin: 4px 0 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+}
+.pr-token-why {
+  font-size: var(--fs-small);
+}
+.pr-token-why.bad,
+.pr-token-error {
+  color: var(--red);
+  font-size: var(--fs-small);
+}
+.pr-token-label {
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+.pr-token-line,
+.pr-token-more {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pr-token-input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+}
+.pr-token-hint {
+  margin: 0;
 }
 
 /* Log: Git's graph on the left of the commits, each drawn as tall as its commit (open or not) */

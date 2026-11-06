@@ -1567,6 +1567,74 @@ class GitService {
     }
   }
 
+  // -- Pull requests: GitHub lists them (github.js); what one changed is compared here, as in the Log --
+
+  // Where origin is, as the configuration has it (before any url.insteadOf): it names the GitHub to ask.
+  async originUrl() {
+    return (await this.git.raw(['config', '--get', 'remote.origin.url']).catch(() => '')).trim();
+  }
+
+  // The commits of a pull request, fetched from origin without a branch or a ref of it here: GitHub keeps the head
+  // of each one as refs/pull/<number>/head. The commit it starts from comes too when it is not here yet (with its
+  // branch, or alone when the branch is gone). Nothing is fetched when both are here already.
+  async fetchPullRequest(number, head, base, baseRef) {
+    try {
+      const n = Number(number);
+      const sha = (s) => /^[0-9a-f]{40}$/i.test(String(s || ''));
+      if (!Number.isInteger(n) || n < 1 || !sha(head) || !sha(base)) return { error: 'Unknown pull request' };
+      const here = async (s) => Boolean((await this.git.raw(['rev-parse', '--verify', '--quiet', `${s}^{commit}`]).catch(() => '')).trim());
+      const git = simpleGit({ baseDir: this.repoPath, timeout: { block: SYNC_TIMEOUT_MS } });
+      let fetched = false;
+      if (!(await here(head))) {
+        await git.raw(['fetch', '--no-tags', 'origin', `refs/pull/${n}/head`]);
+        fetched = true;
+        if (!(await here(head))) return { error: `Pull request #${n} changed on GitHub meanwhile: refresh the list`, stale: true };
+      }
+      if (!(await here(base))) {
+        const branch = String(baseRef || '');
+        const named = /^[^\s~^:?*[\\]+$/.test(branch) && !branch.startsWith('-') && !branch.includes('..');
+        if (named) await git.raw(['fetch', '--no-tags', 'origin', `refs/heads/${branch}`]).catch(() => {});
+        if (!(await here(base))) await git.raw(['fetch', '--no-tags', 'origin', base]).catch(() => {});
+        fetched = true;
+        if (!(await here(base))) return { error: `The commit #${n} starts from (${base.slice(0, 7)}) is not on origin any more` };
+      }
+      return { success: true, fetched };
+    } catch (e) {
+      return { error: /block timeout reached/.test(e.message) ? `Git gave no answer in ${SYNC_TIMEOUT_MS / 60000} minutes` : cleanError(e.message) };
+    }
+  }
+
+  // What a pull request changes, as one diff from where it split from its base (for the agent that reviews it):
+  // the first `max` characters, and whether there was more.
+  async wholeDiff(from, to, max) {
+    try {
+      const a = await this.compareTarget(from);
+      const b = await this.compareTarget(to);
+      const out = await this.git.raw(['-c', 'core.quotePath=false', 'diff', '--no-color', '--no-ext-diff', '-M', '-U5', a, b, '--']);
+      return { diff: out.slice(0, max), truncated: out.length > max };
+    } catch (e) {
+      return { error: cleanError(e.message) };
+    }
+  }
+
+  // A copy of the files as a commit has them, in a folder apart (a detached worktree): the repository's own files
+  // and branch stay as they are. Removed with removeWorktree when it is no longer needed.
+  async addWorktree(dir, commit) {
+    try {
+      const at = await this.compareTarget(commit);
+      await this.git.raw(['worktree', 'add', '--detach', '--force', dir, at]);
+      return { success: true };
+    } catch (e) {
+      return { error: cleanError(e.message) };
+    }
+  }
+
+  async removeWorktree(dir) {
+    await this.git.raw(['worktree', 'remove', '--force', dir]).catch(() => {});
+    await fs.promises.rm(dir, { recursive: true, force: true }).catch(() => {});
+    await this.git.raw(['worktree', 'prune']).catch(() => {});
+  }
+
   // -- Tags --
 
   async tagName(name) {

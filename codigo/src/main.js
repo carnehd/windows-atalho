@@ -32,6 +32,8 @@ const { registerBruno } = require('./bruno');
 const { registerUpdates } = require('./updater');
 const { registerDb } = require('./db');
 const { registerNewDatabase } = require('./new-database');
+const { registerGithub } = require('./github');
+const { registerAgentReview } = require('./agent-review');
 const { stepBack } = require('./shell');
 const { registerSignInWindows } = require('./sign-in-window');
 const { registerClipboardHistory } = require('./clipboard-history');
@@ -85,7 +87,7 @@ let mainWindow = null;
 let tray = null;
 let dialogOpen = false;
 let vault = null;
-const MODES = ['git', 'vault', 'logs', 'docker', 'clip', 'todo', 'help', 'tools', 'analysis', 'search'];
+const MODES = ['git', 'pulls', 'vault', 'logs', 'docker', 'clip', 'todo', 'help', 'tools', 'analysis', 'search'];
 let clipHistory = null;
 let fgWatcher = null;
 let windowMode = MODES.includes(store.get('uiState', {}).mode) ? store.get('uiState', {}).mode : 'git';
@@ -96,6 +98,7 @@ let serviceMap = null;
 let containers = null;
 let terminal = null;
 let bruno = null;
+let agentReview = null;
 // Log explorer: settings and credentials in data/logs-config.json. Requests go through Chromium's network stack,
 // so Windows' trusted certificates and proxy settings apply.
 // Grafana with browserLogin: a login window like the log-explorer's, and the requests made inside a Grafana page.
@@ -567,6 +570,20 @@ app.whenReady().then(() => {
   registerDb({ dataDir: DATA_DIR });
   // Database > New database: a database, its schema and its users in a local PostgreSQL (a container, or a pod)
   registerNewDatabase({ getWindow: () => mainWindow, copySecret });
+  // Git > Pull requests: the pull requests of a repository, asked to GitHub with a token kept encrypted in data/
+  registerGithub({ dataDir: DATA_DIR, fetch: (url, options) => net.fetch(url, options), isKnownRepo, originUrl: (repoPath) => new GitService(repoPath).originUrl() });
+  // Git > Pull requests > Analyse: a pull request read by an agent's command line the user has (Claude CLI)
+  agentReview = registerAgentReview({
+    dataDir: DATA_DIR,
+    getWindow: () => mainWindow,
+    isKnownRepo,
+    gitFor: (repoPath) => new GitService(repoPath),
+    pathKey,
+    loadSettings: () => store.get('agentReview', null),
+    saveSettings: (value) => store.set('agentReview', value),
+    openPath,
+    withDialog,
+  });
   registerUpdates({ getWindow: () => mainWindow });
   maven = registerMaven({
     isKnownRepo,
@@ -633,6 +650,7 @@ app.on('before-quit', (e) => {
   if (quitting || !maven) return;
   e.preventDefault();
   quitting = true;
+  if (agentReview) agentReview.stopAll();
   Promise.all([maven.stopAll(), terminal ? terminal.stop() : null, bruno ? bruno.stopAll() : null]).finally(() => app.quit());
 });
 
@@ -1050,6 +1068,7 @@ function setupIPC() {
   ipcMain.handle('list-tags', repoCall((g) => g.listTags()));
   ipcMain.handle('checkout-tag', repoCall((g, name) => g.checkoutTag(name)));
   ipcMain.handle('compare-file-diff', repoCall((g, from, to, file, oldFile, options) => g.compareFileDiff(from, to, file, oldFile, { full: Boolean(options && options.full) })));
+  ipcMain.handle('pull-request-fetch', repoCall((g, number, head, base, baseRef) => g.fetchPullRequest(number, head, base, baseRef)));
   ipcMain.handle('suggest-tag', repoCall((g) => g.suggestTag()));
   ipcMain.handle('create-tag', repoCall((g, name, hash, push) => g.createTag(name, hash, Boolean(push))));
   ipcMain.handle('push-tag', repoCall((g, name) => g.pushTag(name)));
@@ -1324,7 +1343,7 @@ function setupIPC() {
     const clean = {
       mode: MODES.includes(s.mode) ? s.mode : 'git',
       repo: str(s.repo, 1000),
-      gitTab: ['changes', 'push', 'stash', 'ignored', 'log'].includes(s.gitTab) ? s.gitTab : 'changes',
+      gitTab: ['changes', 'push', 'stash', 'ignored', 'log', 'pulls'].includes(s.gitTab) ? s.gitTab : 'changes',
       gitView: s.gitView === 'maven' ? 'maven' : 'git',
       vaultEnv: str(s.vaultEnv, 100),
       vaultFilter: ['all', 'credential', 'link', 'db', 'note'].includes(s.vaultFilter) ? s.vaultFilter : 'all',
