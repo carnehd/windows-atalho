@@ -1533,6 +1533,7 @@ async function refreshStatus() {
   if (!currentRepo) return;
   const repoPath = currentRepo;
   const status = await window.git.getStatus(repoPath);
+  if (repoPath === currentRepo) syncChangesAgent();
   if (status.error) {
     toast(status.error, 'error');
     return;
@@ -1648,6 +1649,7 @@ function renderFileList() {
   }
   renderGroupBtn();
   updateSelectionInfo();
+  markPanelFiles(changesAgent);
 }
 
 // -- Group by folder: the changes as a tree of their folders, as IntelliJ shows them. A folder with only one folder in
@@ -1864,6 +1866,7 @@ function updateSelectionInfo() {
   $('#revertBtn .btn-label').textContent = selected > 0 && selected < total ? `Revert ${selected}...` : 'Revert...';
   syncDirBoxes();
   updateCommitBtn();
+  drawAgentButtons(changesAgent);
 }
 
 // The checkbox chooses the file for the commit; a click anywhere else on the row shows its diff in a popup. depth: its

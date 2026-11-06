@@ -699,10 +699,12 @@ async function removePullToken() {
 // A click on a line number opens the same balloon to comment on that line. GitHub takes comments on the lines of its
 // diff only (the changed ones and the three around them), so in the whole file the other numbers are not offered.
 // The comments whose line changed since are behind a marker above the diff. --
-// A file of what is about to be pushed comes this way too (pull.push), for the findings of the agent on its lines: it
-// has no comments, and no pull request to add one to.
+// A file of what is about to be pushed, or of the changes with a review, comes this way too (pull.push), for the
+// findings of the agent on its lines: it has no comments, and no pull request to add one to.
 function pullOfDiff() {
-  return diffCommit && diffCommit.pull && diffFile && diffRepo === currentRepo && (diffCommit.pull.push || prState.repo === currentRepo) ? diffCommit.pull : null;
+  if (!diffFile || diffRepo !== currentRepo) return null;
+  if (!diffCommit) return changesAgent.repo === currentRepo && changesAgent.review ? CHANGES_PULL : null;
+  return diffCommit.pull && (diffCommit.pull.push || prState.repo === currentRepo) ? diffCommit.pull : null;
 }
 
 const pullLineKey = (pull, kind, where) => `${pull.number}|${diffFile}|${kind}|${where}`;

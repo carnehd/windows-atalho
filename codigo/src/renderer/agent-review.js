@@ -3,14 +3,15 @@
 // gear with the agent and the skill it follows (a SKILL.md with what to look for). While it runs, the pull request shows what the
 // agent is doing; then a summary and its findings, errors first and improvements after, each with its file and line.
 // A finding opens the diff at its line, where it has a marker of its own, and can be put in the box of a comment on
-// that line. The buttons only show when an agent is found on this computer. The Push tab has the same, for what the
-// branch is about to push (at the end of this file). --
+// that line. The buttons only show when an agent is found on this computer. The Push and Changes tabs have the same,
+// for what the branch is about to push and for what is not committed yet (at the end of this file). --
 
 // Tabler, 24x24 outline
 const AGENT_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 18a2 2 0 0 1 2 2a2 2 0 0 1 2 -2a2 2 0 0 1 -2 -2a2 2 0 0 1 -2 2zm0 -12a2 2 0 0 1 2 2a2 2 0 0 1 2 -2a2 2 0 0 1 -2 -2a2 2 0 0 1 -2 2zm-7 12a6 6 0 0 1 6 -6a6 6 0 0 1 -6 -6a6 6 0 0 1 -6 6a6 6 0 0 1 6 6z"/></svg>';
 const AGENT_GEAR_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z"/><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></svg>';
 
 let agentInfo = null; // { agents: [{ id, name, found, version }], skills: [{ name, description }], agent, skill }
+let agentInfoAsked = null; // the question on its way, for the ones who ask at the same time
 let agentTimer = null;
 
 const agentFound = () => Boolean(agentInfo && agentInfo.agents && agentInfo.agents.some((a) => a.found));
@@ -47,9 +48,14 @@ function agentDuration(ms) {
 // on the list.
 async function loadAgentInfo(again = false) {
   if (agentInfo && !again) return agentInfo;
-  const got = await window.agent.info(again).catch((e) => ({ error: e.message }));
-  if (!got.error) agentInfo = got;
-  return agentInfo;
+  if (agentInfoAsked && !again) return agentInfoAsked;
+  const asked = window.agent.info(again).catch((e) => ({ error: e.message })).then((got) => {
+    if (!got.error) agentInfo = got;
+    agentInfoAsked = null;
+    return agentInfo;
+  });
+  agentInfoAsked = asked;
+  return asked;
 }
 
 async function loadPullReviews() {
@@ -164,7 +170,7 @@ async function startPullReview(p) {
 // What the main process says of a run: what the agent is doing, then its review, or why there is none.
 function onAgentEvent(event) {
   if (event && typeof event.number === 'string') {
-    onPushAgentEvent(event);
+    onPanelEvent(event);
     return;
   }
   if (!event || event.repo !== currentRepo || prState.repo !== currentRepo) return;
@@ -217,12 +223,12 @@ function tickAgentRuns() {
     const el = pullItemEl(n) && pullItemEl(n).querySelector('.pr-agent-time');
     if (el) el.textContent = agentDuration(Date.now() - run.since);
   }
-  const pushing = Boolean(pushAgent.run && !pushAgent.run.error);
-  if (pushing) {
-    const el = $('#pushAgent .pr-agent-time');
-    if (el) el.textContent = agentDuration(Date.now() - pushAgent.run.since);
+  const panels = AGENT_PANELS.filter((p) => p.run && !p.run.error);
+  for (const p of panels) {
+    const el = $(`${p.box} .pr-agent-time`);
+    if (el) el.textContent = agentDuration(Date.now() - p.run.since);
   }
-  const any = going.length > 0 || pushing;
+  const any = going.length > 0 || panels.length > 0;
   if (any && !agentTimer) agentTimer = setInterval(tickAgentRuns, 1000);
   else if (!any && agentTimer) {
     clearInterval(agentTimer);
@@ -544,7 +550,7 @@ function markPullFileAgent(number) {
 // The findings of the agent in the file on show in the diff, by line ("RIGHT:12").
 function pullLineFindings(pull) {
   const out = new Map();
-  for (const f of liveFindings(pull.push ? pushAgent.review : prState.reviews.get(pull.number))) {
+  for (const f of liveFindings(pull.push ? panelOf(pull).review : prState.reviews.get(pull.number))) {
     if (!f.known || f.file !== diffFile || !f.line) continue;
     const where = `${f.side}:${f.line}`;
     out.set(where, [...(out.get(where) || []), f]);
@@ -570,8 +576,8 @@ function pullLineFindingEl(pull, f, where, canComment) {
   }
   const acts = document.createElement('div');
   acts.className = 'pr-finding-acts';
-  // what is about to be pushed has no pull request to comment on yet
-  if (pull.push) acts.appendChild(agentBtn('Dismiss', 'Not a problem: take it off the list', () => dismissPushFinding(f.id, true)));
+  // what is about to be pushed or committed has no pull request to comment on yet
+  if (pull.push) acts.appendChild(agentBtn('Dismiss', 'Not a problem: take it off the list', () => dismissPanelFinding(panelOf(pull), f.id, true)));
   else {
     const say = agentBtn('Comment on this line', canComment ? 'Put the finding in the box below, to change and send' : 'GitHub takes comments only on the lines of its diff, with a token', () => findingToLineComment(pull, f, where));
     say.disabled = !canComment;
@@ -655,7 +661,7 @@ function fillAgentMenu(menu) {
     else if (!got.canceled) {
       if (got.agents) {
         agentInfo = got;
-        drawPushAgent();
+        drawAllPanels();
       }
       if (got.loaded) toast(`Skill ${got.loaded} loaded`, 'success');
       if (menu.isConnected) fillAgentMenu(menu);
@@ -699,11 +705,65 @@ function fillAgentMenu(menu) {
   menu.appendChild(hint);
 }
 
-// -- Analyse on the Push tab: what the branch is about to push, the files of that tab, read by the same agent with the
-// same skill, before it leaves this computer. As for a pull request: a review kept (one per branch), its findings by
-// file and in the diff at their lines, each to dismiss. There is no pull request yet to comment on. --
-const pushAgent = { repo: null, branch: '', review: null, run: null, folded: false, openFindings: new Set() };
-const pushSubject = () => `push:${pushAgent.branch}`;
+// -- Analyse on the tabs with no pull request: Push (what the branch is about to push) and Changes (the ticked files,
+// not committed yet), read by the same agent with the same skill, before they leave this computer. As for a pull
+// request: a review kept, its findings by file and in the diff at their lines, each to dismiss. There is no pull
+// request yet to comment on. --
+const agentPanel = (fields) => ({ repo: null, branch: '', review: null, run: null, folded: false, openFindings: new Set(), ...fields });
+
+const pushAgent = agentPanel({
+  box: '#pushAgent',
+  go: '#pushAgentBtn',
+  gear: '#pushAgentGear',
+  subject: () => `push:${pushAgent.branch}`,
+  done: 'Push analysed',
+  againTitle: 'Analyse what this push sends again, as it is now',
+  notHere: 'not a file of this push',
+  count: () => (pushInfo ? pushInfo.commits.length : 0),
+  // with nothing left to push, the review of what was pushed goes away (kept, for when there are new commits)
+  shown: () => (pushInfo && pushInfo.commits.length ? pushAgent.review : null),
+  buttonsShow: () => true,
+  goTitle: (review, n) => (!n ? 'Nothing to push, so nothing to analyse' : review ? 'Show the review of what this push sends' : `Have ${agentName()} read what this push sends and look for errors and improvements`),
+  copyName: (review) => `what ${pushAgent.branch} pushes to origin/${review.target}`,
+  old: (review) => (pushInfo && review.head !== pushInfo.head ? 'This review was made before the last commits. Run again to analyse them as they are now.' : ''),
+  ask: (repo) => window.agent.startPush(repo),
+  rows: () => $$('#pushList .push-file[data-net]'),
+  placeChip: (row, chip) => row.appendChild(chip),
+  open: (f) => openPushFinding(f),
+});
+
+const changesAgent = agentPanel({
+  box: '#changesAgent',
+  go: '#changesAgentBtn',
+  gear: '#changesAgentGear',
+  current: '', // what the files it read are now, to tell whether it is about them as they are
+  subject: () => 'changes',
+  done: 'Changes analysed',
+  againTitle: 'Analyse the ticked files again, as they are now',
+  notHere: 'not a file of these changes',
+  count: () => selectedEntries().length,
+  // once none of the files it read is among the changes (committed, or reverted), it is about nothing here
+  shown: () => {
+    const { review } = changesAgent;
+    return review && changesAgent.repo === currentRepo && currentEntries.some((e) => (review.reviewed || []).includes(e.file)) ? review : null;
+  },
+  buttonsShow: () => currentEntries.length > 0,
+  goTitle: (review, n) => (review ? 'Show the review of these changes' : !n ? 'Tick the files to analyse' : `Have ${agentName()} read the ${plural(n, 'ticked file')} and look for errors and improvements`),
+  copyName: () => 'the changes not committed',
+  old: (review) => (changesAgent.current && review.head !== changesAgent.current ? 'This review was made before the last changes. Run again to analyse them as they are now.' : ''),
+  ask: (repo) => window.agent.startChanges(repo, selectedEntries().map((e) => e.file)),
+  rows: () => $$('#fileList .file-item'),
+  placeChip: (row, chip) => row.querySelector('.file-path').appendChild(chip),
+  open: (f) => openChangesFinding(f),
+});
+
+const AGENT_PANELS = [pushAgent, changesAgent];
+// A file of the Changes tab in the diff, as far as the findings on its lines go (pullOfDiff, pull-requests.js)
+const CHANGES_PULL = { push: true, number: 'changes' };
+const panelOf = (pull) => (pull.number === 'changes' ? changesAgent : pushAgent);
+const drawAllPanels = () => AGENT_PANELS.forEach(drawAgentPanel);
+const drawPushAgent = () => drawAgentPanel(pushAgent);
+const markPushFileAgent = () => markPanelFiles(pushAgent);
 
 // What renderPush (app.js) has just put on the tab: another repository or branch brings its own review.
 function syncPushAgent(info) {
@@ -712,7 +772,7 @@ function syncPushAgent(info) {
     Object.assign(pushAgent, { repo: currentRepo, branch, review: null, run: null, folded: false, openFindings: new Set() });
     if (branch) loadPushAgent();
   }
-  if (!agentInfo && $('#pushTab').classList.contains('active')) loadAgentInfo().then(drawPushAgent);
+  if (!agentInfo && $('#pushTab').classList.contains('active')) loadAgentInfo().then(drawAllPanels);
   drawPushAgent();
 }
 
@@ -726,123 +786,147 @@ async function loadPushAgent() {
   tickAgentRuns();
 }
 
-// The buttons beside Pull request, the section of the review over the lists, and how many findings each file has.
-function drawPushAgent() {
-  const go = $('#pushAgentBtn');
-  const gear = $('#pushAgentGear');
-  const box = $('#pushAgent');
-  const { run } = pushAgent;
-  const busy = Boolean(run && !run.error);
-  const n = pushInfo ? pushInfo.commits.length : 0;
-  // with nothing left to push, the review of what was pushed goes away (kept, for when there are new commits)
-  const review = n ? pushAgent.review : null;
-  go.classList.toggle('hidden', !agentFound());
-  gear.classList.toggle('hidden', !agentFound());
+// refreshStatus (app.js) reads the changes: the review kept for them, and whether they are still as it read them. The
+// agents are looked for once, a moment after the app has its first changes on screen.
+let agentLookup = null;
+
+async function syncChangesAgent() {
+  const p = changesAgent;
+  const repo = currentRepo;
+  if (p.repo !== repo) Object.assign(p, { repo, review: null, current: '', run: null, folded: false, openFindings: new Set() });
+  if (!agentInfo && !agentLookup) agentLookup = setTimeout(() => loadAgentInfo().then(drawAllPanels), 1200);
+  const got = await window.agent.changesReview(repo).catch((e) => ({ error: e.message }));
+  if (got.error || p.repo !== repo) return;
+  p.review = got.review;
+  p.current = got.current;
+  if (got.running && !p.run) p.run = { since: Date.now(), text: 'Analysing' };
+  drawAgentPanel(p);
+  tickAgentRuns();
+}
+
+// Analyse and the gear of a tab: they follow what there is to analyse.
+function drawAgentButtons(p) {
+  const go = $(p.go);
+  const busy = Boolean(p.run && !p.run.error);
+  const n = p.count();
+  const review = p.shown();
+  const show = agentFound() && (busy || p.buttonsShow());
+  go.classList.toggle('hidden', !show);
+  $(p.gear).classList.toggle('hidden', !show);
   go.innerHTML = AGENT_ICON;
   go.append(busy ? 'Analysing...' : 'Analyse');
-  go.disabled = busy || !n;
-  go.title = !n ? 'Nothing to push, so nothing to analyse' : review ? 'Show the review of what this push sends' : `Have ${agentName()} read what this push sends and look for errors and improvements`;
+  go.disabled = busy || (!n && !review);
+  go.title = p.goTitle(review, n);
+}
+
+// The buttons, the section of the review over the list, and how many findings each file has.
+function drawAgentPanel(p) {
+  drawAgentButtons(p);
+  const box = $(p.box);
+  const review = p.shown();
   const top = box.scrollTop;
   fillAgentCard(box, {
-    run,
+    run: p.run,
     review,
-    folded: pushAgent.folded,
+    folded: p.folded,
     setFolded: (on) => {
-      pushAgent.folded = on;
-      drawPushAgent();
+      p.folded = on;
+      drawAgentPanel(p);
     },
-    start: startPushReview,
-    stop: () => window.agent.stop(currentRepo, pushSubject()),
+    start: () => startAgentPanel(p),
+    stop: () => window.agent.stop(currentRepo, p.subject()),
     dropError: () => {
-      pushAgent.run = null;
-      drawPushAgent();
+      p.run = null;
+      drawAgentPanel(p);
     },
-    againTitle: 'Analyse what this push sends again, as it is now',
-    copyText: () => agentReviewText(`what ${pushAgent.branch} pushes to origin/${review.target}`, review),
+    againTitle: p.againTitle,
+    copyText: () => agentReviewText(p.copyName(review), review),
     moreActs: () => [],
-    old: review && pushInfo && review.head !== pushInfo.head ? 'This review was made before the last commits. Run again to analyse them as they are now.' : '',
-    findingEl: pushFindingEl,
+    old: review ? p.old(review) : '',
+    findingEl: (f) => panelFindingEl(p, f),
     showDismissed: async () => {
-      for (const id of [...(review.dismissed || [])]) await dismissPushFinding(id, false);
+      for (const id of [...(review.dismissed || [])]) await dismissPanelFinding(p, id, false);
     },
   });
   box.scrollTop = top;
-  markPushFileAgent();
+  markPanelFiles(p);
 }
 
-async function startPushReview() {
-  const { repo, branch, run } = pushAgent;
+async function startAgentPanel(p) {
+  const { repo, branch, run } = p;
   if (run && !run.error) return;
-  pushAgent.run = { since: Date.now(), text: 'Starting', agent: agentName() };
-  pushAgent.folded = false;
-  drawPushAgent();
+  p.run = { since: Date.now(), text: 'Starting', agent: agentName() };
+  p.folded = false;
+  drawAgentPanel(p);
   tickAgentRuns();
-  const got = await window.agent.startPush(repo).catch((e) => ({ error: e.message }));
-  if (!got.error || pushAgent.repo !== repo || pushAgent.branch !== branch) return;
-  pushAgent.run = { error: got.error, code: got.code };
-  drawPushAgent();
+  const got = await p.ask(repo).catch((e) => ({ error: e.message }));
+  if (!got.error || p.repo !== repo || p.branch !== branch) return;
+  p.run = { error: got.error, code: got.code };
+  drawAgentPanel(p);
   tickAgentRuns();
 }
 
-function onPushAgentEvent(event) {
-  if (event.repo !== currentRepo || event.repo !== pushAgent.repo || event.number !== pushSubject()) return;
+function onPanelEvent(event) {
+  const p = event.number === 'changes' ? changesAgent : pushAgent;
+  if (event.repo !== currentRepo || event.repo !== p.repo || event.number !== p.subject()) return;
   if (event.type === 'progress') {
-    if (pushAgent.run && !pushAgent.run.error) pushAgent.run.text = event.text;
-    const now = $('#pushAgent .pr-agent-now');
+    if (p.run && !p.run.error) p.run.text = event.text;
+    const now = $(`${p.box} .pr-agent-now`);
     if (now) now.textContent = `${event.text}...`;
     return;
   }
   if (event.type === 'done') {
-    pushAgent.run = null;
-    pushAgent.review = event.review;
-    pushAgent.folded = false;
-    toast(`Push analysed: ${findingsText(liveFindings(event.review))}`, 'success', { plain: true });
+    p.run = null;
+    p.review = event.review;
+    p.folded = false;
+    toast(`${p.done}: ${findingsText(liveFindings(event.review))}`, 'success', { plain: true });
+    if (p === changesAgent) syncChangesAgent(); // the files may have changed while it read them
   } else if (event.type === 'failed') {
-    pushAgent.run = event.code === 'stopped' ? null : { error: event.error, code: event.code };
+    p.run = event.code === 'stopped' ? null : { error: event.error, code: event.code };
   }
-  drawPushAgent();
+  drawAgentPanel(p);
   tickAgentRuns();
-  redrawPushDiff();
+  redrawPanelDiff();
 }
 
-function redrawPushDiff() {
+function redrawPanelDiff() {
   const shown = pullOfDiff();
   if (shown && shown.push) decoratePullDiff();
 }
 
-function pushFindingEl(f) {
+function panelFindingEl(p, f) {
   return agentFindingEl(f, {
-    open: pushAgent.openFindings.has(f.id),
+    open: p.openFindings.has(f.id),
     toggle: (on) => {
-      if (on) pushAgent.openFindings.add(f.id);
-      else pushAgent.openFindings.delete(f.id);
+      if (on) p.openFindings.add(f.id);
+      else p.openFindings.delete(f.id);
     },
-    again: () => pushFindingEl(f),
-    notHere: 'not a file of this push',
+    again: () => panelFindingEl(p, f),
+    notHere: p.notHere,
     acts: () => {
       const acts = [];
-      if (f.known) acts.push(agentBtn('Open in the diff', `See ${f.file}${f.line ? ` at line ${f.line}` : ''}`, () => openPushFinding(f)));
-      acts.push(agentBtn('Dismiss', 'Not a problem: take it off the list', () => dismissPushFinding(f.id, true)));
+      if (f.known) acts.push(agentBtn('Open in the diff', `See ${f.file}${f.line ? ` at line ${f.line}` : ''}`, () => p.open(f)));
+      acts.push(agentBtn('Dismiss', 'Not a problem: take it off the list', () => dismissPanelFinding(p, f.id, true)));
       return acts;
     },
   });
 }
 
-async function dismissPushFinding(id, on) {
-  const got = await window.agent.dismiss(currentRepo, pushSubject(), id, on).catch((e) => ({ error: e.message }));
+async function dismissPanelFinding(p, id, on) {
+  const got = await window.agent.dismiss(currentRepo, p.subject(), id, on).catch((e) => ({ error: e.message }));
   if (got.error || !got.review) {
     toast(got.error || 'That review is not kept any more', 'error');
     return;
   }
-  pushAgent.review = got.review;
-  drawPushAgent();
-  redrawPushDiff();
+  p.review = got.review;
+  drawAgentPanel(p);
+  redrawPanelDiff();
 }
 
 // Two sides of a file of this push: where its commits start, and the last of them. Findings show at their lines.
 function pushDiffCtx() {
   const { base, head, files, target, targetExists, current } = pushInfo;
-  return { from: base, to: head, files, fromLabel: targetExists ? `origin/${target}` : 'Before these commits', toLabel: current, pull: { push: true, number: pushSubject(), headSha: head } };
+  return { from: base, to: head, files, fromLabel: targetExists ? `origin/${target}` : 'Before these commits', toLabel: current, pull: { push: true, number: pushAgent.subject(), headSha: head } };
 }
 
 function openPushFile(f) {
@@ -856,14 +940,24 @@ function openPushFinding(f) {
     return;
   }
   closePullLinePop();
-  prPendingLine = f.line ? { number: pushSubject(), file: f.file, where: `${f.side}:${f.line}`, line: f.line, comment: null } : null;
+  prPendingLine = f.line ? { number: pushAgent.subject(), file: f.file, where: `${f.side}:${f.line}`, line: f.line, comment: null } : null;
   openCompareDiff(entry, pushDiffCtx());
 }
 
-function markPushFileAgent() {
-  const review = pushInfo && pushInfo.commits.length ? pushAgent.review : null;
-  const live = liveFindings(review);
-  for (const row of $$('#pushList .push-file[data-net]')) {
+function openChangesFinding(f) {
+  const entry = currentEntries.find((x) => x.file === f.file);
+  if (!entry) {
+    toast(`${f.file} is not among the changes now`, 'error');
+    return;
+  }
+  closePullLinePop();
+  prPendingLine = f.line ? { number: 'changes', file: f.file, where: `${f.side}:${f.line}`, line: f.line, comment: null } : null;
+  openDiff(entry);
+}
+
+function markPanelFiles(p) {
+  const live = liveFindings(p.shown());
+  for (const row of p.rows()) {
     const old = row.querySelector('.pr-file-agent');
     if (old) old.remove();
     const count = live.filter((f) => f.known && f.file === row.dataset.file).length;
@@ -873,27 +967,29 @@ function markPushFileAgent() {
     chip.title = `${plural(count, 'finding')} of the agent in this file`;
     chip.innerHTML = AGENT_ICON;
     chip.append(String(count));
-    row.appendChild(chip);
+    p.placeChip(row, chip);
   }
 }
 
 function setupAgentReview() {
   window.agent.onEvent(onAgentEvent);
-  const gear = $('#pushAgentGear');
-  gear.innerHTML = AGENT_GEAR_ICON;
-  gear.title = 'The agent that analyses, and the skill it follows';
-  gear.setAttribute('aria-label', gear.title);
-  gear.addEventListener('click', () => openAgentMenu(gear));
-  $('#pushAgentBtn').addEventListener('click', () => {
-    if (!pushAgent.review) {
-      startPushReview();
-      return;
-    }
-    pushAgent.folded = false;
-    drawPushAgent();
-    $('#pushAgent').scrollIntoView({ block: 'nearest' });
-  });
+  for (const p of AGENT_PANELS) {
+    const gear = $(p.gear);
+    gear.innerHTML = AGENT_GEAR_ICON;
+    gear.title = 'The agent that analyses, and the skill it follows';
+    gear.setAttribute('aria-label', gear.title);
+    gear.addEventListener('click', () => openAgentMenu(gear));
+    $(p.go).addEventListener('click', () => {
+      if (!p.shown()) {
+        startAgentPanel(p);
+        return;
+      }
+      p.folded = false;
+      drawAgentPanel(p);
+      $(p.box).scrollIntoView({ block: 'nearest' });
+    });
+  }
   $('#pushTab').addEventListener('click', () => {
-    if (!agentInfo) loadAgentInfo().then(drawPushAgent);
+    if (!agentInfo) loadAgentInfo().then(drawAllPanels);
   });
 }

@@ -1893,8 +1893,14 @@ body.resizing-sidebar {
 .push-target-area .pr-agent-gear::before {
   content: '\200b';
 }
-/* The review of what is about to be pushed: over the lists, scrolling on its own so the lists keep their room */
-.push-agent {
+.file-list-actions .pr-agent-btn,
+.file-list-actions .pr-agent-gear {
+  align-self: stretch;
+  height: auto;
+}
+/* The review on a tab (what is about to be pushed, what is not committed): over the lists, scrolling on its own so
+   the lists keep their room */
+.tab-agent {
   flex-shrink: 0;
   max-height: 55%;
   margin: 0;
@@ -2048,6 +2054,9 @@ button.push-file:hover {
   white-space: nowrap;
   font-family: var(--font-mono);
   font-size: var(--fs-small);
+}
+.file-path .pr-file-agent {
+  margin-left: 8px;
 }
 /* A long path cuts the folders first, so the file name stays whole */
 .fp-dir {

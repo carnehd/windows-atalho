@@ -1,4 +1,5 @@
 const { execFile } = require('child_process');
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -800,6 +801,68 @@ class GitService {
   // Only called for paths Git itself lists as untracked, so the file is inside the repository.
   async untrackedDiff(file) {
     return { file, ...(await newFileDiff(path.join(this.repoPath, file), file)) };
+  }
+
+  // What these changes are, as one diff, for the agent that reviews them: each entry of getStatus as a commit would
+  // record it, a file Git does not track yet as all added. The first `max` characters, and whether there was more.
+  async changesDiff(entries, max) {
+    try {
+      const base = (await this.refExists('HEAD')) ? 'HEAD' : EMPTY_TREE;
+      let diff = '';
+      let truncated = false;
+      for (const e of entries) {
+        if (diff.length >= max) break;
+        if (e.untracked) {
+          const one = await newFileDiff(path.join(this.repoPath, e.file), e.file).catch(() => ({ diff: '', truncated: false })); // gone meanwhile
+          diff += one.diff;
+          truncated = truncated || one.truncated;
+        } else {
+          diff += await this.git.raw(['--literal-pathspecs', '-c', 'core.quotePath=false', 'diff', '--no-color', '--no-ext-diff', '-M', '-U5', base, '--', ...(e.from ? [e.from, e.file] : [e.file])]);
+        }
+      }
+      return { diff: diff.slice(0, max), truncated: truncated || diff.length > max };
+    } catch (e) {
+      return { error: cleanError(e.message) };
+    }
+  }
+
+  // A copy of the code as these changes leave it, in a folder apart: the last commit (a detached worktree; an empty
+  // folder before the first commit) with these files on top. Nothing else of the working folder goes in: not the
+  // other changes, not what Git ignores. Removed with removeWorktree when it is no longer needed.
+  async addChangesCopy(dir, entries) {
+    try {
+      if (await this.refExists('HEAD')) await this.git.raw(['worktree', 'add', '--detach', '--force', dir, 'HEAD']);
+      else await fs.promises.mkdir(dir, { recursive: true });
+      for (const e of entries) {
+        const to = path.join(dir, e.file);
+        if (e.from) await fs.promises.rm(path.join(dir, e.from), { recursive: true, force: true });
+        await fs.promises.rm(to, { recursive: true, force: true });
+        const from = path.join(this.repoPath, e.file);
+        // deleted, or something that is not a plain file (a link is not followed out of the repository)
+        const stat = await fs.promises.lstat(from).catch(() => null);
+        if (!stat || !stat.isFile()) continue;
+        await fs.promises.mkdir(path.dirname(to), { recursive: true });
+        await fs.promises.copyFile(from, to);
+      }
+      return { success: true };
+    } catch (e) {
+      return { error: cleanError(e.message) };
+    }
+  }
+
+  // A word for what these files are now: it changes with any of them, and with a new commit.
+  async changesStamp(files) {
+    const hash = crypto.createHash('sha1');
+    hash.update((await this.git.raw(['rev-parse', '--verify', '--quiet', 'HEAD^{commit}']).catch(() => '')).trim());
+    for (const file of [...files].map(String).sort()) {
+      hash.update(`\0${file}\0`);
+      const full = path.join(this.repoPath, file);
+      const stat = await fs.promises.lstat(full).catch(() => null);
+      if (!stat || !stat.isFile()) hash.update('none');
+      else if (stat.size > MAX_SIDE_BYTES) hash.update(`${stat.size}:${stat.mtimeMs}`);
+      else hash.update(await fs.promises.readFile(full));
+    }
+    return hash.digest('hex');
   }
 
   // The folders this app added to .git/info/exclude (each line right after its marker comment).

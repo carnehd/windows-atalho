@@ -306,6 +306,8 @@ contextBridge.exposeInMainWorld('agent', {
   start: (path, pull) => ipcRenderer.invoke('agent-review-start', path, pull),
   pushReview: (path, branch) => ipcRenderer.invoke('agent-push-review', path, branch),
   startPush: (path) => ipcRenderer.invoke('agent-push-start', path),
+  changesReview: (path) => ipcRenderer.invoke('agent-changes-review', path),
+  startChanges: (path, files) => ipcRenderer.invoke('agent-changes-start', path, files),
   stop: (path, number) => ipcRenderer.invoke('agent-review-stop', path, number),
   dismiss: (path, number, id, on) => ipcRenderer.invoke('agent-review-dismiss', path, number, id, on),
   onEvent: (cb) => ipcRenderer.on('agent-review-event', (_, data) => cb(data)),

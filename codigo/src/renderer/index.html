@@ -195,8 +195,11 @@
                 <button id="revertBtn" class="btn btn-sm btn-danger btn-icon" type="button" title="Throw away the changes in the selected files and go back to the last commit" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14l-4 -4l4 -4"/><path d="M5 10h11a4 4 0 1 1 0 8h-1"/></svg><span class="btn-label">Revert...</span></button>
                 <button id="groupFoldersBtn" class="btn btn-sm btn-icon group-folders-btn" type="button" aria-pressed="false" aria-label="Group by folder" title="Group the files by folder, as a tree"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5.5a1.5 1.5 0 0 1 1.5 -1.5h3l2 2h3.5a1.5 1.5 0 0 1 1.5 1.5v1a1.5 1.5 0 0 1 -1.5 1.5h-8.5a1.5 1.5 0 0 1 -1.5 -1.5z"/><path d="M6 10v7.5a1.5 1.5 0 0 0 1.5 1.5h3.5"/><path d="M6 14h5"/><path d="M15 14h6"/><path d="M15 19h6"/></svg></button>
                 <button id="refreshChangesBtn" class="btn btn-sm btn-icon refresh-changes-btn" type="button" aria-label="Refresh the changes" title="Refresh: read the changes again, now"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg></button>
+                <button id="changesAgentBtn" class="btn btn-sm btn-icon pr-agent-btn hidden" type="button" disabled>Analyse</button>
+                <button id="changesAgentGear" class="btn btn-sm btn-icon pr-agent-gear hidden" type="button" aria-haspopup="dialog"></button>
               </div>
             </div>
+            <div id="changesAgent" class="pr-agent tab-agent hidden"></div>
             <div id="fileList" class="file-list"></div>
             <div class="commit-area">
               <input id="commitMsg" class="commit-input" type="text" placeholder="Commit message..." spellcheck="true" title="Commit message (Ctrl+Enter commits)" />
@@ -252,7 +255,7 @@
           <button id="pushAgentGear" class="btn btn-icon pr-agent-gear hidden" type="button" aria-haspopup="dialog"></button>
         </div>
         <div id="pushSummary" class="push-summary"></div>
-        <div id="pushAgent" class="pr-agent push-agent hidden"></div>
+        <div id="pushAgent" class="pr-agent tab-agent hidden"></div>
         <div id="pushList" class="push-list"></div>
       </div>
 
