@@ -3,7 +3,8 @@
 // gear with the agent and the skill it follows (a SKILL.md with what to look for). While it runs, the pull request shows what the
 // agent is doing; then a summary and its findings, errors first and improvements after, each with its file and line.
 // A finding opens the diff at its line, where it has a marker of its own, and can be put in the box of a comment on
-// that line. The buttons only show when an agent is found on this computer. --
+// that line. The buttons only show when an agent is found on this computer. The Push tab has the same, for what the
+// branch is about to push (at the end of this file). --
 
 // Tabler, 24x24 outline
 const AGENT_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 18a2 2 0 0 1 2 2a2 2 0 0 1 2 -2a2 2 0 0 1 -2 -2a2 2 0 0 1 -2 2zm0 -12a2 2 0 0 1 2 2a2 2 0 0 1 2 -2a2 2 0 0 1 -2 -2a2 2 0 0 1 -2 2zm-7 12a6 6 0 0 1 6 -6a6 6 0 0 1 -6 -6a6 6 0 0 1 -6 6a6 6 0 0 1 6 6z"/></svg>';
@@ -162,6 +163,10 @@ async function startPullReview(p) {
 
 // What the main process says of a run: what the agent is doing, then its review, or why there is none.
 function onAgentEvent(event) {
+  if (event && typeof event.number === 'string') {
+    onPushAgentEvent(event);
+    return;
+  }
   if (!event || event.repo !== currentRepo || prState.repo !== currentRepo) return;
   const run = prState.runs.get(event.number);
   if (event.type === 'progress') {
@@ -212,8 +217,14 @@ function tickAgentRuns() {
     const el = pullItemEl(n) && pullItemEl(n).querySelector('.pr-agent-time');
     if (el) el.textContent = agentDuration(Date.now() - run.since);
   }
-  if (going.length && !agentTimer) agentTimer = setInterval(tickAgentRuns, 1000);
-  else if (!going.length && agentTimer) {
+  const pushing = Boolean(pushAgent.run && !pushAgent.run.error);
+  if (pushing) {
+    const el = $('#pushAgent .pr-agent-time');
+    if (el) el.textContent = agentDuration(Date.now() - pushAgent.run.since);
+  }
+  const any = going.length > 0 || pushing;
+  if (any && !agentTimer) agentTimer = setInterval(tickAgentRuns, 1000);
+  else if (!any && agentTimer) {
     clearInterval(agentTimer);
     agentTimer = null;
   }
@@ -229,10 +240,38 @@ const agentBtn = (label, title, run, cls = '') => {
   return b;
 };
 
-// The section of the review in an open pull request, above its files: the run, its error, or the review.
+// The section of the review in an open pull request, above its files.
 function fillPullAgent(box, p) {
-  const run = prState.runs.get(p.number);
   const review = prState.reviews.get(p.number);
+  fillAgentCard(box, {
+    run: prState.runs.get(p.number),
+    review,
+    folded: prState.agentFolded.has(p.number),
+    setFolded: (on) => {
+      if (on) prState.agentFolded.add(p.number);
+      else prState.agentFolded.delete(p.number);
+      fillPullAgent(box, p);
+    },
+    start: () => startPullReview(p),
+    stop: () => window.agent.stop(currentRepo, p.number),
+    dropError: () => {
+      prState.runs.delete(p.number);
+      redrawPullAgent(p.number);
+    },
+    againTitle: 'Analyse this pull request again, as it is now',
+    copyText: () => pullReviewText(p, review),
+    moreActs: () => [agentBtn('Comment PR', 'Put the review in the box of a comment on this pull request, to change and send', () => pullReviewToComment(p, review))],
+    old: review && review.head !== p.head.sha ? 'This review was made before the last commits of the pull request. Run again to analyse it as it is now.' : '',
+    findingEl: (f) => pullFindingEl(p, f),
+    showDismissed: async () => {
+      for (const id of [...(review.dismissed || [])]) await dismissPullFinding(p.number, id, false);
+    },
+  });
+}
+
+// The section of a review (of a pull request, or of what is about to be pushed): the run, its error, or the review.
+function fillAgentCard(box, host) {
+  const { run, review } = host;
   box.textContent = '';
   box.classList.toggle('hidden', !run && !review);
   if (!run && !review) return;
@@ -254,7 +293,7 @@ function fillPullAgent(box, p) {
   if (run && !run.error) {
     about.textContent = run.agent || agentName();
     about.title = `With the skill ${agentInfo ? agentInfo.skill : ''}`;
-    acts.append(diffSpan('pr-agent-time', agentDuration(Date.now() - run.since)), agentBtn('Stop', 'Stop the agent: nothing is kept of this run', () => window.agent.stop(currentRepo, p.number)));
+    acts.append(diffSpan('pr-agent-time', agentDuration(Date.now() - run.since)), agentBtn('Stop', 'Stop the agent: nothing is kept of this run', host.stop));
     const line = document.createElement('div');
     line.className = 'pr-agent-run';
     line.append(diffSpan('pr-agent-spin', ''), diffSpan('pr-agent-now', `${run.text}...`));
@@ -265,10 +304,7 @@ function fillPullAgent(box, p) {
     return;
   }
   if (run && run.error) {
-    acts.append(agentBtn('Try again', '', () => startPullReview(p)), agentBtn('Close', '', () => {
-      prState.runs.delete(p.number);
-      redrawPullAgent(p.number);
-    }));
+    acts.append(agentBtn('Try again', '', host.start), agentBtn('Close', '', host.dropError));
     card.appendChild(diffSpan('pr-agent-error', run.error));
     if (!review) {
       box.appendChild(card);
@@ -276,30 +312,24 @@ function fillPullAgent(box, p) {
     }
   }
   const live = liveFindings(review);
-  const folded = prState.agentFolded.has(p.number);
   // the agent and the model it used (Copilot CLI does not say: the one its settings name, or its default)
   const model = review.model || (review.agentId === 'copilot' ? 'default model' : '');
   about.textContent = `${review.agent}${model ? ` · ${shortModel(model)}` : ''} · ${formatDate(review.at)} · took ${agentDuration(review.tookMs)}${review.tokens ? ` · ${tokensText(review.tokens)}` : ''}`;
   about.title = [new Date(review.at).toLocaleString(), `skill ${review.skill}`, model ? `model ${model}` : '', tokensTitle(review)].filter(Boolean).join(' · ');
   // folded away: its first line alone, with the way back
-  const fold = (on) => {
-    if (on) prState.agentFolded.add(p.number);
-    else prState.agentFolded.delete(p.number);
-    fillPullAgent(box, p);
-  };
-  if (folded) {
+  if (host.folded) {
     about.textContent += ` · ${findingsText(live)}`;
-    acts.append(agentBtn('Show', 'Show the review again', () => fold(false), 'pr-agent-unfold'));
+    acts.append(agentBtn('Show', 'Show the review again', () => host.setFolded(false), 'pr-agent-unfold'));
     card.classList.add('folded');
     box.appendChild(card);
     return;
   }
-  if (!(run && run.error)) acts.append(agentBtn('Run again', 'Analyse this pull request again, as it is now', () => startPullReview(p)));
-  const copy = agentBtn('', 'Copy the review as text (Markdown)', () => copyText(pullReviewText(p, review), 'Review'), 'btn-icon pr-agent-copy');
+  if (!(run && run.error)) acts.append(agentBtn('Run again', host.againTitle, host.start));
+  const copy = agentBtn('', 'Copy the review as text (Markdown)', () => copyText(host.copyText(), 'Review'), 'btn-icon pr-agent-copy');
   copy.setAttribute('aria-label', 'Copy');
   copy.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${ACTION_ICONS.copy}</svg>`;
-  acts.append(copy, agentBtn('Comment PR', 'Put the review in the box of a comment on this pull request, to change and send', () => pullReviewToComment(p, review)));
-  if (review.head !== p.head.sha) card.appendChild(diffSpan('pr-agent-old', 'This review was made before the last commits of the pull request. Run again to analyse it as it is now.'));
+  acts.append(copy, ...host.moreActs());
+  if (host.old) card.appendChild(diffSpan('pr-agent-old', host.old));
   if (review.summary) card.appendChild(summaryEl(review.summary));
   for (const [kind, title] of [['error', 'Errors'], ['improvement', 'Improvements']]) {
     const list = live.filter((f) => f.kind === kind);
@@ -308,7 +338,7 @@ function fillPullAgent(box, p) {
     group.className = 'pr-agent-group';
     group.append(title, diffSpan('cmp-count', String(list.length)));
     card.appendChild(group);
-    for (const f of list) card.appendChild(pullFindingEl(p, f));
+    for (const f of list) card.appendChild(host.findingEl(f));
   }
   if (!live.length) card.appendChild(diffSpan('pr-agent-none', review.findings.length ? 'Every finding was dismissed.' : 'The agent found nothing to report.'));
   const gone = review.findings.length - live.length;
@@ -320,15 +350,13 @@ function fillPullAgent(box, p) {
     back.type = 'button';
     back.className = 'pr-agent-back';
     back.textContent = 'Show again';
-    back.addEventListener('click', async () => {
-      for (const id of [...(review.dismissed || [])]) await dismissPullFinding(p.number, id, false);
-    });
+    back.addEventListener('click', host.showDismissed);
     note.appendChild(back);
     card.appendChild(note);
   }
   const foot = document.createElement('div');
   foot.className = 'pr-agent-foot';
-  foot.appendChild(agentBtn('Collapse', 'Fold the review away, to its first line', () => fold(true), 'pr-agent-collapse'));
+  foot.appendChild(agentBtn('Collapse', 'Fold the review away, to its first line', () => host.setFolded(true), 'pr-agent-collapse'));
   card.appendChild(foot);
   box.appendChild(card);
 }
@@ -369,7 +397,26 @@ function findingPlace(f) {
 
 function pullFindingEl(p, f) {
   const key = `${p.number}:${f.id}`;
-  const open = prState.openFindings.has(key);
+  return agentFindingEl(f, {
+    open: prState.openFindings.has(key),
+    toggle: (on) => {
+      if (on) prState.openFindings.add(key);
+      else prState.openFindings.delete(key);
+    },
+    again: () => pullFindingEl(p, f),
+    notHere: 'not a file of this pull request',
+    acts: () => {
+      const acts = [];
+      if (f.known) acts.push(agentBtn('Open in the diff', `See ${f.file}${f.line ? ` at line ${f.line}` : ''}`, () => openPullFinding(p, f)));
+      if (f.known && f.line) acts.push(agentBtn('Comment on this line', 'Open the diff at this line with the finding in the box of a comment, to change and send', () => openPullFinding(p, f, true)));
+      acts.push(agentBtn('Dismiss', 'Not a problem: take it off the list', () => dismissPullFinding(p.number, f.id, true)));
+      return acts;
+    },
+  });
+}
+
+// A finding on the list of a review: one line, and a click opens what it says and what can be done with it.
+function agentFindingEl(f, { open, toggle, again, notHere, acts: actsOf }) {
   const wrap = document.createElement('div');
   wrap.className = `pr-finding ${f.kind}${open ? ' open' : ''}`;
   wrap.dataset.finding = f.id;
@@ -381,12 +428,11 @@ function pullFindingEl(p, f) {
   const dot = diffSpan('pr-finding-dot', '');
   dot.title = f.kind === 'error' ? 'An error: it can give a wrong result' : 'An improvement: it works, and could be better';
   const place = diffSpan('pr-finding-place', findingPlace(f));
-  place.title = `${f.file}${f.line ? `, line ${f.line}${f.side === 'LEFT' ? ' (as it was)' : ''}` : ''}${f.known ? '' : ' (not a file of this pull request)'}`;
+  place.title = `${f.file}${f.line ? `, line ${f.line}${f.side === 'LEFT' ? ' (as it was)' : ''}` : ''}${f.known ? '' : ` (${notHere})`}`;
   row.append(dot, diffSpan('pr-finding-title', f.title), place);
   row.addEventListener('click', () => {
-    if (open) prState.openFindings.delete(key);
-    else prState.openFindings.add(key);
-    wrap.replaceWith(pullFindingEl(p, f));
+    toggle(!open);
+    wrap.replaceWith(again());
   });
   wrap.appendChild(row);
   if (!open) return wrap;
@@ -401,9 +447,7 @@ function pullFindingEl(p, f) {
   }
   const acts = document.createElement('div');
   acts.className = 'pr-finding-acts';
-  if (f.known) acts.appendChild(agentBtn('Open in the diff', `See ${f.file}${f.line ? ` at line ${f.line}` : ''}`, () => openPullFinding(p, f)));
-  if (f.known && f.line) acts.appendChild(agentBtn('Comment on this line', 'Open the diff at this line with the finding in the box of a comment, to change and send', () => openPullFinding(p, f, true)));
-  acts.appendChild(agentBtn('Dismiss', 'Not a problem: take it off the list', () => dismissPullFinding(p.number, f.id, true)));
+  acts.append(...actsOf());
   more.appendChild(acts);
   wrap.appendChild(more);
   return wrap;
@@ -426,8 +470,12 @@ function findingText(f) {
 
 // The review as text, for the clipboard or a comment.
 function pullReviewText(p, review) {
+  return agentReviewText(`#${p.number}`, review);
+}
+
+function agentReviewText(what, review) {
   const live = liveFindings(review);
-  const out = [`## Agent review of #${p.number}`, '', review.summary || ''];
+  const out = [`## Agent review of ${what}`, '', review.summary || ''];
   for (const [kind, title] of [['error', 'Errors'], ['improvement', 'Improvements']]) {
     const list = live.filter((f) => f.kind === kind);
     if (!list.length) continue;
@@ -496,7 +544,7 @@ function markPullFileAgent(number) {
 // The findings of the agent in the file on show in the diff, by line ("RIGHT:12").
 function pullLineFindings(pull) {
   const out = new Map();
-  for (const f of liveFindings(prState.reviews.get(pull.number))) {
+  for (const f of liveFindings(pull.push ? pushAgent.review : prState.reviews.get(pull.number))) {
     if (!f.known || f.file !== diffFile || !f.line) continue;
     const where = `${f.side}:${f.line}`;
     out.set(where, [...(out.get(where) || []), f]);
@@ -522,9 +570,13 @@ function pullLineFindingEl(pull, f, where, canComment) {
   }
   const acts = document.createElement('div');
   acts.className = 'pr-finding-acts';
-  const say = agentBtn('Comment on this line', canComment ? 'Put the finding in the box below, to change and send' : 'GitHub takes comments only on the lines of its diff, with a token', () => findingToLineComment(pull, f, where));
-  say.disabled = !canComment;
-  acts.append(say, agentBtn('Dismiss', 'Not a problem: take it off the list', () => dismissPullFinding(pull.number, f.id, true)));
+  // what is about to be pushed has no pull request to comment on yet
+  if (pull.push) acts.appendChild(agentBtn('Dismiss', 'Not a problem: take it off the list', () => dismissPushFinding(f.id, true)));
+  else {
+    const say = agentBtn('Comment on this line', canComment ? 'Put the finding in the box below, to change and send' : 'GitHub takes comments only on the lines of its diff, with a token', () => findingToLineComment(pull, f, where));
+    say.disabled = !canComment;
+    acts.append(say, agentBtn('Dismiss', 'Not a problem: take it off the list', () => dismissPullFinding(pull.number, f.id, true)));
+  }
   el.appendChild(acts);
   return el;
 }
@@ -601,7 +653,10 @@ function fillAgentMenu(menu) {
     const got = await call.catch((e) => ({ error: e.message }));
     if (got.error) toast(got.error, 'error');
     else if (!got.canceled) {
-      if (got.agents) agentInfo = got;
+      if (got.agents) {
+        agentInfo = got;
+        drawPushAgent();
+      }
       if (got.loaded) toast(`Skill ${got.loaded} loaded`, 'success');
       if (menu.isConnected) fillAgentMenu(menu);
     }
@@ -640,10 +695,205 @@ function fillAgentMenu(menu) {
   const hint = document.createElement('p');
   hint.className = 'settings-hint pr-agent-menu-hint';
   hint.textContent = `${chosen && chosen.description ? `${chosen.description}. ` : ''}A skill is a SKILL.md file with what to look for. `
-    + `${info.agents.filter((a) => a.found).map((a) => `${a.name}${a.version ? ` ${a.version}` : ''}`).join(' and ') || 'No agent'} ${info.agents.filter((a) => a.found).length === 1 ? 'was' : 'were'} found on this computer${found && found.found ? '' : ' (not the one chosen)'}: the code of the pull request goes to the provider of the agent used, with your account there.`;
+    + `${info.agents.filter((a) => a.found).map((a) => `${a.name}${a.version ? ` ${a.version}` : ''}`).join(' and ') || 'No agent'} ${info.agents.filter((a) => a.found).length === 1 ? 'was' : 'were'} found on this computer${found && found.found ? '' : ' (not the one chosen)'}: the code under review goes to the provider of the agent used, with your account there.`;
   menu.appendChild(hint);
+}
+
+// -- Analyse on the Push tab: what the branch is about to push, the files of that tab, read by the same agent with the
+// same skill, before it leaves this computer. As for a pull request: a review kept (one per branch), its findings by
+// file and in the diff at their lines, each to dismiss. There is no pull request yet to comment on. --
+const pushAgent = { repo: null, branch: '', review: null, run: null, folded: false, openFindings: new Set() };
+const pushSubject = () => `push:${pushAgent.branch}`;
+
+// What renderPush (app.js) has just put on the tab: another repository or branch brings its own review.
+function syncPushAgent(info) {
+  const branch = info && !info.error ? info.current : '';
+  if (pushAgent.repo !== currentRepo || pushAgent.branch !== branch) {
+    Object.assign(pushAgent, { repo: currentRepo, branch, review: null, run: null, folded: false, openFindings: new Set() });
+    if (branch) loadPushAgent();
+  }
+  if (!agentInfo && $('#pushTab').classList.contains('active')) loadAgentInfo().then(drawPushAgent);
+  drawPushAgent();
+}
+
+async function loadPushAgent() {
+  const { repo, branch } = pushAgent;
+  const got = await window.agent.pushReview(repo, branch).catch((e) => ({ error: e.message }));
+  if (got.error || pushAgent.repo !== repo || pushAgent.branch !== branch) return;
+  pushAgent.review = got.review;
+  if (got.running && !pushAgent.run) pushAgent.run = { since: Date.now(), text: 'Analysing' };
+  drawPushAgent();
+  tickAgentRuns();
+}
+
+// The buttons beside Pull request, the section of the review over the lists, and how many findings each file has.
+function drawPushAgent() {
+  const go = $('#pushAgentBtn');
+  const gear = $('#pushAgentGear');
+  const box = $('#pushAgent');
+  const { run } = pushAgent;
+  const busy = Boolean(run && !run.error);
+  const n = pushInfo ? pushInfo.commits.length : 0;
+  // with nothing left to push, the review of what was pushed goes away (kept, for when there are new commits)
+  const review = n ? pushAgent.review : null;
+  go.classList.toggle('hidden', !agentFound());
+  gear.classList.toggle('hidden', !agentFound());
+  go.innerHTML = AGENT_ICON;
+  go.append(busy ? 'Analysing...' : 'Analyse');
+  go.disabled = busy || !n;
+  go.title = !n ? 'Nothing to push, so nothing to analyse' : review ? 'Show the review of what this push sends' : `Have ${agentName()} read what this push sends and look for errors and improvements`;
+  const top = box.scrollTop;
+  fillAgentCard(box, {
+    run,
+    review,
+    folded: pushAgent.folded,
+    setFolded: (on) => {
+      pushAgent.folded = on;
+      drawPushAgent();
+    },
+    start: startPushReview,
+    stop: () => window.agent.stop(currentRepo, pushSubject()),
+    dropError: () => {
+      pushAgent.run = null;
+      drawPushAgent();
+    },
+    againTitle: 'Analyse what this push sends again, as it is now',
+    copyText: () => agentReviewText(`what ${pushAgent.branch} pushes to origin/${review.target}`, review),
+    moreActs: () => [],
+    old: review && pushInfo && review.head !== pushInfo.head ? 'This review was made before the last commits. Run again to analyse them as they are now.' : '',
+    findingEl: pushFindingEl,
+    showDismissed: async () => {
+      for (const id of [...(review.dismissed || [])]) await dismissPushFinding(id, false);
+    },
+  });
+  box.scrollTop = top;
+  markPushFileAgent();
+}
+
+async function startPushReview() {
+  const { repo, branch, run } = pushAgent;
+  if (run && !run.error) return;
+  pushAgent.run = { since: Date.now(), text: 'Starting', agent: agentName() };
+  pushAgent.folded = false;
+  drawPushAgent();
+  tickAgentRuns();
+  const got = await window.agent.startPush(repo).catch((e) => ({ error: e.message }));
+  if (!got.error || pushAgent.repo !== repo || pushAgent.branch !== branch) return;
+  pushAgent.run = { error: got.error, code: got.code };
+  drawPushAgent();
+  tickAgentRuns();
+}
+
+function onPushAgentEvent(event) {
+  if (event.repo !== currentRepo || event.repo !== pushAgent.repo || event.number !== pushSubject()) return;
+  if (event.type === 'progress') {
+    if (pushAgent.run && !pushAgent.run.error) pushAgent.run.text = event.text;
+    const now = $('#pushAgent .pr-agent-now');
+    if (now) now.textContent = `${event.text}...`;
+    return;
+  }
+  if (event.type === 'done') {
+    pushAgent.run = null;
+    pushAgent.review = event.review;
+    pushAgent.folded = false;
+    toast(`Push analysed: ${findingsText(liveFindings(event.review))}`, 'success', { plain: true });
+  } else if (event.type === 'failed') {
+    pushAgent.run = event.code === 'stopped' ? null : { error: event.error, code: event.code };
+  }
+  drawPushAgent();
+  tickAgentRuns();
+  redrawPushDiff();
+}
+
+function redrawPushDiff() {
+  const shown = pullOfDiff();
+  if (shown && shown.push) decoratePullDiff();
+}
+
+function pushFindingEl(f) {
+  return agentFindingEl(f, {
+    open: pushAgent.openFindings.has(f.id),
+    toggle: (on) => {
+      if (on) pushAgent.openFindings.add(f.id);
+      else pushAgent.openFindings.delete(f.id);
+    },
+    again: () => pushFindingEl(f),
+    notHere: 'not a file of this push',
+    acts: () => {
+      const acts = [];
+      if (f.known) acts.push(agentBtn('Open in the diff', `See ${f.file}${f.line ? ` at line ${f.line}` : ''}`, () => openPushFinding(f)));
+      acts.push(agentBtn('Dismiss', 'Not a problem: take it off the list', () => dismissPushFinding(f.id, true)));
+      return acts;
+    },
+  });
+}
+
+async function dismissPushFinding(id, on) {
+  const got = await window.agent.dismiss(currentRepo, pushSubject(), id, on).catch((e) => ({ error: e.message }));
+  if (got.error || !got.review) {
+    toast(got.error || 'That review is not kept any more', 'error');
+    return;
+  }
+  pushAgent.review = got.review;
+  drawPushAgent();
+  redrawPushDiff();
+}
+
+// Two sides of a file of this push: where its commits start, and the last of them. Findings show at their lines.
+function pushDiffCtx() {
+  const { base, head, files, target, targetExists, current } = pushInfo;
+  return { from: base, to: head, files, fromLabel: targetExists ? `origin/${target}` : 'Before these commits', toLabel: current, pull: { push: true, number: pushSubject(), headSha: head } };
+}
+
+function openPushFile(f) {
+  if (pushInfo) openCompareDiff(f, pushDiffCtx());
+}
+
+function openPushFinding(f) {
+  const entry = pushInfo && pushInfo.files.find((x) => x.file === f.file);
+  if (!entry) {
+    toast(`${f.file} is not among the files of this push`, 'error');
+    return;
+  }
+  closePullLinePop();
+  prPendingLine = f.line ? { number: pushSubject(), file: f.file, where: `${f.side}:${f.line}`, line: f.line, comment: null } : null;
+  openCompareDiff(entry, pushDiffCtx());
+}
+
+function markPushFileAgent() {
+  const review = pushInfo && pushInfo.commits.length ? pushAgent.review : null;
+  const live = liveFindings(review);
+  for (const row of $$('#pushList .push-file[data-net]')) {
+    const old = row.querySelector('.pr-file-agent');
+    if (old) old.remove();
+    const count = live.filter((f) => f.known && f.file === row.dataset.file).length;
+    if (!count) continue;
+    const chip = document.createElement('span');
+    chip.className = 'pr-file-agent';
+    chip.title = `${plural(count, 'finding')} of the agent in this file`;
+    chip.innerHTML = AGENT_ICON;
+    chip.append(String(count));
+    row.appendChild(chip);
+  }
 }
 
 function setupAgentReview() {
   window.agent.onEvent(onAgentEvent);
+  const gear = $('#pushAgentGear');
+  gear.innerHTML = AGENT_GEAR_ICON;
+  gear.title = 'The agent that analyses, and the skill it follows';
+  gear.setAttribute('aria-label', gear.title);
+  gear.addEventListener('click', () => openAgentMenu(gear));
+  $('#pushAgentBtn').addEventListener('click', () => {
+    if (!pushAgent.review) {
+      startPushReview();
+      return;
+    }
+    pushAgent.folded = false;
+    drawPushAgent();
+    $('#pushAgent').scrollIntoView({ block: 'nearest' });
+  });
+  $('#pushTab').addEventListener('click', () => {
+    if (!agentInfo) loadAgentInfo().then(drawPushAgent);
+  });
 }

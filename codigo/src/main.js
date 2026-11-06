@@ -583,6 +583,7 @@ app.whenReady().then(() => {
     saveSettings: (value) => store.set('agentReview', value),
     openPath,
     withDialog,
+    pushTargetFor: (repoPath) => store.get('pushTargets', {})[pathKey(repoPath)] || '',
   });
   registerUpdates({ getWindow: () => mainWindow });
   maven = registerMaven({

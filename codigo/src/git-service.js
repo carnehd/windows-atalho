@@ -564,11 +564,17 @@ class GitService {
         behind = Number((await this.git.raw(['rev-list', '--count', `HEAD..origin/${ctx.target}`])).trim()) || 0;
       }
       let files = [];
+      let base = '';
+      let head = '';
       if (commits.length > 0) {
-        // Net change: against the target branch, or against the parent of the oldest new commit when origin lacks it.
-        let base = ctx.targetExists ? `origin/${ctx.target}` : `${commits[commits.length - 1].fullHash}^`;
-        if (!ctx.targetExists && !(await this.refExists(base))) base = EMPTY_TREE; // the first commit has no parent
-        files = parseNameStatus(await this.git.raw(['diff', '--name-status', base, 'HEAD']));
+        // Net change: what these commits change, from where they split from the target branch (the branch itself, unless
+        // it has commits this one lacks), or from the parent of the oldest new commit when origin lacks the branch.
+        const target = `origin/${ctx.target}`;
+        let from = ctx.targetExists ? (await this.git.raw(['merge-base', target, 'HEAD']).catch(() => '')).trim() || target : `${commits[commits.length - 1].fullHash}^`;
+        if (!ctx.targetExists && !(await this.refExists(from))) from = EMPTY_TREE; // the first commit has no parent
+        files = parseNameStatus(await this.git.raw(['diff', '--name-status', from, 'HEAD']));
+        base = from === EMPTY_TREE ? from : (await this.git.raw(['rev-parse', '--verify', `${from}^{commit}`])).trim();
+        head = (await this.git.raw(['rev-parse', '--verify', 'HEAD^{commit}'])).trim();
       }
       return {
         current: ctx.current,
@@ -578,6 +584,8 @@ class GitService {
         behind,
         commits,
         files,
+        base,
+        head,
       };
     } catch (e) {
       return { error: cleanError(e.message) };

@@ -1879,6 +1879,29 @@ body.resizing-sidebar {
 .push-summary.warn {
   color: var(--orange);
 }
+/* Analyse and its gear, as tall as Push and Pull request beside them: the same padding, and a line of text in the gear */
+.push-target-area .pr-agent-btn,
+.push-target-area .pr-agent-gear {
+  align-self: center;
+  height: auto;
+  padding: 6px 12px;
+}
+.push-target-area .pr-agent-gear {
+  width: auto;
+  padding: 6px 7px;
+}
+.push-target-area .pr-agent-gear::before {
+  content: '\200b';
+}
+/* The review of what is about to be pushed: over the lists, scrolling on its own so the lists keep their room */
+.push-agent {
+  flex-shrink: 0;
+  max-height: 55%;
+  margin: 0;
+  padding: 8px 14px;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--border);
+}
 /* Two columns: files on the left, commits on the right. Each one scrolls on its own. */
 .push-list {
   flex: 1;

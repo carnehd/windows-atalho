@@ -699,8 +699,10 @@ async function removePullToken() {
 // A click on a line number opens the same balloon to comment on that line. GitHub takes comments on the lines of its
 // diff only (the changed ones and the three around them), so in the whole file the other numbers are not offered.
 // The comments whose line changed since are behind a marker above the diff. --
+// A file of what is about to be pushed comes this way too (pull.push), for the findings of the agent on its lines: it
+// has no comments, and no pull request to add one to.
 function pullOfDiff() {
-  return diffCommit && diffCommit.pull && diffFile && diffRepo === currentRepo && prState.repo === currentRepo ? diffCommit.pull : null;
+  return diffCommit && diffCommit.pull && diffFile && diffRepo === currentRepo && (diffCommit.pull.push || prState.repo === currentRepo) ? diffCommit.pull : null;
 }
 
 const pullLineKey = (pull, kind, where) => `${pull.number}|${diffFile}|${kind}|${where}`;
@@ -949,12 +951,12 @@ function decoratePullDiff() {
   body.querySelectorAll('.pr-line-mark, .pr-line-elsewhere, #prLinePop').forEach((el) => el.remove());
   body.querySelectorAll('.has-talk, .pr-line-on').forEach((el) => el.classList.remove('has-talk', 'pr-line-on'));
   const pull = pullOfDiff();
-  const canWrite = Boolean(pull && prState.info && prState.info.hasToken);
+  const canWrite = Boolean(pull && !pull.push && prState.info && prState.info.hasToken);
   body.classList.toggle('can-comment', canWrite);
   const rows = pull ? pullDiffRows(body) : [];
   if (!pull || !rows.length || (prLinePop && (prLinePop.number !== pull.number || prLinePop.file !== diffFile))) closePullLinePop();
   if (!pull || !rows.length) return;
-  markPullDiffLines(rows, !diffFull);
+  if (!pull.push) markPullDiffLines(rows, !diffFull);
   // where a line is: its row, and in two columns the cell of its side
   const byKey = new Map();
   for (const row of rows) {

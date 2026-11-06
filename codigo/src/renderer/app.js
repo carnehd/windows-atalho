@@ -2625,6 +2625,7 @@ function setDiffOpen(open) {
 
 function markSelectedFile() {
   $$('#fileList .file-item').forEach((el) => el.classList.toggle('selected', !diffCommit && el.dataset.file === diffFile));
+  $$('.push-file[data-net]').forEach((el) => el.classList.toggle('selected', Boolean(diffCommit && diffCommit.pull && diffCommit.pull.push) && el.dataset.file === diffFile));
   $$('#logList .log-file:not(.cmp-file), .push-file[data-hash]').forEach((el) => el.classList.toggle('selected', Boolean(diffCommit) && el.dataset.hash === diffCommit.hash && el.dataset.file === diffFile));
   $$('#logList .cmp-file, #prList .cmp-file, #apList .cmp-file').forEach((el) => el.classList.toggle('selected', Boolean(diffCommit && diffCommit.compare) && el.dataset.file === diffFile && el.dataset.base === diffCommit.base && el.dataset.to === diffCommit.hash));
 }
@@ -4993,6 +4994,7 @@ function renderPush(info) {
   summary.className = 'push-summary';
   list.innerHTML = '';
   renderPushPrBtn(info);
+  syncPushAgent(info);
 
   if (info.error) {
     setPushTabLabel(0);
@@ -5049,6 +5051,8 @@ function renderPush(info) {
   commitsCol.appendChild(pushSectionTitle(`Commits (${n})`, 'Click a commit to see its files'));
   info.commits.forEach((c) => commitsCol.appendChild(pushCommitItem(c)));
   list.append(filesCol, commitsCol);
+  markPushFileAgent();
+  markSelectedFile();
 }
 
 function pushSectionTitle(text, hint) {
@@ -5059,16 +5063,21 @@ function pushSectionTitle(text, hint) {
   return el;
 }
 
-// In a commit's file list (Push and Branches) a click shows what that commit changed in the file.
+// In a commit's file list (Push and Branches) a click shows what that commit changed in the file; in the list of the
+// whole push, what all its commits change in it.
 function pushFileRow(f, commit = null) {
-  const row = document.createElement(commit ? 'button' : 'div');
+  const row = document.createElement('button');
   row.className = 'push-file';
+  row.type = 'button';
+  row.dataset.file = f.file;
   if (commit) {
-    row.type = 'button';
     row.dataset.hash = commit.fullHash;
-    row.dataset.file = f.file;
     row.title = 'Click to see what this commit changed in the file';
     row.addEventListener('click', () => openCommitDiff(commit, f));
+  } else {
+    row.dataset.net = '1';
+    row.title = `${f.from ? `${f.from} -> ` : ''}${f.file}\nClick to see what this push changes in it`;
+    row.addEventListener('click', () => openPushFile(f));
   }
   const letter = document.createElement('span');
   letter.className = `file-status ${f.letter}`;
@@ -5077,7 +5086,6 @@ function pushFileRow(f, commit = null) {
   const name = document.createElement('span');
   name.className = 'file-name';
   name.textContent = f.from ? `${f.from} -> ${f.file}` : f.file;
-  if (!commit) name.title = name.textContent;
   row.append(letter, name);
   return row;
 }
