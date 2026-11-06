@@ -1,7 +1,7 @@
 {
   "name": "git-quick",
   "productName": "Git Quick",
-  "version": "1.6.19",
+  "version": "1.6.20",
   "description": "Quick Git operations popup for Windows",
   "main": "src/main.js",
   "scripts": {
