@@ -20,6 +20,7 @@ const { MyCommands } = require('./my-commands');
 const { RepoGroups } = require('./repo-groups');
 const { registerTools } = require('./tools');
 const { compareSpecs, specPart } = require('./api-diff');
+const { readSpec } = require('./api-view');
 const { registerAnalysis } = require('./analysis');
 const { registerSearch } = require('./search');
 const { registerCardWindows } = require('./card-windows');
@@ -34,6 +35,9 @@ const { registerDb } = require('./db');
 const { registerNewDatabase } = require('./new-database');
 const { registerGithub } = require('./github');
 const { registerAgentReview } = require('./agent-review');
+const { registerLocalSetup } = require('./local-setup');
+const { registerConsoleAnalysis } = require('./console-analysis');
+const { registerContainerMessages } = require('./container-messages');
 const { stepBack } = require('./shell');
 const { registerSignInWindows } = require('./sign-in-window');
 const { registerClipboardHistory } = require('./clipboard-history');
@@ -99,6 +103,10 @@ let containers = null;
 let terminal = null;
 let bruno = null;
 let agentReview = null;
+let localSetup = null;
+let consoleAnalysis = null;
+let containerMessages = null;
+let githubApi = null;
 // Log explorer: settings and credentials in data/logs-config.json. Requests go through Chromium's network stack,
 // so Windows' trusted certificates and proxy settings apply.
 // Grafana with browserLogin: a login window like the log-explorer's, and the requests made inside a Grafana page.
@@ -390,6 +398,13 @@ function registerApiCompare() {
       return { error: `Couldn't get it: ${e.message}` };
     }
   });
+  ipcMain.handle('tools-api-view', (_, text) => {
+    try {
+      return readSpec(String(text || ''));
+    } catch (e) {
+      return { error: e.message };
+    }
+  });
   ipcMain.handle('tools-api-compare', (_, before, after) => {
     try {
       return compareSpecs(String(before || ''), String(after || ''));
@@ -538,6 +553,8 @@ app.whenReady().then(() => {
     getWindow: () => mainWindow,
   });
   containers = registerContainers({ getWindow: () => mainWindow });
+  // Containers > Messages: what goes through a Pub/Sub emulator or a Redis
+  containerMessages = registerContainerMessages({ getWindow: () => mainWindow });
   registerTools({ copySecret });
   registerApiCompare();
   const listNamedRepos = () => {
@@ -570,8 +587,9 @@ app.whenReady().then(() => {
   registerDb({ dataDir: DATA_DIR });
   // Database > New database: a database, its schema and its users in a local PostgreSQL (a container, or a pod)
   registerNewDatabase({ getWindow: () => mainWindow, copySecret });
-  // Git > Pull requests: the pull requests of a repository, asked to GitHub with a token kept encrypted in data/
-  registerGithub({ dataDir: DATA_DIR, fetch: (url, options) => net.fetch(url, options), isKnownRepo, originUrl: (repoPath) => new GitService(repoPath).originUrl() });
+  // Git > Pull requests: the pull requests of a repository, asked to GitHub with a token kept encrypted in data/, or
+  // through the GitHub MCP server of Claude CLI
+  githubApi = registerGithub({ dataDir: DATA_DIR, fetch: (url, options) => net.fetch(url, options), isKnownRepo, originUrl: (repoPath) => new GitService(repoPath).originUrl() });
   // Git > Pull requests > Analyse: a pull request read by an agent's command line the user has (Claude CLI)
   agentReview = registerAgentReview({
     dataDir: DATA_DIR,
@@ -584,6 +602,18 @@ app.whenReady().then(() => {
     openPath,
     withDialog,
     pushTargetFor: (repoPath) => store.get('pushTargets', {})[pathKey(repoPath)] || '',
+  });
+  // Maven > Local setup: what a microservice needs running on this computer, read by the same agent
+  localSetup = registerLocalSetup({ dataDir: DATA_DIR, getWindow: () => mainWindow, isKnownRepo, gitFor: (repoPath) => new GitService(repoPath), pathKey, agentReview, copySecret });
+  // Maven > the console: what is selected there read by the same agent, which proposes a fix
+  consoleAnalysis = registerConsoleAnalysis({
+    getWindow: () => mainWindow,
+    isKnownRepo,
+    gitFor: (repoPath) => new GitService(repoPath),
+    pathKey,
+    agentReview,
+    loadRunEnv: (repoPath) => store.get('mavenRunEnv', {})[pathKey(String(repoPath))],
+    loadContainer: (repoPath) => store.get('mavenContainer', {})[pathKey(String(repoPath))],
   });
   registerUpdates({ getWindow: () => mainWindow });
   maven = registerMaven({
@@ -652,6 +682,10 @@ app.on('before-quit', (e) => {
   e.preventDefault();
   quitting = true;
   if (agentReview) agentReview.stopAll();
+  if (localSetup) localSetup.stopAll();
+  if (consoleAnalysis) consoleAnalysis.stopAll();
+  if (containerMessages) containerMessages.stopAll();
+  if (githubApi) githubApi.stopAll();
   Promise.all([maven.stopAll(), terminal ? terminal.stop() : null, bruno ? bruno.stopAll() : null]).finally(() => app.quit());
 });
 

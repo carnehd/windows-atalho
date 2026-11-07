@@ -180,7 +180,7 @@ function pomFolders(root, maxDepth = 6) {
 
 // -- Macros: several commands saved under a name, for every microservice, run one after the other: Maven commands in
 // the microservice's folder, and git steps in its repository (what to do with local changes, switch or create a
-// branch, pull) --
+// branch, pull). A Go to a module step changes the folder the Maven steps after it run in. --
 const MACRO_LIMITS = { count: 30, steps: 15, name: 60, text: 400 };
 // My commands: Maven goals saved under a name, for every repository (the list on the Maven page)
 const SAVED_LIMITS = { count: 50, name: 60, goals: 400 };
@@ -467,6 +467,16 @@ const engineOnce = (call, args, timeout = 60000) =>
 const keepsRunning = (step) => (step.kind === 'preset' && ['start', 'debug'].includes(step.preset)) || (step.kind === 'custom' && SERVER_GOALS.test(step.goals));
 const GIT_KINDS = new Set(['changes', 'fetch', 'checkout', 'branch', 'pull', 'unstash']);
 const MAVEN_KINDS = new Set(['preset', 'custom']);
+// The folder a Go to a module step names, relative to the root of the repository ('' is the root): a path inside it,
+// never one that leaves it. Whether it has a pom.xml is seen when the macro runs, in the repository it runs in.
+function moduleDir(value, i) {
+  const t = String(value ?? '').trim().replace(/\\/g, '/').replace(/^\.\/+/, '').replace(/\/+$/, '');
+  if (t.length > 200) throw new Error(`Step ${i + 1}: the folder is too long`);
+  if (t && (/^\/|^[A-Za-z]:/.test(t) || t.split('/').some((p) => p === '..' || p === '.' || !p) || !/^[\w.@+ \/-]+$/.test(t))) {
+    throw new Error(`Step ${i + 1}: "${t}" is not a folder of the repository (one inside it, as orders-api or services/orders-api)`);
+  }
+  return t;
+}
 // Local changes: asked when the macro runs (stash, discard or stop), or always the same answer.
 const CHANGES_POLICIES = ['ask', 'stash', 'discard', 'stop'];
 // A branch a step names: only the characters branch names use, never an option or a range. Git has the last word
@@ -505,6 +515,7 @@ function cleanMacro(input = {}) {
   const steps = raw.map((step, i) => {
     const kind = step && step.kind;
     if (kind === 'stop' || kind === 'fetch' || kind === 'unstash') return { kind };
+    if (kind === 'module') return { kind, dir: moduleDir(step.dir, i) };
     if (kind === 'changes') return { kind, policy: CHANGES_POLICIES.includes(step.policy) ? step.policy : 'ask' };
     if (kind === 'checkout') return { kind, branch: branch(step.branch, i, 'the branch to switch to, e.g. develop', true) };
     if (kind === 'branch') return { kind, base: branch(step.base, i, 'the branch on origin it starts from, e.g. develop', true) };
@@ -1298,7 +1309,22 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
       const macro = macroList().find((m) => m.id === String(id));
       if (!macro) throw new Error('That macro is gone');
       const { dir, rel } = chosenDir(repoPath);
-      if (macro.steps.some((st) => MAVEN_KINDS.has(st.kind)) && !fs.existsSync(path.join(dir, 'pom.xml'))) throw new Error('No pom.xml in this repository');
+      // the folder each Maven step runs in: the one of Runs in, until a Go to a module step changes it
+      const dirs = [];
+      let here = dir;
+      macro.steps.forEach((st, i) => {
+        if (st.kind === 'module') {
+          const target = path.resolve(repoPath, st.dir);
+          const inside = path.relative(path.resolve(repoPath), target);
+          if (inside.startsWith('..') || path.isAbsolute(inside) || !fs.existsSync(path.join(target, 'pom.xml'))) {
+            throw new Error(`Step ${i + 1}: ${st.dir ? `this repository has no module ${st.dir}/ (a folder with a pom.xml)` : 'the root of this repository has no pom.xml'}`);
+          }
+          here = target;
+        }
+        dirs[i] = here;
+      });
+      const noPom = macro.steps.findIndex((st, i) => MAVEN_KINDS.has(st.kind) && !fs.existsSync(path.join(dirs[i], 'pom.xml')));
+      if (noPom !== -1) throw new Error(dirs[noPom] === dir && !rel ? 'No pom.xml in this repository' : `Step ${noPom + 1}: no pom.xml in ${relOf(repoPath, dirs[noPom]) || 'the root'}`);
       const ctx = { answers: cleanAnswers(macro, answers), stash: null };
       if (macro.steps.some((st) => GIT_KINDS.has(st.kind)) && !(await new GitService(repoPath).isGitRepo())) throw new Error('This folder has no Git, and the macro has git steps');
       const k = key(repoPath);
@@ -1308,8 +1334,11 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
       const ports = portsFor(repoPath);
       const plan = macro.steps.map((st, i) => {
         if (st.kind === 'stop') return { stop: true, label: 'Stop what is running' };
+        if (st.kind === 'module') return { module: dirs[i], label: st.dir ? `Go to the module ${st.dir}/` : 'Go to the root of the repository' };
         if (GIT_KINDS.has(st.kind)) return { git: st, label: gitStepLabel(st, ctx.answers, i) };
-        return { args: stepArgs(st, ports), label: `mvn ${stepArgs(st, ports).join(' ')}` };
+        // where it runs, when it is not where the macro began
+        const where = dirs[i] === dir ? '' : `   (in ${relOf(repoPath, dirs[i]) || 'the root'}/)`.replace('the root/', 'the root');
+        return { args: stepArgs(st, ports), dir: dirs[i], label: `mvn ${stepArgs(st, ports).join(' ')}${where}` };
       });
       const env = IS_WIN ? null : await shell.loginShellEnv();
       const values = envValues.cleanValues(valuesRequest && valuesRequest.values);
@@ -1345,13 +1374,21 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
             ended();
             continue;
           }
+          if (p.module) {
+            write(run, `The Maven steps after this one run in ${relOf(repoPath, p.module) ? `${relOf(repoPath, p.module)}/` : 'the root of the repository'}.\n`);
+            ended();
+            continue;
+          }
           if (p.git) code = await runGitStep(run, p.git, i, ctx);
           else {
             // the step that starts the application gets the values chosen per environment and the variables; the
             // others, the files
             const starts = SERVER_GOALS.test(p.args.join(' '));
             if (starts) write(run, valuesLine(values, valuesRequest.valuesNote) + runEnv.runEnvLines(appEnv));
-            code = await runStep(run, dir, p.args, starts ? envValues.withValues(runEnv.withRunEnv(env, appEnv), values) : env);
+            // Maven as the folder of the step finds it (its mvnw, from a module: ../mvnw)
+            if (p.dir !== dir) run.maven = mavenFor(p.dir, repoPath);
+            else run.maven = maven;
+            code = await runStep(run, p.dir, p.args, starts ? envValues.withValues(runEnv.withRunEnv(env, appEnv), values) : env);
             write(run, `[exit code ${code}]\n`);
           }
           ended();
@@ -1381,6 +1418,8 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
   ipcMain.handle('mvn-clear', (_, repoPath) => {
     const run = runs.get(key(String(repoPath)));
     if (run && !run.active) runs.delete(key(String(repoPath)));
+    // one going on carries on: only what it said so far goes (written still counts all of it)
+    else if (run) run.log = '';
     return true;
   });
 

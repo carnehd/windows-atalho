@@ -374,4 +374,4 @@ function registerNewDatabase({ getWindow, copySecret }) {
   }));
 }
 
-module.exports = { registerNewDatabase, readValues, readTarget, sqlFor, scriptsFor, propsFor, execArgs, findPodArgs, explain, schemaOf, plain, ident, lit, RUNNER, LOCAL_CONTEXT, PRODUCTION, POSTGRES_IMAGE };
+module.exports = { registerNewDatabase, readValues, readTarget, sqlFor, scriptsFor, propsFor, execArgs, findPodArgs, explain, schemaOf, plain, ident, lit, call, RUNNER, LOCAL_CONTEXT, PRODUCTION, POSTGRES_IMAGE };

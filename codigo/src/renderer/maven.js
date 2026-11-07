@@ -34,6 +34,7 @@ function macroStepText(step) {
   if (step.kind === 'branch') return `New branch from origin/${step.base} (its name is asked when it runs)`;
   if (step.kind === 'pull') return step.from ? `git pull origin ${step.from}` : 'git pull';
   if (step.kind === 'unstash') return 'Bring back the stashed changes (git stash pop)';
+  if (step.kind === 'module') return step.dir ? `Go to the module ${step.dir}/` : 'Go to the root of the repository';
   const base = (mvnPortsView && mvnPortsView.commands && mvnPortsView.commands[step.preset]) || `mvn ${step.preset}`;
   return step.extra ? `${base} ${step.extra}` : base;
 }
@@ -399,7 +400,7 @@ function renderMvnPreview() {
   // a macro's steps carry their own flags, and a container runs the jar: the options do not apply to them, nor does a
   // separate window
   ['#mvnTags', '#mvnOptionsBtn'].forEach((sel) => $(sel).classList.toggle('hidden', Boolean(macro) || container));
-  $('#mvnMacroInfo').classList.toggle('hidden', !macro && !container);
+  $('#mvnMacroInfo').classList.toggle('hidden', !macro);
   $('#mvnBuildFirst').classList.toggle('hidden', !container);
   $('#mvnCmdline .mvn-prefix').textContent = macro ? 'macro' : 'mvn';
   $('#mvnCmdline .mvn-prefix').classList.toggle('hidden', container);
@@ -409,8 +410,6 @@ function renderMvnPreview() {
   if (container) {
     const summary = mvnContainerSummary(mvnContainerSpec);
     $('#mvnBuildFirstBox').checked = !mvnContainerSpec || mvnContainerSpec.build !== false;
-    $('#mvnMacroInfo').textContent = summary;
-    $('#mvnMacroInfo').title = 'Run opens a dialog with the image, the port and the variables of the container';
     const bar = $('#mvnCmdline');
     bar.dataset.command = `Start in container${summary ? `: ${summary}` : ''}`;
     bar.title = bar.dataset.command;
@@ -460,11 +459,55 @@ function formatDuration(ms) {
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
 }
 
+// -- Where the application answers once it has started, beside Running: the port its web server says it took, and the
+// debugger's when it listens. Read from what the run prints; gone when it ends. --
+let mvnServed = { id: null, app: null, debug: null };
+const MVN_APP_PORT = /\b(?:Tomcat|Netty|Undertow|Jetty) started on port(?:\(s\))?:?\s*(\d{2,5})/g;
+const MVN_DEBUG_PORT = /Listening for transport dt_socket at address:\s*(?:[\w.*\[\]:-]*:)?(\d{2,5})/g;
+
+function noteMvnServed(text) {
+  if (!mvnRun) return;
+  if (mvnServed.id !== mvnRun.id) mvnServed = { id: mvnRun.id, app: null, debug: null };
+  const was = `${mvnServed.app}|${mvnServed.debug}`;
+  for (const m of String(text).matchAll(MVN_APP_PORT)) mvnServed.app = m[1];
+  for (const m of String(text).matchAll(MVN_DEBUG_PORT)) mvnServed.debug = m[1];
+  if (`${mvnServed.app}|${mvnServed.debug}` !== was) renderMvnServed();
+}
+
+function renderMvnServed() {
+  const box = $('#mvnServed');
+  const on = Boolean(mvnRun && mvnRun.running && mvnServed.id === mvnRun.id && (mvnServed.app || mvnServed.debug));
+  box.classList.toggle('hidden', !on);
+  box.replaceChildren();
+  if (!on) return;
+  if (mvnServed.app) {
+    const app = document.createElement('button');
+    app.type = 'button';
+    app.className = 'mvn-served-port';
+    app.textContent = `:${mvnServed.app}`;
+    app.title = `It answers on port ${mvnServed.app}: open http://localhost:${mvnServed.app}`;
+    const port = mvnServed.app;
+    app.addEventListener('click', async () => {
+      const r = await window.containers.openPort(port);
+      if (r && r.error) toast(r.error, 'error');
+    });
+    box.append(app);
+  }
+  if (mvnServed.debug) {
+    const debug = document.createElement('span');
+    debug.className = 'mvn-served-debug';
+    debug.textContent = `debug :${mvnServed.debug}`;
+    debug.title = `The debugger listens on port ${mvnServed.debug}: Remote JVM Debug in IntelliJ, localhost:${mvnServed.debug}`;
+    box.append(debug);
+  }
+}
+
 function setMvnOutput(text) {
   const out = $('#mvnOutput');
   const clean = text.replace(ANSI, '');
   mvnRaw = clean;
   showMvnOutput();
+  noteMvnServed(clean);
   out.scrollTop = out.scrollHeight;
   // the modules are read again from the whole output (no times for what was already building)
   resetMvnModules();
@@ -478,6 +521,8 @@ function appendMvnOutput(text) {
   const atBottom = out.scrollHeight - out.scrollTop - out.clientHeight < 40;
   const clean = text.replace(ANSI, '');
   mvnRaw = (mvnRaw + clean).slice(-MAX_OUTPUT_CHARS);
+  // a line may come in two pieces: what came just before goes with it
+  noteMvnServed(mvnRaw.slice(-(clean.length + 300)));
   const s = mvnTail + clean;
   const cut = mvnFormatOn ? s.lastIndexOf('\n') + 1 : 0;
   if (!cut) {
@@ -1001,10 +1046,10 @@ function scrollToMvnModule(x) {
 function renderMvnStatus() {
   clearInterval(mvnTimer);
   renderMvnSteps();
+  renderMvnServed();
   const status = $('#mvnStatus');
   const running = Boolean(mvnRun && mvnRun.running);
   if (!running) mvnStopping = false;
-  $('#mvnClearBtn').disabled = running;
   $('#mvnOptionsBtn').disabled = running;
   $$('#mvnTags button').forEach((b) => (b.disabled = running));
   $('#mvnCustom').disabled = running;
@@ -1152,6 +1197,7 @@ function applyMvnInfo(info) {
   renderMvnFolder(info);
   renderMvnValuesBtn(info);
   renderMvnEnvBtn(info);
+  renderLocalSetupBtn();
   renderMvnPreview();
   if (info.ports) renderMvnPorts(info);
   $('#mvnNoPom').classList.toggle('hidden', info.hasPom);
@@ -1534,6 +1580,8 @@ const NEW_STEPS = {
   'git:unstash': () => ({ kind: 'unstash' }),
   custom: () => ({ kind: 'custom', goals: '' }),
   stop: () => ({ kind: 'stop' }),
+  // the first module of this repository that is not the root
+  module: () => ({ kind: 'module', dir: (mvnEnvFolders || []).find((f) => f) || '' }),
 };
 // the commands of the list (not Custom), as a step runs them: Start is mvn spring-boot:run
 const macroPresets = () =>
@@ -1569,6 +1617,7 @@ function openMacroEditor(macro) {
       opt('Bring back the stashed changes', 'git:unstash', 'git stash pop of what the Local changes step stashed'),
     ]),
     group('Maven', [...macroPresets().map(([v, t]) => new Option(t, `preset:${v}`)), new Option('Custom goals...', 'custom')]),
+    group('Folder', [opt('Go to a module', 'module', 'The Maven steps after it run in that module (a folder with a pom.xml), until another step like it')]),
     group('Other', [new Option('Stop what is running', 'stop')])
   );
   renderMacroSteps();
@@ -1685,6 +1734,51 @@ function macroGitStepBody(step, i, body) {
   return input;
 }
 
+// A Go to a module step: the folder, typed (a macro is for every repository) or picked from the modules of this one.
+function macroModuleStepBody(step, i, body) {
+  const tag = document.createElement('span');
+  tag.className = 'mvn-macro-tag mvn-macro-tag-dir';
+  tag.textContent = 'cd';
+  const words = document.createElement('span');
+  words.className = 'mvn-macro-words';
+  words.textContent = 'Go to';
+  const input = document.createElement('input');
+  input.className = 'input mvn-macro-branch';
+  input.placeholder = 'the root of the repository';
+  input.title = 'A folder of the repository with a pom.xml, as orders-api or services/orders-api. Empty: its root. The Maven steps after this one run there.';
+  input.maxLength = 200;
+  input.spellcheck = false;
+  input.autocomplete = 'off';
+  input.value = step.dir || '';
+  input.setAttribute('aria-label', `Step ${i + 1}: the module to go to`);
+  input.addEventListener('input', () => (step.dir = input.value.trim()));
+  const pick = document.createElement('button');
+  pick.type = 'button';
+  pick.className = 'btn btn-sm';
+  pick.textContent = 'Modules';
+  pick.setAttribute('aria-haspopup', 'menu');
+  pick.title = 'The folders of this repository with a pom.xml';
+  pick.addEventListener('click', () => {
+    const folders = mvnEnvFolders && mvnEnvFolders.length ? mvnEnvFolders : [''];
+    openActionMenu({
+      anchor: pick,
+      title: 'Go to',
+      items: folders.map((f) => ({
+        label: f ? `${f}/` : 'The root of the repository',
+        run: () => {
+          step.dir = f;
+          input.value = f;
+          input.focus();
+        },
+      })),
+    });
+    const first = $('#actionMenu .clip-menu-item');
+    if (first) first.focus();
+  });
+  body.append(tag, words, input, pick);
+  return input;
+}
+
 function renderMacroSteps(focusIndex = -1) {
   const list = $('#mvnMacroSteps');
   const steps = macroDraft.steps;
@@ -1720,6 +1814,8 @@ function renderMacroSteps(focusIndex = -1) {
       first = sel;
     } else if (MACRO_GIT_KINDS.has(step.kind)) {
       first = macroGitStepBody(step, i, body);
+    } else if (step.kind === 'module') {
+      first = macroModuleStepBody(step, i, body);
     } else {
       const pre = document.createElement('span');
       pre.className = 'mvn-macro-prefix';
@@ -2025,6 +2121,8 @@ function setupMaven() {
   if (CARD_ID) return;
   setupMvnValues();
   setupMvnEnv();
+  setupLocalSetup();
+  setupConsoleAnalysis();
   const select = $('#mvnCommand');
   let saved = null;
   try {
@@ -2122,7 +2220,8 @@ function setupMaven() {
   });
   $('#mvnClearBtn').addEventListener('click', async () => {
     await window.maven.clear(mvnRepo);
-    mvnRun = null;
+    // one going on carries on, and what it says next shows
+    if (!mvnRun || !mvnRun.running) mvnRun = null;
     setMvnOutput('');
     renderMvnStatus();
   });

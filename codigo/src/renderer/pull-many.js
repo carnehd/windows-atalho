@@ -104,7 +104,7 @@ function togglePullManyGroup(key) {
 }
 
 // A group's line, closed or open: how many of its repositories have commits to pull and files changed (as of the
-// last fetch); none: up to date.
+// last fetch); none: up to date, once git was asked about all of them (one not opened yet is not asked about).
 function pmSectionSummary(rows) {
   if (pmMode === 'remove') {
     const sum = document.createElement('span');
@@ -128,10 +128,11 @@ function pmSectionSummary(rows) {
   };
   if (behind) part(`↓ ${behind} to pull`, 'pm-behind', `${behind === 1 ? '1 repository has' : `${behind} repositories have`} new commits on origin (as of the last fetch)`);
   if (changed) part(`${changed} with changes`, 'pm-changes', `${changed === 1 ? '1 repository has' : `${changed} repositories have`} files changed and not committed`);
-  if (!behind && !changed) part(can.length ? 'Up to date' : 'Nothing to pull', 'pm-section-quiet', can.length ? 'Nothing new on origin as of the last fetch' : '');
+  if (!can.length) part('Nothing to pull', 'pm-section-quiet', '');
+  else if (!behind && !changed && can.every((r) => r.branch !== undefined)) part('Up to date', 'pm-section-quiet', 'Nothing new on origin as of the last fetch');
   const chosen = document.createElement('span');
   chosen.className = 'pm-section-chosen pm-section-quiet';
-  sum.prepend(chosen);
+  sum.appendChild(chosen);
   return sum;
 }
 
@@ -170,6 +171,7 @@ function openPullMany(only = null, mode = 'pull') {
     pmChosen = new Set(kept.length ? kept : can);
   }
   $('#pmFilter').value = '';
+  $('#pmChosenBar').classList.remove('open');
   $('#pmPull').classList.toggle('btn-primary', mode !== 'remove');
   $('#pmPull').classList.toggle('btn-danger', mode === 'remove');
   $('#pullManyModal').classList.toggle('pm-removing', mode === 'remove');
@@ -177,7 +179,7 @@ function openPullMany(only = null, mode = 'pull') {
   $('#pullManyModal').classList.remove('hidden');
   $('#pmFilter').focus();
   // the branches shown are the ones of now: the repositories changed since git was last asked are asked again
-  refreshChangedSummaries().then(() => {
+  refreshStaleSummaries().then(() => {
     if (!$('#pullManyModal').classList.contains('hidden')) renderPullMany();
   });
 }
@@ -186,15 +188,29 @@ function closePullMany() {
   $('#pullManyModal').classList.add('hidden');
 }
 
+function pmMatchesFilter(r) {
+  const q = $('#pmFilter').value.trim().toLowerCase();
+  return !q || [displayName(r), r.path, r.branch || ''].join(' ').toLowerCase().includes(q);
+}
+
+// All and None, and the box beside them, act on what the filter shows: what it hides is not chosen or taken out unseen.
+function pmChooseShown(on) {
+  for (const r of repos) {
+    if (pmBlocked(r) || !pmMatchesFilter(r)) continue;
+    if (on) pmChosen.add(r.path);
+    else pmChosen.delete(r.path);
+  }
+  syncPullManyChecks();
+}
+
 function renderPullMany() {
   const list = $('#pmList');
   const scroll = list.scrollTop;
   list.innerHTML = '';
-  const q = $('#pmFilter').value.trim().toLowerCase();
-  const matches = (r) => !q || [displayName(r), r.path, r.branch || ''].join(' ').toLowerCase().includes(q);
+  const q = $('#pmFilter').value.trim();
   let shown = 0;
   for (const section of pmSections()) {
-    const rows = section.repos.filter(matches);
+    const rows = section.repos.filter(pmMatchesFilter);
     if (!rows.length) continue;
     shown += rows.length;
     const open = rows.filter((r) => !pmBlocked(r));
@@ -225,10 +241,7 @@ function renderPullMany() {
       const name = document.createElement('span');
       name.className = 'pm-section-name';
       name.textContent = section.name;
-      const count = document.createElement('span');
-      count.className = 'pm-section-count';
-      count.textContent = rows.length;
-      head.append(caret, box, name, count, pmSectionSummary(rows));
+      head.append(caret, box, name, pmSectionSummary(rows));
       // a click on the line (not on its box) opens or closes the group; while filtering, all stay open
       head.addEventListener('click', (e) => {
         if (e.target === box || q) return;
@@ -258,9 +271,8 @@ function syncPullManyChecks() {
     const chosen = box.paths.filter((p) => pmChosen.has(p)).length;
     box.checked = box.paths.length > 0 && chosen === box.paths.length;
     box.indeterminate = chosen > 0 && chosen < box.paths.length;
-    // closed, the line says when not all of it is chosen
     const note = box.parentElement.querySelector('.pm-section-chosen');
-    if (note) note.textContent = box.paths.length && chosen < box.paths.length ? `${chosen} of ${box.paths.length} chosen` : '';
+    if (note) note.textContent = box.paths.length ? `${chosen} of ${box.paths.length}` : '';
   }
   updatePullManyCount();
 }
@@ -287,16 +299,21 @@ function pullManyRow(r) {
   const info = document.createElement('span');
   info.className = 'pm-info';
   if (pmMode === 'remove') {
-    // where it is, to tell apart two of the same name; one whose folder is gone says so
-    branch.textContent = r.branch ? `⎇ ${r.branch}` : '';
-    info.textContent = r.error ? 'Unavailable' : `\u200e${r.path}\u200e`; // the marks keep the path in order in a right-to-left box
-    info.title = r.error || r.path;
-    info.classList.add('pm-path');
+    // the name is enough (the path is its tooltip), unless two have the same one; one whose folder is gone says so
+    if (r.error) {
+      info.textContent = 'Unavailable';
+      info.title = r.error;
+    } else if (repos.filter((x) => displayName(x) === displayName(r)).length > 1) {
+      info.textContent = `\u200e${r.path}\u200e`; // the marks keep the path in order in a right-to-left box
+      info.title = r.path;
+      info.classList.add('pm-path');
+    }
   } else if (blocked) {
     info.textContent = blocked;
     if (r.error) info.title = r.error;
   } else {
-    branch.textContent = r.branch === undefined ? '...' : `⎇ ${r.branch || 'detached'}`;
+    // not opened yet: git was not asked, so nothing is said about it
+    branch.textContent = r.branch === undefined ? '' : `⎇ ${r.branch || 'detached'}`;
     branch.title = !r.branch ? '' : pmMode === 'pull' ? `It is on ${r.branch}: that is the branch pulled` : `It is on ${r.branch}`;
     const bits = [];
     if (r.behind > 0) bits.push([`↓${r.behind}`, 'pm-behind', `${r.behind} new commit${r.behind === 1 ? '' : 's'} on origin (as of the last fetch)`]);
@@ -325,10 +342,25 @@ function updatePullManyCount() {
   const all = $('#pmAll');
   all.checked = n > 0 && n === can.length;
   all.indeterminate = n > 0 && n < can.length;
+  const shown = can.filter(pmMatchesFilter);
+  const shownOn = shown.filter((r) => pmChosen.has(r.path)).length;
+  $('#pmAllBtn').disabled = shownOn === shown.length;
+  $('#pmNoneBtn').disabled = shownOn === 0;
   const go = $('#pmPull');
   const { verb } = PM_MODES[pmMode];
   go.textContent = n ? `${verb} ${n}` : verb;
   go.disabled = n === 0;
+  // in the order they were chosen, so the ones already there do not move
+  renderChosenBar($('#pmChosenBar'), {
+    items: [...pmChosen].map((p) => can.find((r) => r.path === p)).filter(Boolean).map((r) => ({ key: r.path, label: displayName(r), title: r.path })),
+    total: can.length,
+    allText: `All ${can.length} repositories`,
+    out: $('#pmFilter'),
+    onTake: (p) => {
+      pmChosen.delete(p);
+      syncPullManyChecks();
+    },
+  });
 }
 
 // The choice, for the next time the popup opens in that mode.
@@ -576,11 +608,9 @@ function setupPullMany() {
     } else runPullMany(paths, pmRemember);
   });
   $('#pmFilter').addEventListener('input', renderPullMany);
-  $('#pmAll').addEventListener('change', (e) => {
-    const can = repos.filter((r) => !pmBlocked(r)).map((r) => r.path);
-    pmChosen = e.target.checked ? new Set(can) : new Set();
-    syncPullManyChecks();
-  });
+  $('#pmAll').addEventListener('change', (e) => pmChooseShown(e.target.checked));
+  $('#pmAllBtn').addEventListener('click', () => pmChooseShown(true));
+  $('#pmNoneBtn').addEventListener('click', () => pmChooseShown(false));
   $('#pullDockBar').addEventListener('click', () => {
     if (!pmRun) return;
     pmRun.expanded = !pmRun.expanded;

@@ -420,4 +420,4 @@ function specPart(text, kind, key) {
   return String(text).trim().startsWith('{') ? JSON.stringify(part, null, 2) : yaml.dump(part, { lineWidth: -1, noRefs: true }).replace(/\n$/, '');
 }
 
-module.exports = { compareSpecs, parseSpec, specPart };
+module.exports = { compareSpecs, parseSpec, specPart, side, operations, requestBody, flat, typeOf, refName, modelsOf, modelsUsed, endpointModels };

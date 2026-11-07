@@ -5,7 +5,7 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { ipcMain, shell: electronShell } = require('electron');
+const { app, ipcMain, shell: electronShell } = require('electron');
 const shell = require('./shell');
 
 const REF = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/; // a container id or name
@@ -15,6 +15,7 @@ const VOLUME_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
 const CONTAINER_PATH = /^\/[^\0:]{0,500}$/;
 const RESTART = ['no', 'unless-stopped', 'always', 'on-failure'];
 const PULL_TIMEOUT = 30 * 60 * 1000; // a first run may download a big image
+const SETUP_LABEL = 'git-quick.local-setup'; // on the containers Local setup makes (local-setup.js)
 
 // -- The commands the page runs, shown at the bottom of it (the list refresh is left out: it runs every few seconds).
 // Values of variables that look like secrets are hidden in what is shown.
@@ -200,7 +201,9 @@ async function status() {
 }
 
 async function findEngine() {
-  const order = engine ? [engine, ...ENGINES.filter((e) => e !== engine)] : ENGINES;
+  // a test chooses the engine (never in the exe)
+  const only = app && !app.isPackaged ? process.env.GQ_ENGINE : '';
+  const order = only ? [only] : engine ? [engine, ...ENGINES.filter((e) => e !== engine)] : ENGINES;
   const installed = [];
   for (const name of order) {
     const s = await engineStatus(name);
@@ -256,6 +259,7 @@ function containerRow(c) {
     service: labels['com.docker.compose.service'] || labels['io.podman.compose.service'] || '',
     // a Podman pod without Compose labels: grouped under the pod's name
     pod: Boolean(c.PodName) && !labels['com.docker.compose.project'] && !labels['io.podman.compose.project'],
+    setup: labels[SETUP_LABEL] || '',
   };
 }
 
@@ -654,9 +658,9 @@ function registerContainers({ getWindow }) {
     }
   });
 
-  ipcMain.handle('dk-open-port', (_, value) => {
+  const openAt = (value, rest = '') => {
     try {
-      const url = `http://localhost:${port(value, 'The port')}`;
+      const url = `http://localhost:${port(value, 'The port')}${rest}`;
       const back = shell.stepBack();
       return electronShell.openExternal(url).then(
         () => ({ success: true }),
@@ -668,7 +672,9 @@ function registerContainers({ getWindow }) {
     } catch (e) {
       return { error: e.message };
     }
-  });
+  };
+  ipcMain.handle('dk-open-port', (_, value) => openAt(value));
+  ipcMain.handle('dk-open-keycloak', (_, value) => openAt(value, '/admin/master/console/'));
 
   ipcMain.handle('dk-start-desktop', async () => {
     try {
@@ -688,4 +694,4 @@ function registerContainers({ getWindow }) {
   };
 }
 
-module.exports = { registerContainers, parsePorts, parseLabels, runArgs, dockerError, tokenize, details, containerRow, shownCommand, typedArgs, engineCall, runningContainers, IMAGE, REF };
+module.exports = { registerContainers, parsePorts, parseLabels, runArgs, dockerError, tokenize, details, containerRow, shownCommand, typedArgs, engineCall, runningContainers, findEngine, listContainers: list, IMAGE, REF, ENV_KEY, SETUP_LABEL };

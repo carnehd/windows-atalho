@@ -9,7 +9,9 @@
 const fs = require('fs');
 const path = require('path');
 const { app, ipcMain, safeStorage, shell } = require('electron');
-const { stepBack } = require('./shell');
+const { stepBack, loginShellEnv } = require('./shell');
+const { findAgent, agentEnv } = require('./agent-review');
+const { listByClaude } = require('./github-mcp');
 
 const TIMEOUT_MS = 20000;
 const PER_PAGE = 50;
@@ -106,18 +108,21 @@ function pullOf(p) {
   const head = p.head || {};
   const base = p.base || {};
   const fork = !head.repo || !base.repo || head.repo.full_name !== base.repo.full_name;
+  // the MCP server gives no label: made from whose fork it is
+  const forkOwner = head.repo && head.repo.full_name ? String(head.repo.full_name).split('/')[0] : '';
+  const forkLabel = head.label || (forkOwner && head.ref ? `${forkOwner}:${head.ref}` : '');
   return {
     number: Number(p.number),
     title: String(p.title || ''),
-    state: p.merged_at ? 'merged' : p.state === 'closed' ? 'closed' : p.draft ? 'draft' : 'open',
+    state: p.merged_at || p.merged ? 'merged' : p.state === 'closed' ? 'closed' : p.draft ? 'draft' : 'open',
     author: p.user && p.user.login ? String(p.user.login) : '',
     // from a fork: "owner:branch", as GitHub writes it
-    head: { ref: String(head.ref || ''), sha: String(head.sha || ''), label: String((fork && head.label) || head.ref || '') },
+    head: { ref: String(head.ref || ''), sha: String(head.sha || ''), label: String((fork && forkLabel) || head.ref || '') },
     base: { ref: String(base.ref || ''), sha: String(base.sha || '') },
     created: p.created_at || null,
     updated: p.updated_at || null,
     closed: p.merged_at || p.closed_at || null,
-    labels: (Array.isArray(p.labels) ? p.labels : []).map((l) => String((l && l.name) || '')).filter(Boolean).slice(0, 6),
+    labels: (Array.isArray(p.labels) ? p.labels : []).map((l) => String((typeof l === 'string' ? l : l && l.name) || '')).filter(Boolean).slice(0, 6),
   };
 }
 
@@ -292,6 +297,70 @@ async function addLineComment(fetch, remote, token, number, input) {
   return { comment: lineCommentOf(body) };
 }
 
+// -- The list through the GitHub MCP server of Claude CLI (github-mcp.js), in place of a token. Each answer takes the agent
+// some seconds and some of the user's plan, so it is kept until it is asked for again (Refresh). --
+const mcpKept = new Map();
+const mcpAsked = new Map(); // the questions on their way, so two at once are one
+const mcpRunning = new Set(); // how to stop each one
+
+function hostOfLink(link) {
+  try {
+    return new URL(String(link)).host.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+async function listPullsByMcp(remote, { state = 'open', page = 1, fresh = false } = {}) {
+  const wanted = STATES.includes(state) ? state : 'open';
+  const at = Math.max(1, Number(page) || 1);
+  const key = `${remote.site}/${remote.owner}/${remote.repo}?${wanted}&${at}`;
+  if (!fresh && mcpKept.has(key)) return mcpKept.get(key);
+  if (mcpAsked.has(key)) return mcpAsked.get(key);
+  const asking = (async () => {
+    const agent = await findAgent('claude');
+    if (!agent || !agent.found) throw { code: 'no-agent', error: 'Claude CLI is not on this computer: install it, sign in once with "claude" in a terminal, then try again. For now MCP goes only through Claude CLI.' };
+    const config = dev('GQ_AGENT_MCP_CONFIG');
+    let stop = null;
+    const running = () => stop && stop();
+    mcpRunning.add(running);
+    try {
+      const { pulls } = await listByClaude({
+        file: agent.file,
+        env: agentEnv(await loginShellEnv()),
+        owner: remote.owner,
+        repo: remote.repo,
+        state: wanted,
+        page: at,
+        perPage: PER_PAGE,
+        extraArgs: config ? ['--mcp-config', config, '--strict-mcp-config'] : [],
+        onStart: (s) => { stop = s; },
+      });
+      // the server answers for one GitHub: a repository of the same name on another host is another repository
+      const elsewhere = pulls.map((p) => hostOfLink(p && p.html_url)).find((host) => host && host !== remote.site);
+      if (elsewhere) throw { code: 'mcp-host', error: `The MCP server of Claude CLI answers for ${elsewhere}, and this repository is on ${remote.site}.` };
+      const out = { pulls: pulls.map(pullOf).filter((p) => Number.isInteger(p.number) && p.number > 0), more: pulls.length >= PER_PAGE, via: 'mcp', at: new Date().toISOString() };
+      mcpKept.set(key, out);
+      return out;
+    } catch (e) {
+      // the commands it gives, as this computer starts Claude CLI: "claude" alone may not be found in a terminal
+      if (e && !/\s/.test(agent.command)) {
+        if (e.add) e.add = e.add.replace(/^claude/, agent.command);
+        if (e.error) e.error = e.error.replace('claude mcp list', `${agent.command} mcp list`);
+      }
+      throw e;
+    } finally {
+      mcpRunning.delete(running);
+    }
+  })();
+  mcpAsked.set(key, asking);
+  try {
+    return await asking;
+  } finally {
+    mcpAsked.delete(key);
+  }
+}
+
 function registerGithub({ dataDir, fetch, isKnownRepo, originUrl }) {
   const tokens = new GithubTokens(path.join(dataDir, 'github.json'), safeStorage);
   // The GitHub of a repository of the list: throws what the page says when there is none.
@@ -312,7 +381,7 @@ function registerGithub({ dataDir, fetch, isKnownRepo, originUrl }) {
       return { ...shown(remote), ...(await fn(remote, ...args)) };
     } catch (e) {
       const known = e && typeof e.error === 'string';
-      return { ...(remote ? shown(remote) : {}), error: known ? e.error : String((e && e.message) || e), code: known ? e.code : 'failed' };
+      return { ...(remote ? shown(remote) : {}), error: known ? e.error : String((e && e.message) || e), code: known ? e.code : 'failed', ...(known && e.add ? { add: e.add } : {}) };
     }
   };
   const open = async (url) => {
@@ -326,7 +395,12 @@ function registerGithub({ dataDir, fetch, isKnownRepo, originUrl }) {
     }
   };
 
-  ipcMain.handle('github-pulls', guard((remote, options) => listPulls(fetch, remote, tokens.get(remote.site), options && typeof options === 'object' ? { state: options.state, page: options.page } : {})));
+  // with via: 'mcp', through Claude CLI's MCP server, and no token; fresh: not the answer kept
+  ipcMain.handle('github-pulls', guard((remote, options) => {
+    const o = options && typeof options === 'object' ? options : {};
+    if (o.via === 'mcp') return listPullsByMcp(remote, { state: o.state, page: o.page, fresh: Boolean(o.fresh) });
+    return listPulls(fetch, remote, tokens.get(remote.site), { state: o.state, page: o.page });
+  }));
   // A token is kept once GitHub has answered with it for this repository
   ipcMain.handle('github-token-set', guard(async (remote, token) => {
     const value = String(token || '').trim();
@@ -361,6 +435,7 @@ function registerGithub({ dataDir, fetch, isKnownRepo, originUrl }) {
     if (!name || name.length > 255 || name.startsWith('-') || name.includes('..') || /[\s~^:?*[\\]/.test(name)) throw { code: 'failed', error: 'Unknown branch' };
     return open(`${remote.web}/${remote.owner}/${remote.repo}/compare/${name.split('/').map(encodeURIComponent).join('/')}?expand=1`);
   }));
+  return { stopAll: () => mcpRunning.forEach((stop) => stop()) };
 }
 
 module.exports = { registerGithub, remoteOf, listPulls, tokenOwner, listComments, addComment, listLineComments, addLineComment, pullOf, GithubTokens };

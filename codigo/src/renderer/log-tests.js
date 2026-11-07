@@ -46,7 +46,7 @@ async function openLogTests() {
   renderLogTestsSetup(col);
   $('#ltModal').classList.remove('hidden');
   await planLogTests();
-  $('#ltClose').focus();
+  focusWindowX($('#ltClose'));
 }
 
 function closeLogTests() {

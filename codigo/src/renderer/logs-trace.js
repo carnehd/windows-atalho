@@ -71,7 +71,7 @@ async function openLogsTrace(h) {
   $('#logsTraceSummary').textContent = 'Looking for every log of this request...';
   $('#logsTraceBody').textContent = '';
   $('#logsTraceModal').classList.remove('hidden');
-  $('#logsTraceClose').focus();
+  focusWindowX($('#logsTraceClose'));
   const r = await window.logs.trace({ traceIds: ids, ts: h.ts });
   if ($('#logsTraceModal').classList.contains('hidden') || $('#logsTraceId').textContent !== traceId) return;
   if (r.error) {

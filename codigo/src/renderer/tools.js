@@ -6,10 +6,12 @@ const TOOLS = [
   { id: 'time', title: 'Timestamps', sub: 'Epoch to date and back', words: 'epoch unix date time millis seconds iso utc', build: buildTimeTool },
   { id: 'config', title: 'YAML · properties · JSON', sub: 'Spring config formats', words: 'yml yaml properties json spring application convert', build: buildConfigTool },
   { id: 'springenv', title: 'Spring ↔ env vars', sub: 'Properties as environment variables', words: 'spring environment variables env docker compose kubernetes relaxed binding properties yaml', build: buildSpringEnvTool },
+  { id: 'docker', title: 'Docker command', sub: 'An option a line, its variables apart', words: 'docker podman run create command format multiline lines variables env ports volumes mount labels shell', build: buildDockerTool },
   { id: 'encode', title: 'Base64 · URL · HTML', sub: 'Encode and decode', words: 'base64 url encode decode html escape entities percent', build: buildEncodeTool },
   { id: 'escape', title: 'Escape strings', sub: 'Java and JSON string literals', words: 'escape unescape string literal java json quotes text block newline unicode', build: buildEscapeTool },
   { id: 'json', title: 'JSON', sub: 'Format, check, query, Java', words: 'json format minify validate pretty jsonpath java record pojo lombok class', build: buildJsonTool },
   { id: 'jsondiff', title: 'Compare JSON', sub: 'What changed, field by field', words: 'json diff compare difference response fields keys', build: buildJsonDiffTool },
+  { id: 'apiview', title: 'View API', sub: 'OpenAPI, Swagger: easy to read', words: 'swagger openapi api view read docs documentation endpoints models contract schema', build: buildApiViewTool },
   { id: 'apidiff', title: 'Compare APIs', sub: 'OpenAPI, Swagger: what breaks', words: 'swagger openapi api diff compare breaking changes endpoints contract spec yaml json rest', build: buildApiDiffTool },
   { id: 'cron', title: 'Spring cron', sub: 'What it means, next runs', words: 'cron schedule scheduled quartz', build: buildCronTool },
   { id: 'case', title: 'Name cases', sub: 'camelCase, snake_case...', words: 'case camel snake kebab constant pascal title naming', build: buildCaseTool },
@@ -18,6 +20,15 @@ const TOOLS = [
   { id: 'hash', title: 'Hashes', sub: 'MD5, SHA, HMAC', words: 'hash md5 sha sha1 sha256 sha512 hmac checksum digest', build: buildHashTool },
   { id: 'ports', title: 'Ports in use', sub: 'Who listens, end it', words: 'port listen process kill end 8080 lsof netstat pid', build: buildPortsTool },
   { id: 'compare', title: 'Compare texts', sub: 'Two texts, the differences', words: 'diff compare text difference', build: buildCompareTool },
+];
+// The list, by what they do: each group under its name, a line between them, its tools in this order.
+const TOOL_GROUPS = [
+  ['Format and read', ['json', 'docker', 'apiview', 'cron']],
+  ['Convert', ['config', 'springenv', 'time', 'case']],
+  ['Encode and decode', ['encode', 'escape', 'jwt', 'hash']],
+  ['Compare', ['compare', 'jsondiff', 'apidiff']],
+  ['Generate', ['ids', 'ptids']],
+  ['This computer', ['ports']],
 ];
 const TOOL_KEY = 'toolsCurrent';
 let currentTool = 'jwt';
@@ -2999,31 +3010,47 @@ function renderToolsList() {
   const list = $('#toolsList');
   const q = $('#toolsSearch').value.trim().toLowerCase();
   list.textContent = '';
-  const shown = TOOLS.filter((t) => !q || `${t.title} ${t.sub} ${t.words}`.toLowerCase().includes(q));
-  for (const t of shown) {
-    const item = tEl('div', `repo-item tool-item${t.id === currentTool ? ' active' : ''}`);
-    item.dataset.tool = t.id;
-    item.tabIndex = 0;
-    item.setAttribute('role', 'option');
-    item.setAttribute('aria-selected', String(t.id === currentTool));
-    const text = tEl('div', 'repo-item-text');
-    text.append(tEl('div', 'repo-item-name', t.title), tEl('div', 'tool-item-sub', t.sub));
-    item.appendChild(text);
-    item.addEventListener('click', () => showTool(t.id));
-    item.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        showTool(t.id, true);
-      } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        e.preventDefault();
-        const items = [...list.querySelectorAll('.tool-item')];
-        const next = items[items.indexOf(item) + (e.key === 'ArrowDown' ? 1 : -1)];
-        if (next) next.focus();
-      }
-    });
-    list.appendChild(item);
+  // a tool no group names goes in the last one, so none is ever left out
+  const grouped = new Set(TOOL_GROUPS.flatMap(([, ids]) => ids));
+  const groups = TOOL_GROUPS.map(([name, ids], i) => [name, [...ids, ...(i === TOOL_GROUPS.length - 1 ? TOOLS.map((x) => x.id).filter((id) => !grouped.has(id)) : [])]]);
+  let shown = 0;
+  for (const [name, ids] of groups) {
+    const tools = ids.map((id) => TOOLS.find((x) => x.id === id)).filter((x) => x && (!q || `${x.title} ${x.sub} ${x.words} ${name}`.toLowerCase().includes(q)));
+    if (!tools.length) continue;
+    shown += tools.length;
+    const group = tEl('div', 'tool-group');
+    group.setAttribute('role', 'group');
+    group.setAttribute('aria-label', name);
+    group.appendChild(tEl('div', 'tool-group-title', name));
+    for (const tool of tools) group.appendChild(toolListItem(tool, list));
+    list.appendChild(group);
   }
-  if (!shown.length) list.appendChild(tEl('div', 'sidebar-empty', 'No tool matches'));
+  if (!shown) list.appendChild(tEl('div', 'sidebar-empty', 'No tool matches'));
+}
+
+// A tool in the list: Enter or a click shows it, the arrows go up and down the whole list.
+function toolListItem(t, list) {
+  const item = tEl('div', `repo-item tool-item${t.id === currentTool ? ' active' : ''}`);
+  item.dataset.tool = t.id;
+  item.tabIndex = 0;
+  item.setAttribute('role', 'option');
+  item.setAttribute('aria-selected', String(t.id === currentTool));
+  const text = tEl('div', 'repo-item-text');
+  text.append(tEl('div', 'repo-item-name', t.title), tEl('div', 'tool-item-sub', t.sub));
+  item.appendChild(text);
+  item.addEventListener('click', () => showTool(t.id));
+  item.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      showTool(t.id, true);
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const items = [...list.querySelectorAll('.tool-item')];
+      const next = items[items.indexOf(item) + (e.key === 'ArrowDown' ? 1 : -1)];
+      if (next) next.focus();
+    }
+  });
+  return item;
 }
 
 function showTool(id, focus = false) {

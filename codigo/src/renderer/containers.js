@@ -135,7 +135,7 @@ function renderContainers() {
   const head = document.createElement('div');
   head.className = 'dk-row dk-head';
   head.setAttribute('role', 'row');
-  for (const label of ['', 'Name', 'Image', 'Ports', 'Status', '']) head.appendChild(diffSpan('dk-th', label));
+  for (const label of ['', 'Name', 'Image', 'Ports', 'View', 'Status', '']) head.appendChild(diffSpan('dk-th', label));
   list.appendChild(head);
   // Compose projects first, each under its name; the containers of no project after them
   const groups = new Map();
@@ -158,6 +158,23 @@ function renderContainers() {
     for (const c of groups.get(k).sort((a, b) => a.name.localeCompare(b.name))) list.appendChild(dkRow(c));
   }
   list.scrollTop = top;
+}
+
+// What a running container can be looked at with, beyond its ports: the console of a Keycloak, the messages of a Pub/Sub
+// emulator or of a Redis. From its image or its name, on a port it publishes.
+function dkViewerOf(c) {
+  if (!dkRunning(c) || !c.ports.some((p) => p.host)) return null;
+  const words = `${c.image} ${c.name}`;
+  const portOf = (wanted) => (c.ports.find((p) => p.container === wanted && p.host) || c.ports.find((p) => p.host)).host;
+  if (/keycloak/i.test(words)) return { kind: 'keycloak', label: 'Console', title: `Open the console of Keycloak: http://localhost:${portOf(8080)}/admin/master/console/`, icon: 'open', run: () => dkOpenKeycloak(portOf(8080)) };
+  if (/pubsub|pub-sub|(cloud-sdk|google-cloud-cli):\S*emulators/i.test(words)) return { kind: 'pubsub', label: 'Messages', title: 'See what is published to its topics', icon: 'logs', run: () => openContainerMessages(c, 'pubsub') };
+  if (/(^|[\s/_-])(redis|valkey)([\s:@/_-]|$)/i.test(words)) return { kind: 'redis', label: 'Messages', title: 'See what Redis receives, and the keys it holds', icon: 'logs', run: () => openContainerMessages(c, 'redis') };
+  return null;
+}
+
+async function dkOpenKeycloak(port) {
+  const r = await window.containers.openKeycloak(port);
+  if (r.error) toast(r.error, 'error');
 }
 
 function dkRow(c) {
@@ -195,6 +212,22 @@ function dkRow(c) {
       ports.appendChild(inner);
     }
   }
+  // its own column: the console of a Keycloak, the messages of a Pub/Sub emulator or of a Redis
+  const view = document.createElement('div');
+  view.className = 'dk-view';
+  const viewer = dkViewerOf(c);
+  if (viewer) {
+    const link = document.createElement('button');
+    link.type = 'button';
+    link.className = 'dk-port dk-link';
+    link.textContent = viewer.label;
+    link.title = viewer.title;
+    link.addEventListener('click', (e) => {
+      e.stopPropagation();
+      viewer.run();
+    });
+    view.appendChild(link);
+  }
   const busy = dkBusy.get(c.id);
   const status = diffSpan(`dk-status${busy ? ' busy' : ''}`, busy || c.status);
   status.title = c.created ? `Created ${c.created}` : '';
@@ -209,7 +242,7 @@ function dkRow(c) {
     dkIconButton('logs', `Logs of ${c.name}`, () => openDkLogs(c)),
     dkIconButton('more', `More for ${c.name}`, (b) => openDkActions(c, b)),
   );
-  row.append(dot, name, image, ports, status, actions);
+  row.append(dot, name, image, ports, view, status, actions);
   row.title = 'Click to see its details';
   row.addEventListener('click', () => openDkDetails(c));
   row.addEventListener('contextmenu', (e) => {
@@ -221,11 +254,13 @@ function dkRow(c) {
 
 function openDkActions(c, anchor, x, y) {
   const on = dkRunning(c);
+  const viewer = dkViewerOf(c);
   openActionMenu({
     anchor, x, y,
     title: `${c.name} · ${c.image}`,
     items: [
       { icon: 'info', label: 'Details', run: () => openDkDetails(c) },
+      ...(viewer ? [{ icon: viewer.icon, label: viewer.label, hint: viewer.title, run: viewer.run }] : []),
       on
         ? { icon: 'stop', label: 'Stop', run: () => dkAction(c, 'stop') }
         : { icon: 'start', label: 'Start', run: () => dkAction(c, 'start') },
@@ -339,7 +374,7 @@ async function openDkDetails(c, tab = 'overview') {
   $('#dkDetailBody').textContent = '';
   $('#dkDetailBody').appendChild(noteEl('Loading...'));
   $('#dkDetailModal').classList.remove('hidden');
-  $('#dkDetailClose').focus();
+  focusWindowX($('#dkDetailClose'));
   await loadDkDetails();
 }
 

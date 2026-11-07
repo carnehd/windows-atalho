@@ -1525,7 +1525,7 @@ function openLogsPopup(title, parts) {
     body.appendChild(vEl('pre', 'clip-formatted logs-popup-pre', p.text));
   }
   $('#logsPopup').classList.remove('hidden');
-  $('#logsPopupClose').focus();
+  focusWindowX($('#logsPopupClose'));
 }
 
 function closeLogsPopup() {

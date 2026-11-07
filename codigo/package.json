@@ -1,7 +1,7 @@
 {
   "name": "git-quick",
   "productName": "Git Quick",
-  "version": "1.6.21",
+  "version": "1.6.22",
   "description": "Quick Git operations popup for Windows",
   "main": "src/main.js",
   "scripts": {
@@ -32,6 +32,7 @@
     "electronDist": "node_modules/electron/dist",
     "files": [
       "src/**/*",
+      "skills/**/*",
       "package.json"
     ],
     "directories": {

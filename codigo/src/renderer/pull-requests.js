@@ -40,6 +40,15 @@ let prGrouped = (() => {
     return false;
   }
 })();
+// How GitHub is reached for the list: with a token kept in the app, or through Claude CLI and its MCP server. Kept on this PC
+const PR_SOURCE_KEY = 'pullsSource';
+let prSource = (() => {
+  try {
+    return localStorage.getItem(PR_SOURCE_KEY) === 'mcp' ? 'mcp' : 'token';
+  } catch {
+    return 'token';
+  }
+})();
 
 function pullsTabShown() {
   const tab = $('#gitView .tab.active');
@@ -57,8 +66,9 @@ function refreshPulls() {
   if (pullsTabShown() && !prState.loaded && !prState.loading) loadPulls();
 }
 
-// The first page (or the next one) of the pull requests, as the filter says.
-async function loadPulls({ more = false } = {}) {
+// The first page (or the next one) of the pull requests, as the filter says. fresh: through MCP an answer is kept, as
+// each one costs some of the plan; Refresh asks again.
+async function loadPulls({ more = false, fresh = false } = {}) {
   if (!currentRepo) return;
   const repoPath = currentRepo;
   const request = ++prRequest;
@@ -67,7 +77,7 @@ async function loadPulls({ more = false } = {}) {
   renderPulls();
   let got;
   try {
-    got = await window.github.pulls(repoPath, { state: prFilter, page });
+    got = await window.github.pulls(repoPath, { state: prFilter, page, ...(prSource === 'mcp' ? { via: 'mcp', fresh } : {}) });
   } catch (e) {
     got = { error: e.message, code: 'failed' };
   }
@@ -76,7 +86,7 @@ async function loadPulls({ more = false } = {}) {
   prState.loaded = true;
   if (got.site) prState.info = { site: got.site, owner: got.owner, repo: got.repo, hasToken: Boolean(got.hasToken) };
   if (got.error) {
-    prState.error = { text: got.error, code: got.code };
+    prState.error = { text: got.error, code: got.code, add: got.add };
     if (!more) prState.pulls = [];
     prState.more = false;
   } else {
@@ -84,6 +94,7 @@ async function loadPulls({ more = false } = {}) {
     prState.pulls = more ? [...prState.pulls, ...got.pulls.filter((p) => !prState.pulls.some((x) => x.number === p.number))] : got.pulls;
     prState.more = Boolean(got.more);
     prState.page = page;
+    prState.readAt = got.via === 'mcp' ? got.at : '';
     // what an open one changed is read again when it got new commits
     for (const p of prState.pulls) {
       const d = prState.details.get(p.number);
@@ -99,6 +110,35 @@ async function loadPulls({ more = false } = {}) {
   if (!prState.error) loadPullReviews();
 }
 
+// Claude CLI has no GitHub MCP server yet: what it says, and the command that adds one, to run once in a terminal.
+function pullMcpHelp(error) {
+  const box = document.createElement('div');
+  box.className = 'pr-mcp-help';
+  const code = document.createElement('pre');
+  code.className = 'pr-mcp-code';
+  code.textContent = error.add;
+  const copy = document.createElement('button');
+  copy.type = 'button';
+  copy.className = 'btn btn-sm pr-mcp-copy';
+  copy.textContent = 'Copy the command';
+  copy.addEventListener('click', () => copyText(error.add, 'Command'));
+  const again = document.createElement('button');
+  again.type = 'button';
+  again.className = 'btn btn-sm pr-mcp-again';
+  again.textContent = 'Try again';
+  again.addEventListener('click', () => loadPulls({ fresh: true }));
+  const acts = document.createElement('div');
+  acts.className = 'pr-mcp-acts';
+  acts.append(copy, again);
+  box.append(
+    diffSpan('pr-mcp-why', error.text),
+    diffSpan('pr-mcp-how', 'Add it once, in a terminal, with a GitHub token of yours in place of YOUR_GITHUB_TOKEN. The token stays with Claude CLI: the app never sees it. This address gives only tools that read.'),
+    code,
+    acts,
+  );
+  return box;
+}
+
 function pullMatches(p, q) {
   return `#${p.number} ${p.title} ${p.author} ${p.head.label} ${p.base.ref} ${p.labels.join(' ')}`.toLowerCase().includes(q);
 }
@@ -108,6 +148,8 @@ function renderPulls() {
   if (!list || currentMode === 'pulls') return; // the page of all of them draws its own (all-pulls.js)
   const { info, error } = prState;
   $$('#prStateSeg .seg-btn').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.state === prFilter)));
+  $$('#prSourceSeg .seg-btn').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.source === prSource)));
+  $('#prRefreshBtn').title = prSource === 'mcp' ? 'Ask again through Claude CLI: takes some seconds, and some of your plan' : 'Ask GitHub again';
   const tokenBtn = $('#prTokenBtn');
   tokenBtn.classList.toggle('hidden', !info);
   tokenBtn.classList.toggle('has-token', Boolean(info && info.hasToken));
@@ -120,16 +162,22 @@ function renderPulls() {
   const asksToken = Boolean(error && PR_TOKEN_CODES.includes(error.code));
   if (info && (prState.tokenForm || asksToken)) list.appendChild(pullTokenForm(asksToken ? error : null));
   if (prState.loading && !prState.pulls.length) {
-    list.appendChild(noteEl(info ? `Asking ${info.site} for the pull requests of ${info.owner}/${info.repo}...` : 'Asking GitHub...'));
+    if (prSource === 'mcp') list.appendChild(noteEl(`Asking GitHub through Claude CLI and its MCP server${info ? ` for the pull requests of ${info.owner}/${info.repo}` : ''}: some seconds...`));
+    else list.appendChild(noteEl(info ? `Asking ${info.site} for the pull requests of ${info.owner}/${info.repo}...` : 'Asking GitHub...'));
     return;
   }
-  if (error && !asksToken) list.appendChild(noteEl(error.text));
+  if (error && error.add) list.appendChild(pullMcpHelp(error));
+  else if (error && !asksToken) list.appendChild(noteEl(error.text));
   if (error && !prState.pulls.length) return;
   if (!prState.loaded) return;
   const q = prQuery.trim().toLowerCase();
   const shown = q ? prState.pulls.filter((p) => pullMatches(p, q)) : prState.pulls;
   const total = `${plural(prState.pulls.length, 'pull request')}${prState.more ? ' (more on GitHub)' : ''}`;
-  count.textContent = q ? `${shown.length} of ${total}` : total;
+  // an answer through MCP is kept: when it was read
+  const readWhen = prSource === 'mcp' && prState.readAt ? ` · read ${formatDate(prState.readAt)}` : '';
+  count.textContent = `${q ? `${shown.length} of ${total}` : total}${readWhen}`;
+  if (readWhen) count.title = `Read through Claude CLI and its MCP server, ${new Date(prState.readAt).toLocaleString()}. Refresh asks again`;
+  else count.removeAttribute('title');
   if (!prState.pulls.length) {
     const what = prFilter === 'all' ? '' : `${prFilter} `;
     list.appendChild(noteEl(`${info.owner}/${info.repo} has no ${what}pull requests on ${info.site}.`));
@@ -451,6 +499,12 @@ async function loadPullComments(p) {
     const box = pullPart(p.number, '.pr-comments');
     if (box && state === prState && repoPath === currentRepo) fillPullComments(box, p);
   };
+  // through MCP only the list comes, for now: the comments ask GitHub with a token, when there is one
+  if (prSource === 'mcp' && !(state.info && state.info.hasToken)) {
+    state.comments.set(p.number, { noToken: true });
+    show();
+    return;
+  }
   const before = state.comments.get(p.number) || {};
   const mine = { ...before, loading: true, error: '' };
   state.comments.set(p.number, mine);
@@ -482,6 +536,10 @@ function fillPullComments(box, p) {
   head.className = 'cmp-head pr-comments-head';
   head.textContent = c.list ? `${plural(c.list.length, 'comment')}${c.more ? ' (more on GitHub)' : ''}` : 'Comments';
   box.appendChild(head);
+  if (c.noToken) {
+    box.appendChild(noteEl('Through MCP only the list comes, for now. To read and add comments, set a token (Token...).'));
+    return;
+  }
   if (c.loading && !c.list) box.appendChild(noteEl('Asking GitHub for the comments...'));
   if (c.error) box.appendChild(noteEl(c.error));
   if (c.lines && c.lines.length) box.appendChild(noteEl(`${plural(c.lines.length, 'more comment')} on lines of the files: each shows in the diff of its file, under its line.`));
@@ -1100,7 +1158,23 @@ function setupPulls() {
     prQuery = e.target.value;
     renderPulls();
   });
-  $('#prRefreshBtn').addEventListener('click', () => loadPulls());
+  $$('#prSourceSeg .seg-btn').forEach((b) => b.addEventListener('click', () => {
+    if (b.dataset.source === prSource) return;
+    prSource = b.dataset.source;
+    try {
+      localStorage.setItem(PR_SOURCE_KEY, prSource);
+    } catch {
+      // only for this session
+    }
+    prState.open.clear();
+    prState.comments.clear();
+    prState.pulls = [];
+    prState.error = null;
+    prState.readAt = '';
+    prState.tokenForm = false;
+    loadPulls();
+  }));
+  $('#prRefreshBtn').addEventListener('click', () => loadPulls({ fresh: true }));
   $('#prTokenBtn').addEventListener('click', () => {
     prState.tokenForm = !prState.tokenForm;
     prState.tokenError = '';

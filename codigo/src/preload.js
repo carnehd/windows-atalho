@@ -269,6 +269,7 @@ contextBridge.exposeInMainWorld('tools', {
   signJwt: (header, payload, key, keyBase64) => ipcRenderer.invoke('tools-jwt-sign', header, payload, key, keyBase64),
   apiOpen: () => ipcRenderer.invoke('tools-api-open'),
   apiFetch: (url) => ipcRenderer.invoke('tools-api-fetch', url),
+  apiView: (text) => ipcRenderer.invoke('tools-api-view', text),
   apiCompare: (before, after) => ipcRenderer.invoke('tools-api-compare', before, after),
   apiPart: (before, after, kind, key) => ipcRenderer.invoke('tools-api-part', before, after, kind, key),
   convertConfig: (text, from, to) => ipcRenderer.invoke('tools-config', text, from, to),
@@ -319,6 +320,26 @@ contextBridge.exposeInMainWorld('agent', {
   onEvent: (cb) => ipcRenderer.on('agent-review-event', (_, data) => cb(data)),
 });
 
+// Maven > Local setup: what a microservice needs running on this computer (local-setup.js); its answer comes in events
+contextBridge.exposeInMainWorld('localSetup', {
+  get: (path, folder) => ipcRenderer.invoke('local-setup-get', path, folder),
+  states: (path, folder) => ipcRenderer.invoke('local-setup-states', path, folder),
+  analyse: (path, folder) => ipcRenderer.invoke('local-setup-analyse', path, folder),
+  stop: (path, folder) => ipcRenderer.invoke('local-setup-stop', path, folder),
+  startDep: (path, folder, id, opts) => ipcRenderer.invoke('local-setup-start-dep', path, folder, id, opts),
+  stopDep: (path, folder, id) => ipcRenderer.invoke('local-setup-stop-dep', path, folder, id),
+  removeDep: (path, folder, id) => ipcRenderer.invoke('local-setup-remove-dep', path, folder, id),
+  copy: (path, folder, id) => ipcRenderer.invoke('local-setup-copy', path, folder, id),
+  onEvent: (cb) => ipcRenderer.on('local-setup-event', (_, data) => cb(data)),
+});
+
+// Maven > the console > Analyse with agent: what is selected there, read by an agent (console-analysis.js)
+contextBridge.exposeInMainWorld('consoleAnalysis', {
+  start: (path, input) => ipcRenderer.invoke('console-analysis-start', path, input),
+  stop: (path) => ipcRenderer.invoke('console-analysis-stop', path),
+  onEvent: (cb) => ipcRenderer.on('console-analysis-event', (_, data) => cb(data)),
+});
+
 contextBridge.exposeInMainWorld('newDb', {
   targets: () => ipcRenderer.invoke('newdb-targets'),
   preview: (values, where) => ipcRenderer.invoke('newdb-preview', values, where),
@@ -343,11 +364,22 @@ contextBridge.exposeInMainWorld('containers', {
   onLogsEnd: (cb) => ipcRenderer.on('dk-logs-end', (_, data) => cb(data)),
   terminal: (id) => ipcRenderer.invoke('dk-terminal', id),
   openPort: (port) => ipcRenderer.invoke('dk-open-port', port),
+  openKeycloak: (port) => ipcRenderer.invoke('dk-open-keycloak', port),
   startDesktop: () => ipcRenderer.invoke('dk-start-desktop'),
   engine: () => ipcRenderer.invoke('dk-engine'),
   runCommand: (text) => ipcRenderer.invoke('dk-cmd-run', text),
   stopCommand: () => ipcRenderer.invoke('dk-cmd-stop'),
   onCommand: (cb) => ipcRenderer.on('dk-cmd', (_, data) => cb(data)),
+});
+
+// Containers > Messages: what goes through a Pub/Sub emulator or a Redis (container-messages.js). It only reads.
+contextBridge.exposeInMainWorld('containerMessages', {
+  pubsubRead: (name, project, since) => ipcRenderer.invoke('messages-pubsub-read', name, project, since),
+  redisKeys: (name, input) => ipcRenderer.invoke('messages-redis-keys', name, input),
+  redisValue: (name, input) => ipcRenderer.invoke('messages-redis-value', name, input),
+  redisWatch: (name, password) => ipcRenderer.invoke('messages-redis-watch', name, password),
+  redisUnwatch: (name) => ipcRenderer.invoke('messages-redis-unwatch', name),
+  onEvent: (cb) => ipcRenderer.on('container-messages-event', (_, data) => cb(data)),
 });
 
 contextBridge.exposeInMainWorld('terminal', {

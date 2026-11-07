@@ -248,15 +248,12 @@ let reposRootPath = '';
 async function renderReposRoot() {
   const r = await window.git.getReposRoot();
   reposRootPath = r.exists ? r.path : '';
-  // Folders has a dot while no microservices folder is chosen: Look for new repositories (in Sync) asks for it first
-  const btn = $('#foldersBtn');
+  // Actions has a dot while no microservices folder is chosen: Look for new repositories asks for it first
+  const btn = $('#repoActionsBtn');
   btn.classList.toggle('unset', !reposRootPath);
   btn.title = reposRootPath
-    ? `Add or clone a repository, groups, remove several, the microservices folder (${reposRootPath})`
-    : 'Add or clone a repository, groups, remove several. The microservices folder is not chosen yet';
-  $('#syncReposBtn').title = reposRootPath
-    ? `Look for new repositories in ${reposRootPath}, pull or fetch several`
-    : 'Look for new repositories (asks for the microservices folder first), pull or fetch several';
+    ? `Pull or fetch several, look for new repositories in ${reposRootPath}, add or clone, groups, remove several`
+    : 'Pull or fetch several, look for new repositories, add or clone, groups, remove several. The microservices folder is not chosen yet';
 }
 
 async function chooseReposRoot() {
@@ -295,9 +292,11 @@ async function refreshRepoList() {
   else toast(`Up to date: no new repositories in ${result.root}${extra}`, 'info');
 }
 
-// -- Sync: look for new repositories in the microservices folder, pull or fetch several --
-function openSyncReposMenu() {
-  const btn = $('#syncReposBtn');
+// -- Actions, the menu of the list of repositories: pull or fetch several, look for new ones in the microservices folder;
+// then what goes into the list and out of it, its groups, the microservices folder. While a fetch of several runs, what
+// would run git on several repositories waits for it; the rest can still be used. --
+function openRepoActionsMenu() {
+  const btn = $('#repoActionsBtn');
   if ($('#actionMenu') && $('#actionMenu').dataset.anchor === btn.id) {
     closeActionMenu();
     return;
@@ -305,25 +304,12 @@ function openSyncReposMenu() {
   const git = repos.filter((r) => r.isGit !== false).length;
   openActionMenu({
     anchor: btn,
-    items: [
-      { icon: 'scan', label: 'Look for new repositories', hint: reposRootPath ? `In ${reposRootPath}, and update the list` : 'Asks for the microservices folder first', run: refreshRepoList },
-      { icon: 'pull', label: 'Pull several...', hint: 'Choose repositories and pull them one after the other', run: () => openPullMany() },
-      { icon: 'fetchAll', label: 'Fetch several...', hint: 'Choose repositories and see what is new on origin for each, without changing any file', disabled: !git || fetchingMany, run: () => openPullMany(null, 'fetch') },
-    ],
-  });
-}
-
-// -- Folders: what goes into the list and out of it, its groups, the microservices folder --
-function openFoldersMenu() {
-  const btn = $('#foldersBtn');
-  if ($('#actionMenu') && $('#actionMenu').dataset.anchor === btn.id) {
-    closeActionMenu();
-    return;
-  }
-  openActionMenu({
-    anchor: btn,
     align: 'left',
     items: [
+      { icon: 'pull', label: 'Pull several...', hint: 'Choose repositories and pull them one after the other', disabled: fetchingMany, run: () => openPullMany() },
+      { icon: 'fetchAll', label: 'Fetch several...', hint: 'Choose repositories and see what is new on origin for each, without changing any file', disabled: !git || fetchingMany, run: () => openPullMany(null, 'fetch') },
+      { icon: 'scan', label: 'Look for new repositories', hint: reposRootPath ? `In ${reposRootPath}, and update the list` : 'Asks for the microservices folder first', disabled: fetchingMany, run: refreshRepoList },
+      { separator: true },
       { icon: 'folder', label: 'Add a folder...', hint: 'A repository (or any folder) already on this PC', run: addExistingFolder },
       { icon: 'clone', label: 'Clone from a URL...', hint: 'Copy a repository from GitHub or another server', run: openCloneModal },
       { icon: 'group', label: 'Manage groups...', hint: 'Create groups and drag the microservices into them', run: openGroupsBoard },
@@ -360,10 +346,9 @@ let fetchingMany = false;
 async function fetchManyRepos(paths) {
   if (fetchingMany || !paths.length) return;
   fetchingMany = true;
-  const btn = $('#syncReposBtn');
-  btn.disabled = true;
+  const btn = $('#repoActionsBtn');
   btn.classList.add('busy');
-  $('#syncReposLabel').textContent = 'Fetching...';
+  $('#repoActionsLabel').textContent = 'Fetching...';
   let r;
   try {
     r = await window.git.fetchMany(paths);
@@ -371,9 +356,8 @@ async function fetchManyRepos(paths) {
     r = { error: e.message };
   }
   fetchingMany = false;
-  btn.disabled = false;
   btn.classList.remove('busy');
-  $('#syncReposLabel').textContent = 'Sync';
+  $('#repoActionsLabel').textContent = 'Actions';
   if (r.error) {
     toast(r.error, 'error', { title: 'Fetch failed' });
     return;
@@ -398,7 +382,7 @@ async function fetchManyRepos(paths) {
 }
 
 function openReposRootMenu() {
-  const btn = $('#foldersBtn');
+  const btn = $('#repoActionsBtn');
   const choose = async () => {
     if (await chooseReposRoot()) await refreshRepoList();
   };
@@ -489,6 +473,13 @@ async function refreshSummaries(only) {
     if (counts[r.path] !== undefined) repoSeen.summary.set(r.path, counts[r.path]);
   });
   renderSidebar();
+}
+
+// The lines of the repositories changed on disk since git was last asked about them: only those are asked.
+async function refreshStaleSummaries() {
+  const seen = repos.filter((r) => r.isGit !== false && repoSeen.summary.has(r.path)).map((r) => r.path);
+  const counts = await repoChanges(seen);
+  await refreshSummaries(seen.filter((p) => counts[p] !== undefined && counts[p] !== -1 && repoSeen.summary.get(p) !== counts[p]));
 }
 
 // The window shown again, or the Git page again: git is asked nothing. What changed on disk since git was last asked
@@ -2976,6 +2967,7 @@ function closeBranchActions(refocus = null) {
 
 // Icons of the action menus (Tabler, 24x24 outline).
 const ACTION_ICONS = {
+  agent: '<path d="M16 18a2 2 0 0 1 2 2a2 2 0 0 1 2 -2a2 2 0 0 1 -2 -2a2 2 0 0 1 -2 2zm0 -12a2 2 0 0 1 2 2a2 2 0 0 1 2 -2a2 2 0 0 1 -2 -2a2 2 0 0 1 -2 2zm-7 12a6 6 0 0 1 6 -6a6 6 0 0 1 -6 -6a6 6 0 0 1 -6 6a6 6 0 0 1 6 6z"/>',
   compare: '<path d="M7 10h14l-4 -4"/><path d="M17 14h-14l4 4"/>',
   edit: '<path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4"/><path d="M13.5 6.5l4 4"/>',
   undo: '<path d="M9 14l-4 -4l4 -4"/><path d="M5 10h11a4 4 0 1 1 0 8h-1"/>',
@@ -3306,6 +3298,13 @@ function openActionMenu({ anchor = null, x = 0, y = 0, title = '', items, align 
     box.appendChild(head);
   }
   for (const it of items) {
+    if (it.separator) {
+      const line = document.createElement('div');
+      line.className = 'diff-menu-sep';
+      line.setAttribute('role', 'separator');
+      box.appendChild(line);
+      continue;
+    }
     if (it.note) {
       const note = document.createElement('div');
       note.className = 'action-menu-note';
@@ -3589,7 +3588,7 @@ async function openBranchLog(ref, label) {
   };
   document.addEventListener('keydown', modal.onEscape, true);
   document.body.appendChild(modal);
-  close.focus();
+  focusWindowX(close);
 
   const data = await window.git.branchGraph(repoPath, ref);
   if (!modal.isConnected) return;
@@ -4520,8 +4519,7 @@ function setupEvents() {
     }
   });
 
-  $('#syncReposBtn').addEventListener('click', openSyncReposMenu);
-  $('#foldersBtn').addEventListener('click', openFoldersMenu);
+  $('#repoActionsBtn').addEventListener('click', openRepoActionsMenu);
 
   // Refresh: looks for repositories in the microservices folder that are not in the list yet, and updates the
   // branch and changes of every repository. Without that folder it asks for it first.
@@ -4720,11 +4718,31 @@ function selectedStashEntries() {
 }
 
 function updateStashSelection() {
-  const n = selectedStashEntries().length;
+  const chosen = selectedStashEntries();
+  const n = chosen.length;
   const total = stashCandidates.length;
-  $('#stashHint').textContent = `${n} of ${total} file${total !== 1 ? 's' : ''} selected. Unselected files stay in your working tree.`;
+  $('#stashCount').textContent = `${n} of ${total} chosen`;
+  const all = $('#stashAll');
+  all.checked = n === total;
+  all.indeterminate = n > 0 && n < total;
+  $('#stashAllBtn').disabled = n === total;
+  $('#stashNoneBtn').disabled = n === 0;
   $('#stashConfirmBtn').disabled = n === 0;
-  $('#stashToggleAll').textContent = n === total ? 'None' : 'All';
+  renderChosenBar($('#stashChosenBar'), {
+    items: chosen.map((e) => ({ key: stashCandidates.indexOf(e), label: e.file.replace(/\/+$/, '').split('/').pop(), title: e.file })),
+    total,
+    allText: `All ${total} files`,
+    out: $('#stashName'),
+    onTake: (i) => {
+      $(`#stashFiles input[data-index="${i}"]`).checked = false;
+      updateStashSelection();
+    },
+  });
+}
+
+function chooseAllStash(on) {
+  $$('#stashFiles input[type=checkbox]').forEach((cb) => (cb.checked = on));
+  updateStashSelection();
 }
 
 async function openStashModal() {
@@ -4760,6 +4778,7 @@ async function openStashModal() {
     row.append(cb, letter, name);
     box.appendChild(row);
   });
+  $('#stashChosenBar').classList.remove('open');
   updateStashSelection();
   $('#stashModal').classList.remove('hidden');
   $('#stashName').focus();
@@ -4794,11 +4813,9 @@ function setupStash() {
   $('#stashOpenBtn').addEventListener('click', openStashModal);
   $('#stashCancelBtn').addEventListener('click', closeStashModal);
   $('#stashConfirmBtn').addEventListener('click', confirmStash);
-  $('#stashToggleAll').addEventListener('click', () => {
-    const all = selectedStashEntries().length === stashCandidates.length;
-    $$('#stashFiles input[type=checkbox]').forEach((cb) => (cb.checked = !all));
-    updateStashSelection();
-  });
+  $('#stashAll').addEventListener('change', (e) => chooseAllStash(e.target.checked));
+  $('#stashAllBtn').addEventListener('click', () => chooseAllStash(true));
+  $('#stashNoneBtn').addEventListener('click', () => chooseAllStash(false));
   $('#stashModal').addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeStashModal();
   });

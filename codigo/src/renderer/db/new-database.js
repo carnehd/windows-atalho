@@ -248,8 +248,11 @@ function ndTargetChosen(fill) {
   }
 }
 
-async function openNewDatabase() {
+// preset: the values Local setup found for this microservice ({ database, schema, ddlUser, ddlPassword, dmlUser,
+// dmlPassword, migrations }): the window opens over it, filled in.
+async function openNewDatabase(preset = null) {
   const modal = newDatabaseModal();
+  document.body.appendChild(modal);
   const saved = ndSaved();
   Object.assign(nd, { view: ['sql', 'powershell', 'bash'].includes(saved.view) ? saved.view : 'sql', preview: null, out: '', running: null, result: null, schemaTyped: false, pod: null, showPass: false, migrations: saved.migrations || 'flyway', format: saved.format === 'env' ? 'env' : 'props', targets: null });
   // the microservices of the list; the one open now first
@@ -266,6 +269,18 @@ async function openNewDatabase() {
   for (const id of ['#ndDdlPass', '#ndDmlPass', '#ndAdminPass']) {
     $(id).value = '';
     $(id).type = 'password';
+  }
+  if (preset) {
+    $('#ndDb').value = preset.database || '';
+    $('#ndSchema').value = preset.schema || '';
+    nd.schemaTyped = Boolean(preset.schema);
+    $('#ndDdlUser').value = preset.ddlUser || $('#ndDdlUser').value;
+    $('#ndDmlUser').value = preset.dmlUser || $('#ndDmlUser').value;
+    $('#ndDdlPass').value = preset.ddlPassword || '';
+    $('#ndDmlPass').value = preset.dmlPassword || '';
+    if (ND_MIGRATIONS.some(([id]) => id === preset.migrations)) nd.migrations = preset.migrations;
+    ms.value = [...ms.options].some((o) => o.value === preset.database) ? preset.database : '';
+    ndFollowSchema();
   }
   $('#ndShow').checked = false;
   const perms = Array.isArray(saved.perms) && saved.perms.length ? saved.perms : ND_PERMS;
@@ -494,4 +509,4 @@ async function addNewDatabaseConnection() {
   toast(`Connection ${r.connection.name} added: the new database, as ${m.dmlUser}`, 'success');
 }
 
-$('#dbNewBtn').addEventListener('click', openNewDatabase);
+$('#dbNewBtn').addEventListener('click', () => openNewDatabase());

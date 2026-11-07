@@ -686,7 +686,12 @@ function buildSwaggerAnalysis() {
             const r = await window.analysis.open(s.path, f.rel);
             if (r.error) toast(r.error, 'error');
           });
-          cell(tr, 'an-path', open);
+          const view = tEl('button', 'btn btn-sm an-view', 'View');
+          view.type = 'button';
+          view.title = `Read ${f.name} in View API`;
+          view.classList.toggle('hidden', Boolean(f.error || f.part));
+          view.addEventListener('click', () => openInApiView(s, f.rel));
+          cell(tr, 'an-path', open, view);
           cell(tr, 'an-version', ...(f.version ? [tEl('span', 'tool-badge', f.version)] : []));
         }
       }

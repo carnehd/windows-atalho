@@ -14,6 +14,7 @@ const crypto = require('crypto');
 const { spawn, execFile } = require('child_process');
 const { app, ipcMain, dialog } = require('electron');
 const shell = require('./shell');
+const { LOCAL_SETUP_SKILL, CONSOLE_FIX_SKILL } = require('./local-setup-skill');
 
 // Claude CLI answers in the form the app asks for (a JSON schema) and streams what it does; Copilot CLI answers in
 // text, so it is asked for the same form inside a ```json block, and says nothing until it is done.
@@ -39,80 +40,9 @@ const SKILL_NAME = /^[a-z0-9][a-z0-9-]{0,49}$/;
 // a test answers as the agent from this computer (never in the exe)
 const dev = (name) => (app && !app.isPackaged ? process.env[name] || '' : '');
 
-const DEFAULT_SKILL = `---
-name: pr-review
-description: Looks for errors and for improvements in what a pull request changes, across code, data, API, configuration and tests
----
-
-# Pull request review
-
-You review one pull request of a service. Report what can go wrong (errors) and what would be better (improvements),
-each at its file and line. Fewer findings you are sure of are worth more than many guesses.
-
-## How to read it
-
-1. Read the whole diff first, to see what the change is for.
-2. Then open the files the change depends on: what calls the changed code, what it calls, its tests, its configuration.
-3. Follow each change across the layers it touches: the API (controllers, the OpenAPI document), the logic, the data
-   (entities, repositories, migrations), the configuration (application files, environment variables, compose and
-   Kubernetes files), the tests, the documentation.
-4. Check that what the title and the description of the pull request promise is what the code does.
-
-## Errors
-
-Report as an error what can give a wrong result, lose data, break at run time or let something in that should not:
-
-- **Logic:** code that does not do what its name, its comment or its test says; a condition the wrong way round; an
-  off-by-one; a case not handled (null, empty, missing, too big, a failure of something it calls).
-- **Data:** a field added to an entity without its migration (Liquibase or Flyway), or a migration without the code
-  that uses it; a migration that drops or narrows a column with data in it; a column added without a default for the
-  rows already there; a changeset edited after it was released.
-- **API:** a field removed or renamed, a status code or an error shape changed, without the OpenAPI document and the
-  clients following; input not validated; an error that leaks internals to the caller.
-- **Transactions and concurrency:** a write across two steps that can be left half done; state shared between
-  requests; a retry that repeats a side effect.
-- **Security:** a password, a token, a key or a private address written in code or configuration; sensitive data
-  written to the log; SQL or commands built from input by hand; an endpoint that lost its authorization check.
-- **Configuration:** a property read in code that no environment defines; a variable named one way in the
-  application file and another in compose or Kubernetes; a secret read from the wrong place.
-- **Tests:** a test weakened or deleted to make the change pass; new behaviour with no test at all.
-- **Resources:** a stream, a connection or a client not closed; an HTTP call with no timeout.
-
-## Improvements
-
-Report as an improvement what works but would be better otherwise:
-
-- the same code written twice, or code harder to read than it needs to be;
-- a name, a message or a comment that says something else than the code does;
-- a log line that will not help when things go wrong (wrong level, no context), or too noisy;
-- something simpler that the language, the framework or the project already has;
-- a missing test for a case the change adds, or a test that checks less than it could;
-- a convention of the project (see below) not followed.
-
-## What to leave out
-
-- style that a formatter decides: spaces, line length, the order of imports;
-- praise, and remarks about code the pull request does not touch, unless the change breaks it;
-- anything you did not verify by reading the code.
-
-## Wording
-
-- The summary: two to four bullet points, one per line, each starting with "- ": what the pull request does, then
-  what stands out in it.
-- One finding per problem, at the line where it is clearest: the title says what is wrong in one sentence, the detail
-  says why it matters and what would fix it, the suggestion has the code when the fix is obvious.
-- Write in English, plainly.
-
-## Conventions of the project (change this part for your team)
-
-- Stack: Java 21, Spring Boot 3, Maven, PostgreSQL with Liquibase migrations; one database schema per service, a
-  DDL user for migrations and a DML user for the application.
-- Each environment has its own values (dev, sit, uat, prod): configuration comes from environment variables or
-  secrets, never from values written in the code.
-- REST APIs are described in an OpenAPI document kept in the repository; it changes with the API.
-- API tests are Bruno collections in the repository; a new endpoint gets its requests.
-- Deployment is compose locally and Helm charts (k8s/) elsewhere; a new variable or secret is added to both.
-`;
+// What it looks for in a change, as the app comes with it: skills/pr-review/SKILL.md of the app (kept in Git with the
+// other skills of the app). The user's copy is data/skills/pr-review.
+const DEFAULT_SKILL = fs.readFileSync(path.join(__dirname, '..', 'skills', 'pr-review', 'SKILL.md'), 'utf8');
 
 // The pr-review of earlier versions of the app (by their sha1), replaced by the one above when left as they were
 const OLD_DEFAULTS = ['90a1212b85560b9057de664807bfd506f231b2fc', 'a119425c283d49fe61db84a1065d47d436678231'];
@@ -171,16 +101,18 @@ class Skills {
     return path.join(this.dir, name, 'SKILL.md');
   }
 
-  // pr-review is put there the first time (and again if it was deleted, or if it is still one the app wrote before
-  // and the app has a newer one): the user's changes to it are kept
+  // pr-review, local-setup and console-fix are put there the first time (and again if one was deleted, or if it is still one the app
+  // wrote before and the app has a newer one): the user's changes to them are kept
   ensureDefault() {
-    const file = this.file('pr-review');
-    if (fs.existsSync(file)) {
-      const now = fs.readFileSync(file, 'utf8');
-      if (now === DEFAULT_SKILL || !OLD_DEFAULTS.some((hash) => crypto.createHash('sha1').update(now).digest('hex') === hash)) return;
+    for (const [name, text, old] of [['pr-review', DEFAULT_SKILL, OLD_DEFAULTS], ['local-setup', LOCAL_SETUP_SKILL, []], ['console-fix', CONSOLE_FIX_SKILL, []]]) {
+      const file = this.file(name);
+      if (fs.existsSync(file)) {
+        const now = fs.readFileSync(file, 'utf8');
+        if (now === text || !old.some((hash) => crypto.createHash('sha1').update(now).digest('hex') === hash)) continue;
+      }
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, text);
     }
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, DEFAULT_SKILL);
   }
 
   list() {
@@ -190,7 +122,8 @@ class Skills {
       if (!SKILL_NAME.test(name)) continue;
       try {
         const { head } = skillHead(fs.readFileSync(this.file(name), 'utf8').slice(0, 4000));
-        out.push({ name, description: String(head.description || '').slice(0, 200), ...documentationOf(head) });
+        // purpose: what else it is for than Analyse (local-setup: the Local setup window of the Maven page)
+        out.push({ name, description: String(head.description || '').slice(0, 200), purpose: String(head.purpose || '').toLowerCase().slice(0, 40), ...documentationOf(head) });
       } catch {
         // a folder without a SKILL.md
       }
@@ -450,14 +383,14 @@ function reviewOf(answer, files) {
 }
 
 // The answer, when the agent wrote it as text instead of in the form asked (a JSON object, alone or in a ``` block).
-function answerInText(text) {
+function answerInText(text, key = 'findings') {
   const s = String(text || '');
   const block = /```(?:json)?\s*([\s\S]*?)```/.exec(s);
   for (const candidate of [block ? block[1] : null, s.slice(s.indexOf('{'), s.lastIndexOf('}') + 1)]) {
     if (!candidate) continue;
     try {
       const data = JSON.parse(candidate);
-      if (data && typeof data === 'object' && Array.isArray(data.findings)) return data;
+      if (data && typeof data === 'object' && Array.isArray(data[key])) return data;
     } catch {
       // not it
     }
@@ -476,7 +409,7 @@ function tokensOf(result) {
 
 // Starts the agent in `cwd` with `prompt` on its input and reads its stream to the end. onProgress(text) as it goes.
 // Resolves { answer, text, costUsd } or throws { error, code }. stop() ends it.
-function runClaude({ file, command = 'claude', env, cwd, prompt, onProgress }) {
+function runClaude({ file, command = 'claude', env, cwd, prompt, onProgress, schema = ANSWER_SCHEMA, key = 'findings' }) {
   let child = null;
   let stopped = false;
   const done = new Promise((resolve, reject) => {
@@ -486,7 +419,7 @@ function runClaude({ file, command = 'claude', env, cwd, prompt, onProgress }) {
       '--permission-mode', 'dontAsk', '--tools', 'Read,Grep,Glob', '--allowedTools', 'Read,Grep,Glob',
       // the user's own settings only: none of the repository under review (its hooks, its servers, its commands)
       '--setting-sources', 'user', '--strict-mcp-config', '--disable-slash-commands', '--no-session-persistence',
-      '--json-schema', JSON.stringify(ANSWER_SCHEMA),
+      '--json-schema', JSON.stringify(schema),
     ];
     try {
       child = spawn(file, args, { cwd, env, windowsHide: true, detached: !shell.IS_WIN, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -538,7 +471,7 @@ function runClaude({ file, command = 'claude', env, cwd, prompt, onProgress }) {
       }
       if (!result) return reject({ code: 'failed', error: `Claude CLI ended without an answer${code ? ` (exit ${code})` : ''}${errors.trim() ? `: ${errors.trim().split('\n').pop().slice(0, 300)}` : '.'}` });
       if (result.is_error) return reject({ code: 'failed', error: `Claude CLI answered with an error: ${(said || result.subtype || 'unknown').slice(0, 400)}` });
-      return resolve({ answer: result.structured_output || answerInText(said), text: said, costUsd: Number(result.total_cost_usd) || 0, tokens: tokensOf(result), models: Object.keys(result.modelUsage || {}).slice(0, 4) });
+      return resolve({ answer: result.structured_output || answerInText(said, key), text: said, costUsd: Number(result.total_cost_usd) || 0, tokens: tokensOf(result), models: Object.keys(result.modelUsage || {}).slice(0, 4) });
     });
     child.stdin.on('error', () => {});
     child.stdin.end(prompt);
@@ -555,7 +488,7 @@ function runClaude({ file, command = 'claude', env, cwd, prompt, onProgress }) {
 // Starts Copilot CLI in `cwd` with `prompt` on its input (its own -p is left out: with it the input is ignored) and
 // reads its answer, in text: only reading allowed, no questions, the hooks and servers of the folder under review
 // not trusted (they load only with --trust-folder). It says nothing until it is done.
-function runCopilot({ file, command = 'copilot', env, cwd, prompt, onProgress }) {
+function runCopilot({ file, command = 'copilot', env, cwd, prompt, onProgress, key = 'findings', reading = 'Reading the changes (Copilot CLI says nothing until it is done)' }) {
   let child = null;
   let stopped = false;
   const done = new Promise((resolve, reject) => {
@@ -582,7 +515,7 @@ function runCopilot({ file, command = 'copilot', env, cwd, prompt, onProgress })
     child.on('close', (code) => {
       clearTimeout(timer);
       if (stopped) return reject({ code: 'stopped', error: 'Stopped.' });
-      const answer = answerInText(out);
+      const answer = answerInText(out, key);
       const said = `${out}\n${errors}`;
       if (!answer && /not (logged|signed|authenticated)|\/login|log in to|sign in|authenticat/i.test(said)) {
         return reject({ code: 'login', error: `Copilot CLI is not signed in on this computer. Open a terminal, run "${command}", type /login and follow it; then analyse again.` });
@@ -591,7 +524,7 @@ function runCopilot({ file, command = 'copilot', env, cwd, prompt, onProgress })
       return resolve({ answer, text: out.trim(), costUsd: 0, tokens: null, models: [] });
     });
     child.stdin.on('error', () => {});
-    onProgress('Reading the changes (Copilot CLI says nothing until it is done)');
+    onProgress(reading);
     child.stdin.end(prompt);
   });
   return {
@@ -602,6 +535,9 @@ function runCopilot({ file, command = 'copilot', env, cwd, prompt, onProgress })
     },
   };
 }
+
+// The copies an agent is reading now outside the runs of this file (Local setup).
+const copiesInUse = new Set();
 
 // The copies of code left in the temporary folder by a run the app did not get to finish (closed in the middle of
 // one): removed, and their repository told (worktree prune). Called when the app starts and before each run. inUse:
@@ -615,7 +551,7 @@ async function removeLeftovers(gitFor, inUse = new Set()) {
   }
   for (const name of names) {
     const dir = path.join(os.tmpdir(), name);
-    if (inUse.has(dir)) continue;
+    if (inUse.has(dir) || copiesInUse.has(dir)) continue;
     let repo = null;
     try {
       // the worktree's .git file names <repo>/.git/worktrees/<name>
@@ -839,8 +775,10 @@ function registerAgentReview({ dataDir, getWindow, isKnownRepo, gitFor, pathKey,
   const keyOf = (repoPath, subject) => `${pathKey(repoPath)}#${subjectOf(subject)}`;
   const settings = () => {
     const s = loadSettings() || {};
-    const names = skills.list().map((x) => x.name);
-    return { agent: AGENTS.some((a) => a.id === s.agent) ? s.agent : AGENTS[0].id, skill: names.includes(s.skill) ? s.skill : 'pr-review' };
+    const all = skills.list();
+    const names = all.filter((x) => !x.purpose).map((x) => x.name);
+    const locals = all.filter((x) => x.purpose === 'local-setup').map((x) => x.name);
+    return { agent: AGENTS.some((a) => a.id === s.agent) ? s.agent : AGENTS[0].id, skill: names.includes(s.skill) ? s.skill : 'pr-review', localSkill: locals.includes(s.localSkill) ? s.localSkill : 'local-setup' };
   };
   const send = (repoPath, subject, event) => {
     const win = getWindow();
@@ -854,20 +792,25 @@ function registerAgentReview({ dataDir, getWindow, isKnownRepo, gitFor, pathKey,
     }
   };
   removeLeftovers(gitFor);
-  const info = async (again = false) => ({ agents: await Promise.all(AGENTS.map((a) => findAgent(a.id, again))).then((list) => list.map(({ file, command, ...a }) => a)), skills: skills.list(), ...settings() });
+  const info = async (again = false) => {
+    const all = skills.list();
+    return { agents: await Promise.all(AGENTS.map((a) => findAgent(a.id, again))).then((list) => list.map(({ file, command, ...a }) => a)), skills: all.filter((s) => !s.purpose), localSkills: all.filter((s) => s.purpose === 'local-setup'), ...settings() };
+  };
 
   ipcMain.handle('agent-info', guard((again) => info(Boolean(again))));
   ipcMain.handle('agent-settings-set', guard(async (next) => {
     const now = settings();
     const want = next && typeof next === 'object' ? next : {};
-    saveSettings({ agent: AGENTS.some((a) => a.id === want.agent) ? want.agent : now.agent, skill: skills.list().some((x) => x.name === want.skill) ? want.skill : now.skill });
+    const has = (name, local) => skills.list().some((x) => x.name === name && Boolean(x.purpose) === local);
+    saveSettings({ agent: AGENTS.some((a) => a.id === want.agent) ? want.agent : now.agent, skill: has(want.skill, false) ? want.skill : now.skill, localSkill: has(want.localSkill, true) ? want.localSkill : now.localSkill });
     return info();
   }));
   ipcMain.handle('agent-skill-load', guard(async () => {
     const picked = await withDialog(() => dialog.showOpenDialog(getWindow(), { title: 'Load a skill: its SKILL.md file', properties: ['openFile'], filters: [{ name: 'Skill (Markdown)', extensions: ['md'] }] }));
     if (picked.canceled || !picked.filePaths.length) return { canceled: true };
     const name = skills.load(picked.filePaths[0]);
-    saveSettings({ ...settings(), skill: name });
+    const local = skills.list().some((x) => x.name === name && x.purpose);
+    saveSettings({ ...settings(), ...(local ? { localSkill: name } : { skill: name }) });
     return { loaded: name, ...(await info()) };
   }));
   ipcMain.handle('agent-skill-edit', guard(async (name) => {
@@ -1088,7 +1031,7 @@ function registerAgentReview({ dataDir, getWindow, isKnownRepo, gitFor, pathKey,
     });
   }));
 
-  return { stopAll: () => runs.forEach((run) => run.stop()) };
+  return { stopAll: () => runs.forEach((run) => run.stop()), info, skills };
 }
 
-module.exports = { registerAgentReview, Skills, Reviews, Documents, documentShown, copyDocuments, folderFiles, promptFor, reviewOf, answerInText, progressOf, runClaude, runCopilot, tokensOf, copilotModel, agentEnv, agentPlaces, claudePlaces, removeLeftovers, skillHead, AGENTS, DEFAULT_SKILL, OLD_DEFAULTS, ANSWER_SCHEMA };
+module.exports = { registerAgentReview, copiesInUse, findAgent, Skills, Reviews, Documents, documentShown, copyDocuments, folderFiles, promptFor, reviewOf, answerInText, progressOf, runClaude, runCopilot, tokensOf, copilotModel, agentEnv, agentPlaces, claudePlaces, removeLeftovers, skillHead, AGENTS, DEFAULT_SKILL, OLD_DEFAULTS, ANSWER_SCHEMA };
