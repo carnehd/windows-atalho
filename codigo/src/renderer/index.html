@@ -732,6 +732,7 @@
           <select id="dbConn" class="input db-conn" aria-label="Connection" title="The PostgreSQL connection"></select>
           <button id="dbConnBtn" class="btn btn-sm btn-icon db-icon-btn" type="button" aria-haspopup="dialog" title="Connections: add one, change it, test it" aria-label="Connections"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z"/><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></svg></button>
           <button id="dbRefreshBtn" class="btn btn-sm btn-icon db-icon-btn" type="button" title="Read the schemas and tables again" aria-label="Refresh"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg></button>
+          <button id="dbCallsBtn" class="btn btn-sm db-calls-btn" type="button" aria-expanded="true" aria-controls="dbCalls" title="What this page asks of the database: each statement, how long it took, and the error as PostgreSQL says it">Calls<span id="dbCallsN" class="db-calls-n"></span></button>
           <span id="dbStatus" class="db-status" aria-live="polite"></span>
           <button id="dbNewBtn" class="btn btn-sm" type="button" aria-haspopup="dialog" title="A database for a microservice in a PostgreSQL of this computer: its schema, a user that makes the tables and a user for the application">+ New database</button>
           <span class="db-ro" title="This page only reads: one SELECT, WITH, SHOW, EXPLAIN, VALUES or TABLE at a time, in a read only transaction">read only</span>
@@ -748,6 +749,7 @@
           <section class="db-detail">
             <div id="dbTabs" class="bru-tabs db-tabs" role="tablist" aria-label="The table"></div>
             <div id="dbPane" class="db-pane" role="tabpanel"></div>
+            <div id="dbCalls" class="db-calls" aria-label="Calls to the database"></div>
           </section>
         </div>
       </div>
@@ -1400,6 +1402,7 @@
   <script src="windows.js"></script>
   <script src="sync-card.js"></script>
   <script src="db/db.js"></script>
+  <script src="db/db-calls.js"></script>
   <script src="db/db-sql.js"></script>
   <script src="db/db-link.js"></script>
   <script src="db/db-conn.js"></script>

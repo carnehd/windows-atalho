@@ -2,6 +2,7 @@
 // and closes it. The connection itself starts read only (default_transaction_read_only) with a time limit, and the
 // SQL typed in is one statement that reads (SELECT, WITH, SHOW, EXPLAIN, VALUES, TABLE): a change is refused twice,
 // here and by the database. Values come as PostgreSQL writes them (dates, numeric, json, arrays), as text. --
+const { AsyncLocalStorage } = require('async_hooks');
 const { Client } = require('pg');
 
 const TIMEOUT_MS = 30000;
@@ -13,6 +14,54 @@ const READ_WORDS = new Set(['select', 'with', 'show', 'explain', 'values', 'tabl
 const AS_TEXT = { getTypeParser: () => (value) => value };
 
 const ident = (name) => `"${String(name).replace(/"/g, '""')}"`;
+
+// -- What is asked of the database, told as it happens: the page shows it (Calls), so a refusal can be read and compared with
+// another client (DBeaver). The label says what the user did (Open orders.customer); the group ties the calls of one action. --
+const context = new AsyncLocalStorage();
+let listener = null;
+let seq = 0;
+const onCall = (fn) => { listener = fn; };
+const inCall = (label, fn) => context.run({ label: String(label || ''), group: ++seq }, fn);
+// the transaction control of every call: shown too, but out of the way
+const QUIET = /^(begin|rollback|savepoint|release savepoint|rollback to savepoint|set local)\b/i;
+
+const errorOf = (e) => ({
+  code: String((e && e.code) || ''),
+  message: String((e && e.message) || e),
+  detail: String((e && e.detail) || ''),
+  hint: String((e && e.hint) || ''),
+  position: (e && e.position) || null,
+  where: String((e && e.where) || ''),
+});
+
+function note(entry) {
+  if (!listener) return;
+  const ctx = context.getStore() || {};
+  try {
+    listener({ id: ++seq, at: Date.now(), label: ctx.label || '', group: ctx.group || 0, ...entry });
+  } catch {
+    // a page that is gone
+  }
+}
+
+const paramsText = (params) => (Array.isArray(params) ? params.map((v) => (Array.isArray(v) ? `{${v.slice(0, 6).join(',')}${v.length > 6 ? ',…' : ''}}` : String(v))).join(', ').slice(0, 300) : '');
+
+// the client, with each statement it runs told (the password never is: only the statements and what they answered)
+function logged(client) {
+  const raw = client.query.bind(client);
+  client.query = async (q, params) => {
+    const t0 = Date.now();
+    const sql = String(typeof q === 'string' ? q : (q && q.text) || '').replace(/\s+/g, ' ').trim().slice(0, 4000);
+    try {
+      const r = await raw(q, params);
+      note({ kind: 'sql', sql, params: paramsText(params), ms: Date.now() - t0, rows: r && Array.isArray(r.rows) ? r.rows.length : null, quiet: QUIET.test(sql) });
+      return r;
+    } catch (e) {
+      note({ kind: 'sql', sql, params: paramsText(params), ms: Date.now() - t0, quiet: QUIET.test(sql), error: errorOf(e) });
+      throw e;
+    }
+  };
+}
 
 async function withClient(conn, fn) {
   const client = new Client({
@@ -28,7 +77,16 @@ async function withClient(conn, fn) {
     types: AS_TEXT,
   });
   client.on('error', () => {}); // a connection dropped after the answer: nothing to do
-  await client.connect();
+  const t0 = Date.now();
+  const where = `${conn.host}:${conn.port}/${conn.database} as ${conn.user}${conn.ssl === 'require' ? ' (TLS)' : conn.ssl === 'no-verify' ? ' (TLS, not verified)' : ''}`;
+  try {
+    await client.connect();
+    note({ kind: 'connect', text: `Connected to ${where}`, ms: Date.now() - t0 });
+  } catch (e) {
+    note({ kind: 'connect', text: `Could not connect to ${where}`, ms: Date.now() - t0, error: errorOf(e) });
+    throw e;
+  }
+  logged(client);
   try {
     await client.query('BEGIN TRANSACTION READ ONLY');
     return await fn(client);
@@ -128,6 +186,7 @@ async function rows(conn, schema, table, { offset = 0, sort = null, desc = false
       await c.query('release savepoint counting');
     } catch {
       await c.query('rollback to savepoint counting');
+      note({ kind: 'info', text: 'The count did not work: PostgreSQL\'s estimate of the rows is used instead (this does not stop the rows being shown)' });
       const est = await c.query('select greatest(cl.reltuples, 0)::bigint::text as n from pg_class cl join pg_namespace n on n.oid = cl.relnamespace where n.nspname = $1 and cl.relname = $2', [schema, table]);
       total = est.rows.length ? Number(est.rows[0].n) : null;
     }
@@ -259,4 +318,52 @@ function explain(e, conn) {
   return e.position ? `${e.message} (at character ${e.position})` : e.message;
 }
 
-module.exports = { test, schemas, tables, columns, rows, query, catalog, check, readOnlySql, explain, PAGE, MAX_ROWS, MAX_CATALOG };
+// What this user may do with a table, to read and compare with another client that does read it (DBeaver): who connects, the
+// roles it belongs to and whether it uses their rights, the rights on the schema, the table and its columns, row level
+// security. Each is one statement of its own, told like the others; one that fails is said, and the next goes on.
+async function whoami(conn, schema, table) {
+  return withClient(conn, async (c) => {
+    const items = [];
+    let n = 0;
+    const ask = async (label, sql, params) => {
+      const sp = `check${++n}`;
+      await c.query(`savepoint ${sp}`);
+      try {
+        const r = await c.query(sql, params);
+        await c.query(`release savepoint ${sp}`);
+        items.push({ label, rows: r.rows });
+        return r.rows;
+      } catch (e) {
+        await c.query(`rollback to savepoint ${sp}`);
+        items.push({ label, error: e.message });
+        return [];
+      }
+    };
+    const me = (await ask('Who connects', `select current_user as "user", session_user as "session", current_database() as "database", current_setting('search_path') as search_path, current_setting('default_transaction_read_only') as read_only`))[0] || {};
+    const roles = await ask('Roles of this user', `select r.rolname as role, r.rolinherit as inherits, r.rolsuper as superuser, pg_has_role(current_user, r.oid, 'usage') as uses_its_rights from pg_roles r where r.rolname = current_user or (pg_has_role(current_user, r.oid, 'member') and r.rolname !~ '^pg_') order by 1`);
+    const priv = (await ask(`Rights on ${schema}.${table}`, `select has_schema_privilege(current_user, $1, 'USAGE') as schema_usage, has_table_privilege(current_user, format('%I.%I', $1::text, $2::text), 'SELECT') as table_select`, [schema, table]))[0] || {};
+    const cols = (await ask('Columns it can read', `select count(*)::int as total, count(*) filter (where has_column_privilege(current_user, cl.oid, a.attnum, 'SELECT'))::int as readable from pg_attribute a join pg_class cl on cl.oid = a.attrelid join pg_namespace n on n.oid = cl.relnamespace where n.nspname = $1 and cl.relname = $2 and a.attnum > 0 and not a.attisdropped`, [schema, table]))[0] || {};
+    const rls = (await ask('Row level security', `select cl.relrowsecurity as enabled, cl.relforcerowsecurity as forced, pg_get_userbyid(cl.relowner) as owner from pg_class cl join pg_namespace n on n.oid = cl.relnamespace where n.nspname = $1 and cl.relname = $2`, [schema, table]))[0] || {};
+    return { items, reading: reading({ me, roles, priv, cols, rls }) };
+  });
+}
+
+// the sentences that say what the answers mean
+function reading({ me, roles, priv, cols, rls }) {
+  const yes = (v) => v === true || v === 't';
+  const out = [];
+  if (priv.schema_usage !== undefined && !yes(priv.schema_usage)) {
+    out.push('This user has no USAGE on the schema, so nothing in it can be read. It needs GRANT USAGE ON SCHEMA, or the connection has to be the user that DBeaver uses.');
+  } else if (priv.table_select !== undefined && !yes(priv.table_select)) {
+    const idle = roles.filter((r) => r.role !== me.user && !yes(r.uses_its_rights)).map((r) => r.role);
+    out.push(idle.length
+      ? `This user belongs to ${idle.join(', ')} but does not use what they may do (NOINHERIT): DBeaver may be set to take that role (SET ROLE), or to connect as another user.`
+      : 'This user has no SELECT on the table: DBeaver must be connecting as another user, or as one that has it.');
+  }
+  if (cols.total !== undefined && Number(cols.readable) < Number(cols.total)) out.push(`It may read only ${cols.readable} of ${cols.total} columns, so select * is refused. DBeaver may be asking only for the columns it can read.`);
+  if (yes(rls.enabled)) out.push(`Row level security is on for the table (owner ${rls.owner || '?'}): the rows this user sees depend on the policies.`);
+  if (!out.length) out.push('Nothing here explains a refusal: this user can read the table. Compare the statement that failed, in the list, with what DBeaver runs.');
+  return out;
+}
+
+module.exports = { test, schemas, tables, columns, rows, query, catalog, check, whoami, onCall, inCall, readOnlySql, explain, PAGE, MAX_ROWS, MAX_CATALOG };

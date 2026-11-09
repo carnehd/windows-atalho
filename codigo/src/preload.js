@@ -173,6 +173,8 @@ contextBridge.exposeInMainWorld('database', {
   query: (id, sql) => ipcRenderer.invoke('db-query', id, sql),
   catalog: (id) => ipcRenderer.invoke('db-catalog', id),
   check: (id, sql) => ipcRenderer.invoke('db-check', id, sql),
+  whoami: (id, schema, table) => ipcRenderer.invoke('db-whoami', id, schema, table),
+  onCall: (cb) => ipcRenderer.on('db-call', (_, data) => cb(data)),
 });
 
 contextBridge.exposeInMainWorld('maven', {

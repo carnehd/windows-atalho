@@ -1008,3 +1008,167 @@ button.db-sql-problem:not(:disabled):hover {
     overflow: visible;
   }
 }
+
+/* Calls: what the page asks of the database, under the table: each statement, how long it took, its rows or its error */
+.db-calls-btn.on {
+  background: var(--bg-hover);
+}
+.db-calls-btn.bad {
+  border-color: var(--red);
+  color: var(--red);
+}
+.db-calls-n {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  font-size: var(--fs-caption);
+}
+.db-calls-n:empty {
+  display: none;
+}
+.db-calls {
+  flex: none;
+  margin: 0 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  overflow: hidden;
+}
+.db-calls.hidden {
+  display: none;
+}
+.db-calls-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+  font-size: var(--fs-small);
+}
+.db-calls-sum {
+  color: var(--text-muted);
+}
+.db-calls-space {
+  flex: 1;
+}
+.db-calls-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.db-calls-body {
+  max-height: 210px;
+  overflow: auto;
+  padding: 4px 0;
+  font-size: var(--fs-caption);
+}
+.db-calls-empty {
+  padding: 8px 10px;
+  color: var(--text-muted);
+}
+.db-calls-group {
+  padding: 7px 10px 2px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.db-call {
+  padding: 0 10px;
+}
+.db-call-main {
+  display: grid;
+  grid-template-columns: 62px 58px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: baseline;
+  padding: 2px 0;
+  font-family: var(--font-mono);
+  cursor: pointer;
+}
+.db-call.quiet .db-call-main,
+.db-call.info .db-call-main {
+  color: var(--text-muted);
+}
+.db-call.info .db-call-main {
+  font-style: italic;
+}
+.db-call-ts,
+.db-call-ms,
+.db-call-res {
+  color: var(--text-muted);
+}
+.db-call.bad .db-call-res {
+  color: var(--red);
+  font-weight: 600;
+}
+.db-call-sql {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.db-call.open .db-call-sql {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.db-call-extra {
+  display: none;
+  margin-left: 128px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+.db-call.open .db-call-extra {
+  display: block;
+}
+.db-call-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  margin: 2px 0 6px 128px;
+}
+.db-call-msg {
+  color: var(--red);
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.db-call-more {
+  color: var(--text-muted);
+}
+.db-calls-check {
+  max-height: 200px;
+  margin: 8px 10px;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+}
+.db-calls-check-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.db-calls-check-title {
+  font-weight: 600;
+}
+.db-calls-reading {
+  margin: 2px 0;
+  line-height: 1.5;
+}
+.db-calls-check-item {
+  margin-top: 6px;
+}
+.db-calls-check-label {
+  color: var(--text-muted);
+}
+.db-calls-check-row {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}

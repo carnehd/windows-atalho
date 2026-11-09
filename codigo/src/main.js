@@ -585,7 +585,7 @@ app.whenReady().then(() => {
   terminal = registerTerminal({ isKnownRepo, getWindow: () => mainWindow });
   registerIdeOpen({ isKnownRepo });
   bruno = registerBruno({ isKnownRepo, getWindow: () => mainWindow, savedDir: path.join(DATA_DIR, 'saved-requests'), cliHome: path.join(DATA_DIR, 'bruno-cli'), onRequest: (url) => serviceMap && serviceMap.noteClient('Bruno', url) });
-  registerDb({ dataDir: DATA_DIR });
+  registerDb({ dataDir: DATA_DIR, getWindow: () => mainWindow });
   // Database > New database: a database, its schema and its users in a local PostgreSQL (a container, or a pod)
   registerNewDatabase({ getWindow: () => mainWindow, copySecret });
   // Git > Pull requests: the pull requests of a repository, asked to GitHub with a token kept encrypted in data/, or
