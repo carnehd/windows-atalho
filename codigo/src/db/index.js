@@ -29,6 +29,9 @@ function registerDb({ dataDir }) {
   ipcMain.handle('db-columns', guard(async (use, id, schema, table) => pg.columns(use(store.get(id)), String(schema), String(table))));
   ipcMain.handle('db-rows', guard(async (use, id, schema, table, opts) => pg.rows(use(store.get(id)), String(schema), String(table), opts || {})));
   ipcMain.handle('db-query', guard(async (use, id, sql) => pg.query(use(store.get(id)), String(sql || '').slice(0, 100000))));
+  // for the SQL tab: the names to offer and check, and the query checked by PostgreSQL without running it
+  ipcMain.handle('db-catalog', guard(async (use, id) => pg.catalog(use(store.get(id)))));
+  ipcMain.handle('db-check', guard(async (use, id, sql) => pg.check(use(store.get(id)), String(sql || '').slice(0, 100000))));
 }
 
 module.exports = { registerDb };

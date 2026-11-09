@@ -175,6 +175,7 @@
   flex-direction: column;
   gap: 8px;
   padding: 10px 0 12px;
+  overflow-y: auto;
 }
 .db-head {
   flex: none;
@@ -334,9 +335,286 @@ button.db-col:hover .db-col-name {
   align-items: center;
   gap: 10px;
 }
+/* Write / Build */
+.db-sql-top {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.db-sql-top .seg {
+  margin-left: auto;
+}
+/* Write: the text over its coloured copy (same font, padding and width), the names offered under the cursor */
+.db-sql-edit {
+  position: relative;
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+}
+.db-sql-edit .db-sql-text {
+  position: relative;
+  z-index: 1;
+  display: block;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--text);
+}
+.db-sql-edit .db-sql-text::placeholder {
+  color: var(--text-dim);
+}
+.db-sql-edit .db-sql-text::selection {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+  color: transparent;
+}
+.db-sql-hl {
+  position: absolute;
+  top: 0;
+  left: 0;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  overflow: hidden;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  pointer-events: none;
+}
+.db-sql-hl .k {
+  color: var(--accent);
+}
+.db-sql-hl .f {
+  color: color-mix(in srgb, var(--mauve) 75%, var(--text));
+}
+.db-sql-hl .s {
+  color: color-mix(in srgb, var(--green) 65%, var(--text));
+}
+.db-sql-hl .n {
+  color: color-mix(in srgb, var(--orange) 70%, var(--text));
+}
+.db-sql-hl .c {
+  color: var(--text-dim);
+  font-style: italic;
+}
+.db-sql-hl .bad {
+  text-decoration: underline wavy var(--red);
+  text-decoration-skip-ink: none;
+  text-underline-offset: 3px;
+}
+.db-ac {
+  position: absolute;
+  z-index: 5;
+  min-width: 260px;
+  max-width: min(460px, 100%);
+  max-height: 228px;
+  overflow-y: auto;
+  padding: 4px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
+  font-size: var(--fs-small);
+}
+.db-ac-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.db-ac-item:hover {
+  background: var(--bg-hover);
+}
+.db-ac-item[aria-selected='true'] {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.db-ac-kind {
+  flex: none;
+  width: 16px;
+  border-radius: 3px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-align: center;
+}
+.db-ac-column {
+  color: var(--accent);
+}
+.db-ac-keyword {
+  color: var(--text-dim);
+}
+.db-ac-name {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.db-ac-detail {
+  margin-left: auto;
+  padding-left: 14px;
+  color: var(--text-dim);
+  font-size: var(--fs-caption);
+  white-space: nowrap;
+}
+/* under the text: what is wrong (a click goes there), or what PostgreSQL said */
+.db-sql-check {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 18px;
+  font-size: var(--fs-small);
+}
+.db-sql-problem {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--red);
+  font: inherit;
+  font-size: var(--fs-small);
+  text-align: left;
+}
+button.db-sql-problem:not(:disabled) {
+  cursor: pointer;
+}
+button.db-sql-problem:not(:disabled):hover {
+  text-decoration: underline;
+}
+.db-sql-good {
+  color: color-mix(in srgb, var(--green) 65%, var(--text));
+}
+/* Build: a row a block, the SQL under them */
+.db-build {
+  display: flex;
+  flex-direction: column;
+  padding: 2px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+}
+.db-build-row {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.db-build-row:last-child {
+  border-bottom: none;
+}
+.db-build-key {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+.db-build-line,
+.db-build-more,
+.db-build-cond {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.db-build-cond {
+  flex-wrap: nowrap;
+}
+.db-build .input {
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: var(--fs-small);
+}
+.db-build select.input {
+  padding-right: 26px;
+}
+.db-build-value {
+  width: 150px;
+  font-family: var(--font-mono);
+}
+.db-build-num {
+  width: 80px;
+}
+.db-build-fixed {
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+}
+.db-chip {
+  padding: 2px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--btn-bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  line-height: 20px;
+  cursor: pointer;
+}
+.db-chip:hover {
+  background: var(--bg-hover);
+}
+.db-chip[aria-pressed='true'] {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+  color: var(--accent);
+}
+.db-build-more .db-chip:not([aria-pressed]),
+.db-build-line > .db-chip:not([aria-pressed]) {
+  border-style: dashed;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+}
+.db-build-x {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--text-dim);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.db-build-x:hover {
+  background: var(--bg-hover);
+  color: var(--red);
+}
+.db-build-sql {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+.db-build-sql .k {
+  color: var(--accent);
+}
+.db-build-sql .f {
+  color: color-mix(in srgb, var(--mauve) 75%, var(--text));
+}
+.db-build-sql .s {
+  color: color-mix(in srgb, var(--green) 65%, var(--text));
+}
+.db-build-sql .n {
+  color: color-mix(in srgb, var(--orange) 70%, var(--text));
+}
+.db-build-sql .bad {
+  text-decoration: underline wavy var(--red);
+  text-underline-offset: 3px;
+}
 .db-sql-out {
   flex: 1;
-  min-height: 0;
+  min-height: 180px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -365,6 +643,60 @@ button.db-col:hover .db-col-name {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+/* New connection and Delete, side by side under the list */
+.db-conn-side-actions {
+  display: flex;
+  gap: 6px;
+}
+.db-conn-side-actions #dbConnNewBtn {
+  flex: 1;
+  min-width: 0;
+}
+/* a connection of the list: its name, and the icon that makes a copy of it (the same values, a new one not saved yet) */
+.db-conn-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 5px;
+}
+.db-conn-row:hover {
+  background: var(--bg-hover);
+}
+.db-conn-row:has(.bru-env-item.on) {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.db-conn-row .bru-env-item {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  box-shadow: none;
+}
+.db-conn-dup {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-right: 2px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--text-dim);
+  opacity: 0.7;
+  cursor: pointer;
+}
+.db-conn-dup svg {
+  width: 15px;
+  height: 15px;
+}
+.db-conn-dup:hover,
+.db-conn-dup:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text);
+  opacity: 1;
 }
 .db-conn-form {
   display: flex;

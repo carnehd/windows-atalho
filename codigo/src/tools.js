@@ -250,7 +250,7 @@ async function listening(onlyPort) {
 async function endProcess(pid) {
   const id = Number(pid);
   if (!Number.isInteger(id) || id <= 4) throw new Error('Unknown process');
-  if (id === process.pid || id === process.ppid) throw new Error('That is Git Quick itself');
+  if (id === process.pid || id === process.ppid) throw new Error('That is QuickDeck itself');
   if (shell.IS_WIN) {
     const r = await run('taskkill', ['/PID', String(id), '/T', '/F']);
     if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim() || 'It could not be ended');

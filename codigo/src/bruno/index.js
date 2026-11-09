@@ -31,7 +31,7 @@ async function dotEnvInGit(root) {
   return (await gitOk(root, ['rev-parse', '--is-inside-work-tree'])) ? 'open' : null;
 }
 
-// savedDir: the app's own folder of requests saved from here (Save in Git Quick); cliHome: where Install puts the Bruno
+// savedDir: the app's own folder of requests saved from here (Save in QuickDeck); cliHome: where Install puts the Bruno
 // CLI
 // onRequest: told the address of each request sent (Analysis > Calls between microservices shows Bruno calling it)
 function registerBruno({ isKnownRepo, getWindow, savedDir, cliHome, onRequest = null }) {
@@ -186,7 +186,7 @@ function registerBruno({ isKnownRepo, getWindow, savedDir, cliHome, onRequest = 
     const shellEnv = await shell.loginShellEnv();
     const child = spawn(cli.node, args, {
       cwd: root,
-      // the one Git Quick installed: run by the app itself, as Node
+      // the one QuickDeck installed: run by the app itself, as Node
       env: { ...shellEnv, FORCE_COLOR: '0', NO_COLOR: '1', ...(cli.electronNode ? { ELECTRON_RUN_AS_NODE: '1' } : {}) },
       detached: !shell.IS_WIN,
       windowsHide: true,

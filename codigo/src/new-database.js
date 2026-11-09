@@ -87,7 +87,7 @@ function sqlFor(v) {
   ];
   return [
     `-- A database for a microservice: its schema, a user that makes the tables (${v.ddlUser}) and one for the application (${v.dmlUser}).`,
-    '-- Written by Git Quick. What is there already is kept as it is, so it can run again.',
+    '-- Written by QuickDeck. What is there already is kept as it is, so it can run again.',
     '\\set ON_ERROR_STOP on',
     '',
     '\\echo Users',
@@ -158,7 +158,7 @@ function scriptsFor(target, sql) {
     exec = (pod) => `${base} exec -it ${pod} -n ${V(target.namespace)} --`;
   } else exec = () => `${V(target.engine)} exec -it ${V(target.container)}`;
   const powershell = [
-    '# A database for a microservice (written by Git Quick): run it all, in the same PowerShell',
+    '# A database for a microservice (written by QuickDeck): run it all, in the same PowerShell',
     "$sql = @'",
     sql,
     "'@",
@@ -168,7 +168,7 @@ function scriptsFor(target, sql) {
     `${exec('$pod')} sh -c "echo '$encoded' | base64 -d | ${psql}"`,
   ].join('\n');
   const bash = [
-    '# A database for a microservice (written by Git Quick): run it all, in the same shell',
+    '# A database for a microservice (written by QuickDeck): run it all, in the same shell',
     "encoded=$(base64 <<'SQL' | tr -d '\\n'",
     sql,
     'SQL',

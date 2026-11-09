@@ -1,4 +1,41 @@
 // Help / cheat sheet view. Relies on helpers from app.js and vault.js ($, $$, vEl, copyable, copyText, noteEl).
+// The script of "New database" under "Start services": it is one command of several lines, the way the app writes it.
+const START_DB_SCRIPT = String.raw`encoded=$(base64 <<'SQL' | tr -d '\n'
+-- A database for a microservice: its schema, a user that makes the tables (user_ddl) and one for the application (user_dml).
+-- What is there already is kept as it is, so it can run again.
+\set ON_ERROR_STOP on
+
+\echo Users
+SELECT 'DDL user user_ddl: there already, kept as it is (its password too)' WHERE EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'user_ddl');
+SELECT format('CREATE USER %I WITH PASSWORD %L', 'user_ddl', '<ddl-password>') WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'user_ddl') \gexec
+SELECT 'DML user user_dml: there already, kept as it is (its password too)' WHERE EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'user_dml');
+SELECT format('CREATE USER %I WITH PASSWORD %L', 'user_dml', '<dml-password>') WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'user_dml') \gexec
+
+\echo Database
+SELECT 'database <database>: there already, kept as it is' WHERE EXISTS (SELECT 1 FROM pg_database WHERE datname = '<database>');
+SELECT format('CREATE DATABASE %I OWNER %I', '<database>', 'user_ddl') WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = '<database>') \gexec
+REVOKE ALL ON DATABASE "<database>" FROM PUBLIC;
+\connect "<database>"
+
+\echo Schema and permissions
+CREATE SCHEMA IF NOT EXISTS "<schema>";
+REVOKE ALL ON SCHEMA "<schema>" FROM PUBLIC;
+GRANT ALL PRIVILEGES ON SCHEMA "<schema>" TO "user_ddl";
+GRANT ALL PRIVILEGES ON DATABASE "<database>" TO "user_ddl";
+GRANT CONNECT ON DATABASE "<database>" TO "user_dml";
+GRANT USAGE ON SCHEMA "<schema>" TO "user_dml";
+-- the DML user: the rows of the tables only
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA "<schema>" TO "user_dml";
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA "<schema>" TO "user_dml";
+ALTER DEFAULT PRIVILEGES FOR ROLE "user_ddl" IN SCHEMA "<schema>" GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO "user_dml";
+ALTER DEFAULT PRIVILEGES FOR ROLE "user_ddl" IN SCHEMA "<schema>" GRANT USAGE, SELECT ON SEQUENCES TO "user_dml";
+
+\echo Done
+SQL
+)
+
+docker exec -it postgres-local sh -c "echo '$encoded' | base64 -d | psql -X -U postgres -d postgres"`;
+
 const HELP = [
   {
     name: 'Maven',
@@ -160,6 +197,34 @@ const HELP = [
         ['podman kube generate <pod> > pod.yaml', 'Export a pod as Kubernetes YAML'],
         ['podman kube play pod.yaml', 'Run Kubernetes YAML locally'],
         ['podman compose up -d', 'Run a docker-compose file with Podman'],
+      ]],
+    ],
+  },
+  {
+    // The containers a microservice needs on this computer. Replace <service> with the name of the repository: the label
+    // marks the container as made for it, which is how Local setup finds it again to stop or remove it.
+    name: 'Start services',
+    groups: [
+      ['Redis', [
+        ['docker run -d --name redis-local --label git-quick.local-setup=<service> -p 127.0.0.1:6379:6379 docker.io/library/redis:7-alpine redis-server --save --appendonly no', 'Start Redis on port 6379'],
+        ['docker exec redis-local redis-cli ping', 'Ready when it answers PONG'],
+      ]],
+      ['Grafana: logs, traces and metrics (OpenTelemetry LGTM)', [
+        ['docker run -d --name lgtm-local --label git-quick.local-setup=<service> -p 127.0.0.1:4318:4318 -p 127.0.0.1:4317:4317 -p 127.0.0.1:3000:3000 docker.io/grafana/otel-lgtm:latest', 'Start Grafana (http://localhost:3000); the services send to 4317 (gRPC) or 4318 (HTTP)'],
+        ["docker exec lgtm-local sh -c 'test -f /tmp/ready'", 'Ready when it ends with no error'],
+      ]],
+      ['Pub/Sub emulator', [
+        ['docker run -d --name pubsub-local --label git-quick.local-setup=<service> -p 127.0.0.1:8085:8085 gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators gcloud beta emulators pubsub start --project=local --host-port=0.0.0.0:8085', 'Start the emulator on port 8085, project local'],
+        ['docker exec pubsub-local curl -sf http://localhost:8085/', 'Ready when it answers Ok'],
+        ['docker exec pubsub-local curl -sf -X PUT http://localhost:8085/v1/projects/local/topics/log-operacoes-evento-local', 'Create the topic'],
+        ["docker exec pubsub-local curl -sf -X PUT -H 'Content-Type: application/json' -d '{\"topic\":\"projects/local/topics/log-operacoes-evento-local\"}' http://localhost:8085/v1/projects/local/subscriptions/ver", 'Create a subscription to view the messages'],
+        ["docker exec pubsub-local curl -sf -X POST -H 'Content-Type: application/json' -d '{\"maxMessages\":10,\"returnImmediately\":true}' http://localhost:8085/v1/projects/local/subscriptions/ver:pull", 'View the messages waiting (the text of each one is in base64, in data); not acknowledged, they come back after 10 seconds'],
+        ['PUBSUB_EMULATOR_HOST=localhost:8085 PUBSUB_PROJECT_ID=local', 'Set these in the service (its Env) so that it publishes to the emulator; without them it tries the real Google Pub/Sub'],
+      ]],
+      ['New database (Postgres)', [
+        ['docker run -d --name postgres-local --label git-quick.local-setup=<service> -p 127.0.0.1:5432:5432 -e POSTGRES_PASSWORD=postgres docker.io/library/postgres:16-alpine', 'Start Postgres on port 5432'],
+        ['docker exec postgres-local pg_isready -U postgres', 'Ready when it answers accepting connections'],
+        [START_DB_SCRIPT, 'Make the database of a microservice: its schema, a user that makes the tables (user_ddl) and one for the application (user_dml). Run all of it in the same shell. What exists is kept, so it can run again. New database, on the Database page, writes and runs it for you'],
       ]],
     ],
   },
@@ -408,14 +473,18 @@ function renderHelpCategories(q) {
 // also has Edit and Delete.
 function helpRow(cmd, desc, mine = null) {
   const row = vEl('div', `help-row${mine ? ' mine' : ''}`);
+  // A script of several lines does not fit the one line of the terminal: it is copied and pasted in a shell instead.
+  const multi = cmd.includes('\n');
   const send = vEl('button', 'icon-action help-to-term');
   send.type = 'button';
-  send.title = 'Put it in the terminal below';
-  send.setAttribute('aria-label', `Put ${cmd} in the terminal`);
+  send.title = multi ? 'Several lines: copy it and paste it in a terminal' : 'Put it in the terminal below';
+  send.setAttribute('aria-label', multi ? 'This command has several lines: copy it instead' : `Put ${cmd} in the terminal`);
   send.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7l5 5l-5 5"/><path d="M12 19h7"/></svg>';
-  send.addEventListener('click', () => putInTerminal(cmd));
-  const code = vEl('code', 'help-cmd', cmd);
-  copyable(code, 'Click to copy', () => copyText(cmd, 'Command'));
+  if (multi) send.disabled = true;
+  else send.addEventListener('click', () => putInTerminal(cmd));
+  const code = vEl('code', `help-cmd${multi ? ' multi' : ''}`, cmd);
+  // a long command is cut by the row: the tooltip carries all of it (a script of several lines, only what a click does)
+  copyable(code, multi ? 'Click to copy the whole script' : cmd.length > 70 ? `Click to copy:\n${cmd}` : 'Click to copy', () => copyText(cmd, 'Command'));
   row.append(send, code, vEl('span', 'help-desc', desc));
   if (mine) {
     const actions = vEl('div', 'help-mine-actions');

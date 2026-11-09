@@ -37,6 +37,7 @@ const { registerGithub } = require('./github');
 const { registerAgentReview } = require('./agent-review');
 const { registerLocalSetup } = require('./local-setup');
 const { registerConsoleAnalysis } = require('./console-analysis');
+const { registerAgentConsole } = require('./agent-console');
 const { registerContainerMessages } = require('./container-messages');
 const { stepBack } = require('./shell');
 const { registerSignInWindows } = require('./sign-in-window');
@@ -91,7 +92,7 @@ let mainWindow = null;
 let tray = null;
 let dialogOpen = false;
 let vault = null;
-const MODES = ['git', 'pulls', 'vault', 'logs', 'docker', 'clip', 'todo', 'help', 'tools', 'analysis', 'search'];
+const MODES = ['git', 'pulls', 'vault', 'logs', 'docker', 'clip', 'todo', 'help', 'tools', 'analysis', 'search', 'agent'];
 let clipHistory = null;
 let fgWatcher = null;
 let windowMode = MODES.includes(store.get('uiState', {}).mode) ? store.get('uiState', {}).mode : 'git';
@@ -185,7 +186,7 @@ const prettyHotkey = (accelerator) => accelerator.split('+').map((part) => MODIF
 function updateTrayTooltip() {
   if (!tray) return;
   const set = Object.keys(hotkeys).filter((n) => hotkeys[n]);
-  tray.setToolTip(`Git Quick (${set.map((n) => `${HOTKEY_LABELS[n]}: ${prettyHotkey(hotkeys[n])}`).join(', ')})`.slice(0, 127));
+  tray.setToolTip(`QuickDeck (${set.map((n) => `${HOTKEY_LABELS[n]}: ${prettyHotkey(hotkeys[n])}`).join(', ')})`.slice(0, 127));
 }
 
 function copySecret(text) {
@@ -615,6 +616,8 @@ app.whenReady().then(() => {
     loadRunEnv: (repoPath) => store.get('mavenRunEnv', {})[pathKey(String(repoPath))],
     loadContainer: (repoPath) => store.get('mavenContainer', {})[pathKey(String(repoPath))],
   });
+  // consola-agente: a conversation with Claude CLI in a project folder, and what it does as it does it
+  registerAgentConsole({ getWindow: () => mainWindow, isKnownRepo, withDialog });
   registerUpdates({ getWindow: () => mainWindow });
   maven = registerMaven({
     isKnownRepo,

@@ -1,7 +1,7 @@
 // -- Start in container: the jar Maven builds, run by Docker or Podman in a Java image, with nothing added to the
 // microservice's folder. Run with it chosen opens a dialog with what the container needs (the image, its name, the
-// port, debug, build first, the values of the Values button, this PC's proxy, more options of the run, the variables as
-// Env has them), the command it runs under them (Copy gives it with the values, for a terminal); Start saves them for
+// port, debug, build first, the values of the Values button, this PC's proxy, more options of the run, the variables:
+// Env's, or with From Env those application.yml reads, with their defaults), the command it runs under them (Copy gives it with the values, for a terminal); Start saves them for
 // the repository and runs it, its output in the page (maven.js). --
 let mvnContainerSpec = null; // what the dialog starts with (from the page's info): saved for the repository, or defaults
 let mcRows = []; // the variables of the dialog, { name, value, enabled }: the table changes them in place
@@ -60,7 +60,7 @@ function mvnContainerModal() {
         <span class="mv-gap"></span>
         <button id="mcCopyVars" class="btn btn-sm" type="button" title="Copy these variables, to paste them in another microservice (as NAME=value lines; left out of the clipboard history)">Copy</button>
         <button id="mcPasteVars" class="btn btn-sm" type="button" title="Paste the variables copied, or NAME=value lines copied anywhere: a name already here takes the new value">Paste</button>
-        <button id="mcFromEnv" class="btn btn-sm" type="button" title="The variables of Env, in place of these">From Env</button>
+        <button id="mcFromEnv" class="btn btn-sm" type="button" title="In place of these: the variables application.yml reads (\${NAME:default}) with their defaults, Env's value over them, and Env's other variables. localhost becomes the name the container reaches this PC by">From Env</button>
       </div>
       <div id="mcVars" class="me-vars mc-vars" role="group" aria-label="Environment variables of the container" aria-describedby="mcNote"></div>
       <p id="mcNote" class="me-note" aria-live="polite"></p>
@@ -116,10 +116,7 @@ function mvnContainerModal() {
   $('#mcCancel').addEventListener('click', closeMvnContainer);
   $('#mcStart').addEventListener('click', startMvnContainer);
   $('#mcCopy').addEventListener('click', copyMvnContainer);
-  $('#mcFromEnv').addEventListener('click', () => {
-    mcRows = mvnRunEnv.vars.map((v) => ({ name: v.name, value: v.value, enabled: v.enabled !== false }));
-    drawMcRows(0, 'Taken from Env.');
-  });
+  $('#mcFromEnv').addEventListener('click', takeMcFromEnv);
   $('#mcCopyVars').addEventListener('click', () => copyMvnEnvRows(mcRows));
   $('#mcPasteVars').addEventListener('click', async () => {
     const vars = await mvnEnvToPaste();
@@ -169,6 +166,65 @@ function drawMcRows(focusAt, done = '') {
 }
 
 const renderMcNote = (done = '') => renderEnvRowsNote($('#mcVars'), $('#mcNote'), mcRows, done);
+
+// localhost (or 127.0.0.1) as the host of a value: inside the container it is the container itself
+const mcReachHost = (value, host) => String(value).replace(/(^|[^\w.-])(localhost|127\.0\.0\.1)(?![\w-]|\.\w)/g, (_, before) => before + host);
+
+// From Env: the variables the microservice's own application.yml / .properties read (${NAME:default}), with their
+// defaults; Env's value over one it has switched on, and Env's other variables after them. localhost in a value becomes
+// the name the container reaches this PC by. SERVER_PORT, and a variable only server.port reads, are left out: the Port
+// field gives SERVER_PORT, which Spring puts over server.port.
+async function takeMcFromEnv() {
+  const repo = mvnRepo;
+  if (!repo) return;
+  const [table, info] = await Promise.all([
+    window.maven.envValues(repo).catch(() => null),
+    mcEngine ? null : window.maven.containerInfo(repo).catch(() => null),
+  ]);
+  if (repo !== mvnRepo || $('#mvnContainerModal').classList.contains('hidden')) return;
+  const engine = (mcEngine && mcEngine.name) || (info && info.engine && info.engine.name);
+  const host = engine === 'podman' ? 'host.containers.internal' : 'host.docker.internal';
+  const ok = table && !table.error;
+  const files = ok ? (table.files || []).filter((f) => f.env === 'local') : [];
+  const read = files.filter((f) => !f.error).map((f) => f.file);
+  const broken = files.find((f) => f.error);
+  const port = mvnEnvKey('SERVER_PORT');
+  const found = (ok && table.placeholders ? table.placeholders : []).filter((p) => mvnEnvKey(p.name) !== port && !p.keys.every((k) => k === 'server.port'));
+  const rows = found.map((p) => ({ name: p.name, value: p.def ?? '', enabled: true }));
+  const noDefault = found.filter((p) => p.def === null).map((p) => p.name);
+  let over = 0;
+  let more = 0;
+  for (const v of mvnRunEnv.vars) {
+    const on = v.enabled !== false;
+    const row = rows.find((r) => mvnEnvKey(r.name) === mvnEnvKey(v.name));
+    if (row && on) {
+      row.value = v.value;
+      over += 1;
+    } else if (!row) {
+      rows.push({ name: v.name, value: v.value, enabled: on });
+      more += 1;
+    }
+  }
+  const moved = [];
+  for (const r of rows) {
+    const value = mcReachHost(r.value, host);
+    if (value !== r.value) {
+      r.value = value;
+      moved.push(r.name);
+    }
+  }
+  mcRows = rows;
+  const where = read.join(' and ') || 'application.yml';
+  const fromEnv = [over && `${over} with Env's value`, more && `${more} more from Env`].filter(Boolean).join(', ');
+  const parts = [
+    broken ? `${broken.file} could not be read (${broken.error}).` : '',
+    found.length
+      ? `From ${where}: ${plural(found.length, 'variable')}${noDefault.length ? ` (${noDefault.length} with no default, give ${noDefault.length > 1 ? 'them' : 'it'} a value: ${noDefault.join(', ')})` : ''}${fromEnv ? `; ${fromEnv}` : ''}.`
+      : `No \${NAME} in ${where}: taken from Env.`,
+    moved.length ? `localhost is ${host} in ${moved.join(', ')}.` : '',
+  ];
+  drawMcRows(0, parts.filter(Boolean).join(' '));
+}
 
 // What the dialog says: the fields, and the variables as they are saved.
 function mcSpec() {

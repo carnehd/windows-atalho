@@ -2,9 +2,12 @@
 data/
 codigo/data/
 
-# Built files: GitQuick.exe is published in GitHub Releases, not kept in the repository
+# Built files: the QuickDeck exe is published in GitHub Releases, not kept in the repository
 *.exe
 codigo/dist/
 
 # Dependencies
 codigo/node_modules/
+
+# macOS
+.DS_Store

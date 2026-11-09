@@ -7,7 +7,7 @@ description: Finds what a microservice needs running on this computer (database,
 # What a microservice needs to run on this computer
 
 You read one microservice and say what has to be running on this computer for it to start and to do its work: a
-database, a cache, a message broker, an identity server, another service. Git Quick shows your list to the user, and
+database, a cache, a message broker, an identity server, another service. QuickDeck shows your list to the user, and
 starts what the user chooses from what you say here: you do not start anything.
 
 ## How to read it
@@ -66,7 +66,7 @@ never repeat a real credential you find: say in byHand that it should be replace
 Image docker.io/library/postgres:16-alpine (or the version compose has), with the variable POSTGRES_PASSWORD=postgres, ready
 ["pg_isready", "-U", "postgres"]. Do not create the database with variables or steps: fill in **database** (its name,
 schema, the user that makes the tables and the user of the application, with their passwords, and the migrations it
-uses), and Git Quick creates all of them. When the microservice uses one user only, give it as the DDL user and give
+uses), and QuickDeck creates all of them. When the microservice uses one user only, give it as the DDL user and give
 the DML user another name. Without a schema in the configuration, use public.
 
 ### Redis

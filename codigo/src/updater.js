@@ -1,7 +1,9 @@
-// -- Updates of Git Quick: the latest release on GitHub, its GitQuick-<version>.zip downloaded into the folder the exe
-// runs from, and the GitQuick-<version>.exe in it taken out next to the zip. The data folder stays as it is: the new
+// -- Updates of QuickDeck: the latest release on GitHub, its QuickDeck-<version>.zip downloaded into the folder the exe
+// runs from, and the QuickDeck-<version>.exe in it taken out next to the zip. The data folder stays as it is: the new
 // exe, in the same folder, uses it. Opening the new one closes this one first (two would fight over the global
-// shortcuts, and the second would only bring the first forward). --
+// shortcuts, and the second would only bring the first forward). The app was called Git Quick before: the names of
+// then are still read, and each release also carries its zip as GitQuick-<version>.zip for the copies of Git Quick,
+// which look only for that name (LEIA-ME). --
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
@@ -12,8 +14,11 @@ const { downloadFile, unzip, rename } = require('./download');
 const REPO = 'carnehd/windows-atalho';
 const IS_WIN = process.platform === 'win32';
 const VERSION = /^\d+\.\d+\.\d+$/;
-const zipName = (v) => `GitQuick-${v}.zip`;
-const exeName = (v) => `GitQuick-${v}.exe`;
+const zipName = (v) => `QuickDeck-${v}.zip`;
+const exeName = (v) => `QuickDeck-${v}.exe`;
+// the names from when the app was Git Quick
+const oldZipNames = (v) => [`GitQuick-${v}.zip`, 'GitQuick.zip'];
+const oldExeNames = (v) => [`GitQuick-${v}.exe`, 'GitQuick.exe'];
 
 // a test serves a release from this computer and gives the folder (never in the exe)
 const dev = (name) => (app.isPackaged ? '' : process.env[name] || '');
@@ -72,7 +77,7 @@ function redirectOf(url, ms = 20000) {
   });
 }
 
-// The latest release: its version, notes and zip (GitQuick-<version>.zip; GitQuick.zip in the releases before it).
+// The latest release: its version, notes and zip (QuickDeck-<version>.zip; the Git Quick names in the releases before it).
 async function latestRelease() {
   try {
     const res = await fetchWithin(apiUrl(), { headers: { Accept: 'application/vnd.github+json' } });
@@ -81,7 +86,7 @@ async function latestRelease() {
     const version = String(r.tag_name || '').replace(/^v/, '');
     if (!VERSION.test(version)) throw new Error(`the latest release is called ${String(r.tag_name).slice(0, 40)}`);
     const assets = Array.isArray(r.assets) ? r.assets : [];
-    const asset = assets.find((a) => a.name === zipName(version)) || assets.find((a) => a.name === 'GitQuick.zip');
+    const asset = [zipName(version), ...oldZipNames(version)].map((n) => assets.find((a) => a.name === n)).find(Boolean);
     const sha = /^sha256:([0-9a-f]{64})$/i.exec(String((asset && asset.digest) || ''));
     return {
       version,
@@ -134,21 +139,21 @@ async function download(progress = () => {}) {
     if (!latest.asset) throw new Error(`The release ${v} has no ${zipName(v)}`);
     const zip = path.join(folder, zipName(v));
     const part = `${zip}.part`;
-    const tmp = path.join(folder, `.gitquick-update-${v}`);
+    const tmp = path.join(folder, `.quickdeck-update-${v}`);
     clean = () => {
       fs.rmSync(part, { force: true });
       fs.rmSync(tmp, { recursive: true, force: true });
     };
     clean();
-    const what = `Git Quick ${v}`;
+    const what = `QuickDeck ${v}`;
     await downloadFile(latest.asset.url, part, { what, size: latest.asset.size, sha256: latest.asset.sha256, progress: (p) => progress({ phase: 'download', ...p }) });
     await rename(part, zip);
     progress({ phase: 'unpack' });
     fs.mkdirSync(tmp, { recursive: true });
     await unzip(zip, tmp, what);
     const inside = fs.readdirSync(tmp).filter((f) => /\.exe$/i.test(f));
-    const pick = inside.find((f) => f === exeName(v)) || inside.find((f) => f === 'GitQuick.exe') || (inside.length === 1 ? inside[0] : null);
-    if (!pick) throw new Error(`The zip of ${what} has no GitQuick exe in it`);
+    const pick = [exeName(v), ...oldExeNames(v)].find((n) => inside.includes(n)) || (inside.length === 1 ? inside[0] : null);
+    if (!pick) throw new Error(`The zip of ${what} has no QuickDeck exe in it`);
     await rename(path.join(tmp, pick), exe);
     return { version: v, exe, zip };
   } finally {

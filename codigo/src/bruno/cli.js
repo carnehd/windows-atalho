@@ -43,7 +43,7 @@ const newer = (a, b) => {
   return false;
 };
 
-// The one Git Quick installs: @usebruno/cli and its packages in a zip on the app's GitHub releases (made with npm, with
+// The one QuickDeck installs: @usebruno/cli and its packages in a zip on the app's GitHub releases (made with npm, with
 // no install scripts run; maps, types and readmes left out), checked against this SHA-256 before it is unpacked. It runs
 // with the app's own Node (Electron as Node), so the computer needs neither Node.js nor npm.
 const BUNDLE = {
@@ -63,7 +63,7 @@ function bundledCli(home) {
   if (!home) return null;
   const dir = path.join(home, 'node_modules', '@usebruno', 'cli');
   const version = cliVersion(dir);
-  return version ? { ok: true, node: process.execPath, electronNode: true, dir, version, from: "Git Quick's data folder" } : null;
+  return version ? { ok: true, node: process.execPath, electronNode: true, dir, version, from: "QuickDeck's data folder" } : null;
 }
 
 let cliFound = null;
@@ -106,7 +106,7 @@ async function findCli(again = false) {
     }
   }
   if (best && node) return (cliFound = { ok: true, node, ...best });
-  // the one Git Quick installed: after those, which the user chose
+  // the one QuickDeck installed: after those, which the user chose
   const own = bundledCli(cliHome);
   if (own) return (cliFound = own);
   cliFound = null;
@@ -127,7 +127,7 @@ let installing = false;
 async function installCli(progress = () => {}) {
   if (installing) throw new Error('The Bruno CLI is being installed already');
   const home = cliHome;
-  if (!home) throw new Error('Git Quick does not know where to put the Bruno CLI');
+  if (!home) throw new Error('QuickDeck does not know where to put the Bruno CLI');
   installing = true;
   const zip = `${home}.zip.part`;
   const part = `${home}.part`;

@@ -365,7 +365,7 @@ function clientName(program, command) {
   if (/insomnia/i.test(all)) return 'Insomnia';
   if (/^curl(\.exe)?$/i.test(program || '')) return 'curl';
   if (/chrome|firefox|safari|msedge|brave|opera|vivaldi/i.test(all)) return 'Browser';
-  if (/git[ -]?quick/i.test(all)) return 'Git Quick';
+  if (/quick[ -]?deck|git[ -]?quick/i.test(all)) return 'QuickDeck';
   if (/idea|intellij/i.test(all)) return 'IntelliJ';
   if (/^javaw?(\.exe)?$/i.test(program || '')) return 'A Java program';
   return String(program || 'A program').replace(/\.exe$/i, '');

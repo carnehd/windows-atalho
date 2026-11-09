@@ -41,7 +41,7 @@ function localSetupModal() {
   modal.innerHTML = `
     <div class="settings-card ls-card" role="dialog" aria-modal="true" aria-labelledby="lsTitle">
       <h3 id="lsTitle">Local setup</h3>
-      <p class="mv-sub">What this microservice needs running on this computer. The agent only reads the code and makes the list; Git Quick starts what you choose, in containers of this computer.</p>
+      <p class="mv-sub">What this microservice needs running on this computer. The agent only reads the code and makes the list; QuickDeck starts what you choose, in containers of this computer.</p>
       <div class="ls-bar">
         <label class="ls-field"><span>Agent</span><select id="lsAgent" class="input"></select></label>
         <label class="ls-field"><span>Skill</span><select id="lsSkill" class="input"></select></label>
@@ -110,7 +110,7 @@ function renderLocalSetupBtn() {
     $('#mvnSetupLabel').textContent = r.setup ? `Local setup: ${n}` : 'Local setup';
     btn.title = r.setup
       ? `It needs ${plural(n, 'thing')} on this computer: ${r.setup.dependencies.map((d) => d.name).join(', ')}`
-      : 'What this microservice needs running on this computer (database, Redis, Pub/Sub, Keycloak...): an agent reads the code, and Git Quick starts what you choose';
+      : 'What this microservice needs running on this computer (database, Redis, Pub/Sub, Keycloak...): an agent reads the code, and QuickDeck starts what you choose';
   }).catch(() => {});
 }
 
@@ -148,7 +148,7 @@ function closeLocalSetup() {
   clearInterval(ls.timer);
   modal.classList.add('hidden');
   $('#mvnSetupBtn').setAttribute('aria-expanded', 'false');
-  $('#mvnSetupBtn').focus();
+  mvnFocusBack($('#mvnSetupBtn'));
   renderLocalSetupBtn();
 }
 
@@ -394,7 +394,8 @@ function drawLocalSetup() {
   const list = $('#lsList');
   list.replaceChildren();
   if (ls.setup) {
-    if (!ls.setup.dependencies.length) list.appendChild(lsEl('p', 'ls-empty', 'The agent found nothing it needs on this computer.'));
+    if (!ls.setup.dependencies.length && agentCouldNotRead(ls.setup.summary)) list.appendChild(lsEl('p', 'ls-empty agent-not-read', AGENT_NOT_READ_NOTE));
+    else if (!ls.setup.dependencies.length) list.appendChild(lsEl('p', 'ls-empty', 'The agent found nothing it needs on this computer.'));
     for (const d of ls.setup.dependencies) list.appendChild(lsRow(d));
   } else if (!ls.running) list.appendChild(lsFirstTime(found));
   drawLocalSetupFoot();

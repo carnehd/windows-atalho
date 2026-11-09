@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- QuickDeck: a fanned deck of cards with a bolt cut through the front one. Used from 40 px up (scripts/make-icons.js). -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2f6df6"/>
+      <stop offset="1" stop-color="#7b3fe4"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#tile)"/>
+  <rect x="13" y="16" width="26" height="34" rx="5" fill="none" stroke="#fff" stroke-width="3.5" opacity=".55" transform="rotate(-14 26 33)"/>
+  <path fill="#fff" fill-rule="evenodd" transform="rotate(6 33 31)" d="M25 13h16a5 5 0 0 1 5 5v26a5 5 0 0 1-5 5H25a5 5 0 0 1-5-5V18a5 5 0 0 1 5-5zM36 18 27 33h7l-3 13 10-16h-7z"/>
+</svg>

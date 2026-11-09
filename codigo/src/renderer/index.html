@@ -3,16 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Git Quick</title>
+  <title>QuickDeck</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="bruno/bruno.css" />
   <link rel="stylesheet" href="db/db.css" />
+  <link rel="stylesheet" href="agent-console.css" />
 </head>
 <body>
   <div id="app">
     <nav class="rail">
-      <!-- the G opens the rail wider, with the name of each page by its icon (app.js) -->
-      <button id="railLogo" class="rail-logo" type="button" aria-expanded="false" aria-label="Show the names of the pages" title="Show the names of the pages"><span class="rail-logo-mark" aria-hidden="true">G</span><span class="rail-label" aria-hidden="true">Git Quick</span></button>
+      <!-- the logo opens the rail wider, with the name of each page by its icon (app.js) -->
+      <button id="railLogo" class="rail-logo" type="button" aria-expanded="false" aria-label="Show the names of the pages" title="Show the names of the pages"><span class="rail-logo-mark" aria-hidden="true"><svg viewBox="0 0 64 64"><rect x="11" y="15" width="26" height="34" rx="5" fill="none" stroke="currentColor" stroke-width="5" opacity=".55" transform="rotate(-14 24 32)"/><path fill="currentColor" fill-rule="evenodd" transform="rotate(6 34 31)" d="M26 12h16a5 5 0 0 1 5 5v28a5 5 0 0 1-5 5H26a5 5 0 0 1-5-5V17a5 5 0 0 1 5-5zM37 17 27.5 33H35l-3 13 10.5-17H35z"/></svg></span><span class="rail-label" aria-hidden="true">QuickDeck</span></button>
       <button class="rail-btn mode-tab active" data-mode="git" title="Git" aria-label="Git" type="button">
         <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="4" cy="3.5" r="1.6"/><circle cx="4" cy="12.5" r="1.6"/><circle cx="12" cy="5.5" r="1.6"/><path d="M4 5.1v5.8M12 7.1c0 3-3 3-6.6 4.2"/></svg>
         <span class="rail-label" aria-hidden="true">Git</span>
@@ -22,8 +23,8 @@
         <span class="rail-label" aria-hidden="true">Pull requests</span>
       </button>
       <button class="rail-btn mode-tab" data-mode="search" title="Search the microservices" aria-label="Search the microservices" type="button">
-        <!-- Tabler icon "search" (MIT) -->
-        <svg class="tabler" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 10m-7 0a7 7 0 1 0 14 0a7 7 0 1 0 -14 0"/><path d="M21 21l-6 -6"/></svg>
+        <!-- Lucide icon "file-search" (ISC) -->
+        <svg class="tabler" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M4.268 21a2 2 0 0 0 1.727 1H18a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v3"/><path d="m9 18-1.5-1.5"/><circle cx="5" cy="14" r="3"/></svg>
         <span class="rail-label" aria-hidden="true">Search</span>
       </button>
       <button class="rail-btn mode-tab" data-mode="vault" title="Vault" aria-label="Vault" type="button">
@@ -36,8 +37,8 @@
         <span class="rail-label" aria-hidden="true">Logs</span>
       </button>
       <button class="rail-btn mode-tab" data-mode="docker" title="Containers" aria-label="Containers" type="button">
-        <!-- Tabler icon "box" (MIT) -->
-        <svg class="tabler" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4.5v9l-8 4.5l-8 -4.5v-9l8 -4.5"/><path d="M12 12l8 -4.5"/><path d="M12 12v9"/><path d="M12 12l-8 -4.5"/></svg>
+        <!-- Lucide icon "ship" (ISC) -->
+        <svg class="tabler" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 10.189V14"/><path d="M12 2v3"/><path d="M19 13V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6"/><path d="M19.38 20A11.6 11.6 0 0 0 21 14l-8.188-3.639a2 2 0 0 0-1.624 0L3 14a11.6 11.6 0 0 0 2.81 7.76"/><path d="M2 21c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1s1.2 1 2.5 1c2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/></svg>
         <span class="rail-label" aria-hidden="true">Containers</span>
       </button>
       <button class="rail-btn mode-tab" data-mode="db" title="Database" aria-label="Database" type="button">
@@ -46,20 +47,27 @@
         <span class="rail-label" aria-hidden="true">Database</span>
       </button>
       <button class="rail-btn mode-tab" data-mode="clip" title="Clipboard history" aria-label="Clipboard history" type="button">
-        <!-- Tabler icon "files" (MIT) -->
-        <svg class="tabler" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3v4a1 1 0 0 0 1 1h4"/><path d="M18 17h-7a2 2 0 0 1 -2 -2v-10a2 2 0 0 1 2 -2h4l5 5v7a2 2 0 0 1 -2 2z"/><path d="M16 17v2a2 2 0 0 1 -2 2h-7a2 2 0 0 1 -2 -2v-10a2 2 0 0 1 2 -2h2"/></svg>
+        <!-- Lucide icon "clipboard-list" (ISC) -->
+        <svg class="tabler" viewBox="0 0 24 24" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>
         <span class="rail-label" aria-hidden="true">Clipboard</span>
       </button>
       <button class="rail-btn mode-tab" data-mode="todo" title="Tasks" aria-label="Tasks" type="button">
-        <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="2.5"/><path d="M5.5 8.2l1.8 1.8 3.2-3.5"/></svg>
+        <!-- Lucide icon "list-todo" (ISC) -->
+        <svg class="tabler" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="6" height="6" rx="1"/><path d="m3 17 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg>
         <span class="rail-label" aria-hidden="true">Tasks</span>
       </button>
       <button class="rail-btn mode-tab" data-mode="analysis" title="Analysis of the microservices" aria-label="Analysis of the microservices" type="button">
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 13.5h11"/><path d="M4.5 11V8.5M7.5 11V4.5M10.5 11V7"/><circle cx="11.6" cy="3.6" r="1.6"/><path d="M12.8 4.8l1.2 1.2"/></svg>
         <span class="rail-label" aria-hidden="true">Analysis</span>
       </button>
+      <button class="rail-btn mode-tab" data-mode="agent" title="consola-agente: conversa com o Claude CLI e o que ele faz" aria-label="consola-agente" type="button">
+        <!-- Tabler icon "message-chatbot" (MIT) -->
+        <svg class="tabler" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 4a3 3 0 0 1 3 3v8a3 3 0 0 1 -3 3h-5l-5 3v-3h-2a3 3 0 0 1 -3 -3v-8a3 3 0 0 1 3 -3h12z"/><path d="M9.5 9h.01"/><path d="M14.5 9h.01"/><path d="M9.5 13a3.5 3.5 0 0 0 5 0"/></svg>
+        <span class="rail-label" aria-hidden="true">consola-agente</span>
+      </button>
       <button class="rail-btn mode-tab" data-mode="tools" title="Tools" aria-label="Tools" type="button">
-        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.6 2.4a3.1 3.1 0 0 0-3.3 4.2L2.6 11.3a1.3 1.3 0 0 0 1.9 1.9l4.7-4.7a3.1 3.1 0 0 0 4.2-3.3l-1.9 1.9-1.6-.3-.3-1.6z"/></svg>
+        <!-- Lucide icon "hammer" (ISC) -->
+        <svg class="tabler" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 12-8.373 8.373a1 1 0 1 1-3-3L12 9"/><path d="m18 15 4-4"/><path d="m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172V7l-2.26-2.26a6 6 0 0 0-4.202-1.756L9 2.96l.92.82A6.18 6.18 0 0 1 12 8.4V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5"/></svg>
         <span class="rail-label" aria-hidden="true">Tools</span>
       </button>
       <button class="rail-btn mode-tab" data-mode="help" title="Command help" aria-label="Command help" type="button">
@@ -185,12 +193,13 @@
               <button id="opAbortBtn" class="btn btn-sm btn-danger" type="button"></button>
             </div>
             <div class="file-list-header">
-              <label class="select-all" title="Select or clear all files for the commit">
-                <input id="selectAllFiles" type="checkbox" />
+              <div class="file-list-pick">
+                <!-- every file for the commit, or none (app.js), then how many are ticked -->
+                <button id="toggleAllFilesBtn" class="btn btn-sm btn-icon select-toggle-btn hidden" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"></svg><span class="btn-label">Select none</span></button>
                 <span id="changesCount">0 changes</span>
-              </label>
+              </div>
               <div class="file-list-actions">
-                <button id="parkBtn" class="btn btn-sm btn-icon" type="button" title="Move the selected files to a folder that Git ignores in this repository, so they are left out of commits" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M19 19h-14a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 1.172 -1.821m3.828 -.179h1l3 3h7a2 2 0 0 1 2 2v8"/></svg>Move to ignored folder...</button>
+                <button id="parkBtn" class="btn btn-sm btn-icon" type="button" title="Ignore: move the selected files to a folder that Git ignores in this repository, so they are left out of commits" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M19 19h-14a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 1.172 -1.821m3.828 -.179h1l3 3h7a2 2 0 0 1 2 2v8"/></svg><span class="btn-label">Ignore...</span></button>
                 <button id="revertBtn" class="btn btn-sm btn-danger btn-icon" type="button" title="Throw away the changes in the selected files and go back to the last commit" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14l-4 -4l4 -4"/><path d="M5 10h11a4 4 0 1 1 0 8h-1"/></svg><span class="btn-label">Revert...</span></button>
                 <button id="changesAgentDocs" class="btn btn-sm btn-icon pr-agent-docs hidden" type="button" aria-haspopup="dialog"></button>
                 <button id="changesAgentBtn" class="btn btn-sm btn-icon pr-agent-btn hidden" type="button" disabled>Analyse</button>
@@ -450,15 +459,18 @@
               <span id="mvnFolderNote" class="mvn-folder-note"></span>
             </div>
             <!-- the ports of Start and Debug, in a popover -->
-            <!-- the values Start and Debug take, per variable from an environment's application file (mvn-values.js) -->
-            <button id="mvnValuesBtn" class="mvn-values-btn hidden" type="button" aria-haspopup="dialog" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0"/><path d="M3.6 9h16.8"/><path d="M3.6 15h16.8"/><path d="M11.5 3a17 17 0 0 0 0 18"/><path d="M12.5 3a17 17 0 0 1 0 18"/></svg><span id="mvnValuesLabel">Values: local</span></button>
-            <!-- the environment variables Start and Debug start the application with (mvn-env.js) -->
-            <button id="mvnEnvBtn" class="mvn-values-btn" type="button" aria-haspopup="dialog" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4c-2.5 5 -2.5 10 0 16m14 -16c2.5 5 2.5 10 0 16m-10 -11h1c1 0 1 1 2.016 3.527c.984 2.473 .984 3.473 1.984 3.473h1"/><path d="M8 16c1.5 0 3 -2 4 -3.5s2.5 -3.5 4 -3.5"/></svg><span id="mvnEnvLabel">Env</span></button>
-            <!-- what this microservice needs running on this computer, read by an agent (local-setup.js) -->
-            <button id="mvnSetupBtn" class="mvn-values-btn" type="button" aria-haspopup="dialog" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4.5v9l-8 4.5l-8 -4.5v-9z"/><path d="M12 12l8 -4.5"/><path d="M12 12v9"/><path d="M12 12l-8 -4.5"/></svg><span id="mvnSetupLabel">Local setup</span></button>
-            <button id="mvnPortsBtn" class="mvn-ports-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="mvnPortsPop" title="Start / Debug ports"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z"/><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></svg></button>
+            <button id="mvnPortsBtn" class="mvn-ports-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="mvnPortsPop" title="Start and Debug: Values, Env, Local setup and the ports"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z"/><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></svg></button>
           </div>
-          <div id="mvnPortsPop" class="clip-menu mvn-ports-pop hidden" role="dialog" aria-label="Start / Debug ports">
+          <div id="mvnPortsPop" class="clip-menu mvn-ports-pop hidden" role="dialog" aria-label="Start and Debug: values, Env, Local setup and ports">
+            <!-- under the gear: what Start and Debug take (Values, Env), what the microservice needs (Local setup), then its ports -->
+            <div class="mvn-gear-items" role="group" aria-label="Start and Debug">
+              <!-- the values Start and Debug take, per variable from an environment's application file (mvn-values.js) -->
+              <button id="mvnValuesBtn" class="mvn-values-btn hidden" type="button" aria-haspopup="dialog" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0"/><path d="M3.6 9h16.8"/><path d="M3.6 15h16.8"/><path d="M11.5 3a17 17 0 0 0 0 18"/><path d="M12.5 3a17 17 0 0 1 0 18"/></svg><span id="mvnValuesLabel">Values: local</span></button>
+              <!-- the environment variables Start and Debug start the application with (mvn-env.js) -->
+              <button id="mvnEnvBtn" class="mvn-values-btn" type="button" aria-haspopup="dialog" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4c-2.5 5 -2.5 10 0 16m14 -16c2.5 5 2.5 10 0 16m-10 -11h1c1 0 1 1 2.016 3.527c.984 2.473 .984 3.473 1.984 3.473h1"/><path d="M8 16c1.5 0 3 -2 4 -3.5s2.5 -3.5 4 -3.5"/></svg><span id="mvnEnvLabel">Env</span></button>
+              <!-- what this microservice needs running on this computer, read by an agent (local-setup.js) -->
+              <button id="mvnSetupBtn" class="mvn-values-btn" type="button" aria-haspopup="dialog" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4.5v9l-8 4.5l-8 -4.5v-9z"/><path d="M12 12l8 -4.5"/><path d="M12 12v9"/><path d="M12 12l-8 -4.5"/></svg><span id="mvnSetupLabel">Local setup</span></button>
+            </div>
             <div class="mvn-ports-title">Start / Debug ports</div>
             <label class="mvn-port-row" for="mvnDebugPort"><span>Debug port</span><input id="mvnDebugPort" class="input mvn-port" type="text" inputmode="numeric" maxlength="5" placeholder="5005" autocomplete="off" title="Port the debugger connects to (Remote JVM Debug in IntelliJ)" /></label>
             <label class="mvn-port-row" for="mvnServerPort"><span>App port</span><input id="mvnServerPort" class="input mvn-port" type="text" inputmode="numeric" maxlength="5" placeholder="project" autocomplete="off" title="Port the microservice listens on (server.port). Empty keeps the project's own setting." /></label>
@@ -516,7 +528,7 @@
 
       <!-- Another repository loading: over the tab on show until its part comes -->
       <div id="repoLoading" class="repo-loading" role="status" aria-live="polite">
-        <div class="spinner"></div>
+        <span class="qd-loader-slot" data-size="56"></span>
         <span>Loading <strong id="repoLoadingName"></strong>...</span>
       </div>
     </div>
@@ -738,6 +750,51 @@
             <div id="dbPane" class="db-pane" role="tabpanel"></div>
           </section>
         </div>
+      </div>
+    </div>
+
+    <!-- consola-agente: a conversation with Claude CLI in a project folder, and what it does as it does it (agent-console.js) -->
+    <div id="agentView" class="body hidden">
+      <div class="content ac-page">
+        <div class="ac-bar">
+          <select id="acProject" class="input ac-project" aria-label="Projeto"></select>
+          <span id="acState" class="ac-state" aria-live="polite"><span class="ac-dot" aria-hidden="true"></span><span id="acStateText">Sem sessão</span></span>
+          <span id="acMeta" class="ac-meta"></span>
+          <span class="ac-spacer"></span>
+          <button id="acInterrupt" class="btn btn-sm" type="button" disabled title="Pede ao Claude para parar o que está a fazer">Interromper</button>
+          <button id="acEnd" class="btn btn-sm" type="button" disabled title="Termina a conversa e o Claude CLI. O que foi dito fica aqui para ler, e nada a retoma">Terminar</button>
+          <button id="acNew" class="btn btn-sm" type="button" disabled title="Termina esta sessão e começa outra, do zero">Nova sessão</button>
+        </div>
+        <div class="ac-main">
+          <section class="ac-pane ac-chat-pane" aria-label="Conversa">
+            <div class="ac-head">Conversa</div>
+            <div class="ac-scroll">
+              <div id="acChat" class="ac-chat" role="log">
+                <div id="acChatEmpty" class="ac-empty">
+                  <p>Escreve em baixo o que queres que o Claude faça na pasta do projeto. Cada ação que precisa da tua autorização aparece aqui como um cartão.</p>
+                  <p class="ac-empty-note">O Claude CLI corre neste computador, na pasta do projeto, e envia à Anthropic o que lê e o que escreves, como num terminal.</p>
+                  <div id="acNoAgent" class="ac-no-agent hidden"><p>O Claude CLI não foi encontrado neste computador. Instala-o e entra uma vez com <code>claude</code> num terminal.</p><button id="acAgainBtn" class="btn btn-sm" type="button">Procurar de novo</button></div>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section class="ac-pane ac-time-pane" aria-label="Linha do tempo">
+            <div class="ac-head">Linha do tempo<label class="ac-all" title="Mostra também os eventos que a linha do tempo esconde, com o seu JSON"><input id="acAll" type="checkbox"> Todos os eventos</label></div>
+            <div id="acTags" class="ac-tags hidden" role="group" aria-label="Filtrar a linha do tempo por tipo de evento"></div>
+            <div class="ac-scroll"><div id="acTimeline" class="ac-timeline" role="log"></div></div>
+          </section>
+        </div>
+        <!-- the model and the permissions of the Claude CLI, for this conversation and the next (agent-console.js) -->
+        <div class="ac-options">
+          <label class="ac-opt" for="acModel"><span>Modelo</span><select id="acModel" class="input ac-select" aria-label="Modelo"></select></label>
+          <label class="ac-opt" for="acMode"><span>Permissões</span><select id="acMode" class="input ac-select" aria-label="Permissões"></select></label>
+          <span id="acModeHint" class="ac-mode-hint"></span>
+        </div>
+        <div class="ac-compose">
+          <textarea id="acInput" class="input ac-input" rows="2" spellcheck="false" placeholder="Escreve ao Claude… (Enter envia, Shift+Enter muda de linha)" aria-label="Mensagem para o Claude"></textarea>
+          <button id="acSend" class="btn btn-primary ac-send" type="button" disabled>Enviar</button>
+        </div>
+        <div id="acFoot" class="ac-foot" aria-live="polite"></div>
       </div>
     </div>
 
@@ -1206,7 +1263,7 @@
         <!-- the version, and the latest from GitHub into the folder of the exe (updates.js) -->
         <label class="settings-label">Version</label>
         <div class="update-row">
-          <span id="updateVersion" class="update-version">Git Quick</span>
+          <span id="updateVersion" class="update-version">QuickDeck</span>
           <button id="updateCheckBtn" class="btn btn-sm" type="button">Check for updates</button>
         </div>
         <div id="updateBox" class="update-box hidden">
@@ -1215,7 +1272,7 @@
           <details id="updateNotes" class="update-notes hidden"><summary>What's new</summary><pre id="updateNotesText"></pre></details>
           <div id="updateActions" class="update-actions"></div>
         </div>
-        <p class="settings-hint">The latest version from GitHub goes into the folder of this exe as GitQuick-&lt;version&gt;.zip, and its GitQuick-&lt;version&gt;.exe is taken out next to it. The data folder stays as it is.</p>
+        <p class="settings-hint">The latest version from GitHub goes into the folder of this exe as QuickDeck-&lt;version&gt;.zip, and its QuickDeck-&lt;version&gt;.exe is taken out next to it. The data folder stays as it is.</p>
         <label class="settings-label">Theme</label>
         <div class="theme-switch">
           <button class="btn theme-opt" data-theme-value="light" type="button">Light</button>
@@ -1238,6 +1295,13 @@
           <button id="windowSizeReset" class="btn btn-sm" type="button">Default size</button>
         </div>
         <p class="settings-hint">Drag an edge or a corner of the window to change its size; it is kept for the next time. A double-click on an edge goes back to the default size.</p>
+        <label id="railPagesLabel" class="settings-label">Sidebar</label>
+        <ol id="railPages" class="rail-pages" aria-labelledby="railPagesLabel"></ol>
+        <div class="rail-pages-foot">
+          <span id="railPagesCount" class="rail-pages-count" aria-live="polite"></span>
+          <button id="railPagesReset" class="btn btn-sm" type="button" title="The first order of the pages, all of them in the sidebar">Default order, all pages</button>
+        </div>
+        <p class="settings-hint">Drag a page, or use its arrows, to put it in another order, and untick the ones you do not want in the sidebar. A page that is not in the sidebar still opens with its global shortcut. The icons of the sidebar itself can be dragged too. Kept on this PC.</p>
         <label class="settings-label">Global shortcuts</label>
         <div id="hotkeyRows" class="hotkey-rows"></div>
         <p class="settings-hint">Click a field, then press the combination (e.g. Ctrl+Alt+G). Needs at least one modifier, unless it is an F key. Esc cancels, &#x2715; removes the shortcut. Each shortcut opens its own page; pressing it again there hides the window.</p>
@@ -1325,15 +1389,17 @@
     <div id="toast" class="toast hidden"></div>
 
     <!-- Loading -->
-    <div id="loading" class="loading hidden">
-      <div class="spinner"></div>
+    <div id="loading" class="loading hidden" role="status" aria-live="polite">
+      <span class="qd-loader-slot" data-size="80"></span>
     </div>
   </div>
 
+  <script src="qd-loader.js"></script>
   <script src="app.js"></script>
   <script src="windows.js"></script>
   <script src="sync-card.js"></script>
   <script src="db/db.js"></script>
+  <script src="db/db-sql.js"></script>
   <script src="db/db-link.js"></script>
   <script src="db/db-conn.js"></script>
   <script src="db/new-database.js"></script>
@@ -1385,5 +1451,6 @@
   <script src="all-pulls.js"></script>
   <script src="git-console.js"></script>
   <script src="select-menu.js"></script>
+  <script src="agent-console.js"></script>
 </body>
 </html>

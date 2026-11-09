@@ -1,18 +1,18 @@
-GIT QUICK - instalar noutro PC
+QUICKDECK - instalar noutro PC (a app chamava-se Git Quick)
 ==============================
 
-1. Descarrega o GitQuick-<versao>.exe da pagina de Releases (ou o GitQuick-<versao>.zip, se a rede
+1. Descarrega o QuickDeck-<versao>.exe da pagina de Releases (ou o QuickDeck-<versao>.zip, se a rede
    bloquear .exe, e tira o exe de dentro dele):
      https://github.com/carnehd/windows-atalho/releases/latest
-   e poe-no numa pasta, por exemplo C:\Tools\GitQuick.
+   e poe-no numa pasta, por exemplo C:\Tools\QuickDeck.
    Para levar os teus dados, copia tambem a pasta data para ao lado do exe.
 2. Duplo clique no exe. A app fica na bandeja do Windows (junto ao relogio).
    - Ctrl+Shift+G abre a app; Alt+3 o Vault; Alt+2 as Tarefas (muda em Definicoes).
    - Na primeira vez o Windows pode avisar (SmartScreen): "Mais informacoes" > "Executar mesmo assim".
 
 Atualizar
-- Settings > Check for updates: se houver uma versao nova, Download poe o GitQuick-<versao>.zip da ultima
-  Release na pasta do exe e tira de la o GitQuick-<versao>.exe, ao lado do que esta a correr.
+- Settings > Check for updates: se houver uma versao nova, Download poe o QuickDeck-<versao>.zip da ultima
+  Release na pasta do exe e tira de la o QuickDeck-<versao>.exe, ao lado do que esta a correr.
   "Open <versao> now" fecha esta e abre a nova, com a mesma pasta data.
 - Os atalhos e o icone fixado na barra de tarefas continuam a abrir o exe antigo: aponta-os para o novo.
   Os exe e zip das versoes antigas podem ser apagados.
@@ -26,7 +26,7 @@ Pasta data
   clipboard-history.json (historico do clipboard), git-quick-settings.json (tema, atalhos, repos).
 - ATENCAO: vault.json tem as passwords em texto legivel. Nao envies por email nem partilhas abertas.
 - logs-config.json (pagina Logs): origem dos logs e credenciais. Criado na primeira vez que abres a pagina.
-    O zip da Release (GitQuick-<versao>.zip) traz um exemplo para a Grafana, logs-config.example.json (tambem na raiz do
+    O zip da Release (QuickDeck-<versao>.zip) traz um exemplo para a Grafana, logs-config.example.json (tambem na raiz do
     repositorio): copia-o para data\logs-config.json e preenche grafana.url, orgId e datasourceUid.
     "source": "local" usa os logs de teste (botao Generate test logs, ficam em data\logs).
     "source": "elasticsearch" usa elasticsearch.url, index e username/password ou apiKey.
@@ -70,11 +70,16 @@ Pasta codigo (so se quiseres alterar a app)
 - Dentro da pasta codigo:
     npm install       (instala as dependencias, uma vez)
     npm start         (corre a app a partir do codigo; usa uma pasta data dentro de codigo)
-    npm run dist      (gera codigo\dist\GitQuick-<versao>.exe, com a versao do package.json)
-- Publicar uma versao nova (exemplo para a 1.6.3: primeiro "version": "1.6.3" no package.json), a partir da
+    npm run dist      (gera codigo\dist\QuickDeck-<versao>.exe, com a versao do package.json)
+    npm run icons     (refaz os icones de src\assets a partir de icon.svg e icon-small.svg)
+- Publicar uma versao nova (exemplo para a 1.7.0: primeiro "version": "1.7.0" no package.json), a partir da
   raiz do repositorio:
-    powershell Compress-Archive -Force -Path codigo\dist\GitQuick-1.6.3.exe,logs-config.example.json -DestinationPath codigo\dist\GitQuick-1.6.3.zip
-    gh release create v1.6.3 codigo\dist\GitQuick-1.6.3.exe codigo\dist\GitQuick-1.6.3.zip --title "Git Quick 1.6.3" --notes "O que mudou"
+    powershell Compress-Archive -Force -Path codigo\dist\QuickDeck-1.7.0.exe,logs-config.example.json -DestinationPath codigo\dist\QuickDeck-1.7.0.zip
+    copy codigo\dist\QuickDeck-1.7.0.zip codigo\dist\GitQuick-1.7.0.zip
+    gh release create v1.7.0 codigo\dist\QuickDeck-1.7.0.exe codigo\dist\QuickDeck-1.7.0.zip codigo\dist\GitQuick-1.7.0.zip --title "QuickDeck 1.7.0" --notes "O que mudou"
   O exe nao e guardado no Git: fica na Release, sozinho e dentro de um zip (para redes que bloqueiam .exe),
   junto com o logs-config.example.json. A tag (v1.6.3) e o nome dos ficheiros tem de dizer a mesma versao:
   e por eles que o Check for updates da app encontra a nova.
+  O GitQuick-<versao>.zip e uma copia do mesmo zip para quem ainda tem o Git Quick (1.6.x): essas versoes so
+  procuram esse nome. Sem ele, nao conseguem atualizar-se. Deixa de ser preciso quando ninguem usar uma 1.6.x.
+  Os ficheiros de dados (git-quick-settings.json, git-quick-todos.json, ...) mantem o nome antigo de proposito.

@@ -51,7 +51,7 @@ class DbConnections {
     if (input.id && at < 0) throw new Error('That connection is not there any more');
     if (list.some((x, i) => i !== at && x.name.toLowerCase() === fields.name.toLowerCase())) throw new Error(`There is a connection called ${fields.name} already`);
     const old = at >= 0 ? list[at] : null;
-    let passwordEnc = old ? old.passwordEnc || null : null;
+    let passwordEnc = old ? old.passwordEnc || null : this.copiedPassword(input);
     if (input.clearPassword) passwordEnc = null;
     if (typeof input.password === 'string' && input.password) passwordEnc = this.encrypt(input.password);
     const item = { id: old ? old.id : crypto.randomUUID(), ...fields, ...(passwordEnc ? { passwordEnc } : {}) };
@@ -68,13 +68,22 @@ class DbConnections {
     this.write(list.filter((x) => x.id !== String(id)));
   }
 
-  // The form before it is saved, to test: its password, else the one kept for it.
+  // A copy of a connection (the page's duplicate icon) is a new one that has not been saved: its password is the one kept
+  // for the original, which never goes to the page. Only while it has no id and no password of its own.
+  copiedPassword(input) {
+    if (input.id || input.clearPassword || !input.copyPasswordFrom) return null;
+    const source = this.read().find((x) => x.id === String(input.copyPasswordFrom));
+    return (source && source.passwordEnc) || null;
+  }
+
+  // The form before it is saved, to test: its password, else the one kept for it (for a copy, the original's).
   resolve(input = {}) {
     const fields = clean(input);
     let password = typeof input.password === 'string' ? input.password : '';
-    if (!password && input.id && !input.clearPassword) {
+    const kept = input.id || input.copyPasswordFrom;
+    if (!password && kept && !input.clearPassword) {
       try {
-        password = this.get(input.id).password;
+        password = this.get(kept).password;
       } catch {
         password = '';
       }

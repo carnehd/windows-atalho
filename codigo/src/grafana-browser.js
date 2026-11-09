@@ -71,12 +71,12 @@ function createGrafanaBrowser({ dataDir, onStatus = () => {} }) {
       width: 560,
       height: 760,
       show,
-      title: 'Grafana login · Git Quick',
+      title: 'Grafana login · QuickDeck',
       autoHideMenuBar: true,
       webPreferences: { partition: PARTITION, contextIsolation: true, sandbox: true, nodeIntegration: false },
     });
     secureWindow(win);
-    // keep the app's title, so it is clear the window belongs to Git Quick
+    // keep the app's title, so it is clear the window belongs to QuickDeck
     win.on('page-title-updated', (e) => e.preventDefault());
     return win;
   }

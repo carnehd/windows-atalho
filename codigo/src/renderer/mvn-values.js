@@ -183,7 +183,7 @@ function closeMvnValues() {
   if (!modal || modal.classList.contains('hidden')) return;
   modal.classList.add('hidden');
   $('#mvnValuesBtn').setAttribute('aria-expanded', 'false');
-  $('#mvnValuesBtn').focus();
+  mvnFocusBack($('#mvnValuesBtn'));
 }
 
 function chooseMvnValues(choice) {
@@ -202,11 +202,22 @@ function pickMvnValue(key, env) {
   renderMvnValuesHead(choice);
 }
 
+// production, whose values make a service started here call the production systems
+const MV_PROD = /^(prod|prd|production|pro|dr)$/i;
+const MV_PROD_NOTE = 'Production: a service started here with these values calls the production systems';
+
 function renderMvnValuesHead(choice) {
   const t = mvnValuesTable;
-  const files = t.files.map((f) => f.file);
+  const files = t.files.filter((f) => !f.helm).map((f) => f.file);
+  // the chart's files, by the folder they are in: k8s: values-dev.yaml, values-uat.yaml
+  const charts = {};
+  for (const f of t.files.filter((x) => x.helm && !x.error)) {
+    const at = f.file.lastIndexOf('/');
+    (charts[at < 0 ? '' : f.file.slice(0, at)] ||= []).push(f.file.slice(at + 1));
+  }
+  const helmText = Object.entries(charts).map(([dir, names]) => ` · ${dir || 'k8s'}: ${names.join(', ')}`).join('');
   const bad = t.files.filter((f) => f.error);
-  $('#mvSub').textContent = `${mvnValuesDir ? `${mvnValuesDir}/` : ''}src/main/resources: ${files.join(', ')}${bad.length ? ` · not read: ${bad.map((f) => `${f.file} (${f.error})`).join(', ')}` : ''} · now ${mvnValuesSummary(choice)}`;
+  $('#mvSub').textContent = `${mvnValuesDir ? `${mvnValuesDir}/` : ''}src/main/resources: ${files.join(', ')}${helmText}${bad.length ? ` · not read: ${bad.map((f) => `${f.file} (${f.error})`).join(', ')}` : ''} · now ${mvnValuesSummary(choice)}`;
 }
 
 function renderMvnValuesTable() {
@@ -229,6 +240,10 @@ function renderMvnValuesTable() {
     input.addEventListener('change', () => chooseMvnValues({ ...savedMvnValues(), base: env, picks: {} }));
     label.append(input, document.createTextNode(env));
     label.classList.toggle('on', input.checked);
+    if (MV_PROD.test(env)) {
+      label.classList.add('mv-prod');
+      label.title = MV_PROD_NOTE;
+    }
     all.appendChild(label);
   }
   // the variables: those the same everywhere left out when asked
@@ -238,12 +253,25 @@ function renderMvnValuesTable() {
   $('#mvDiffersText').textContent = `Only what differs (${t.keys.filter(differs).length} of ${t.keys.length})`;
   const table = $('#mvTable');
   table.innerHTML = '';
+  // room for each environment: past a few, the table scrolls sideways
+  table.style.minWidth = `${240 + envs.length * 150}px`;
   const head = table.createTHead().insertRow();
-  head.appendChild(document.createElement('th')).textContent = 'Variable';
+  const first = head.appendChild(document.createElement('th'));
+  first.textContent = 'Variable';
+  // with many environments the names keep a fixed room, the rest goes to the values
+  first.style.width = envs.length > 3 ? '240px' : '';
   for (const env of envs) {
     const th = head.appendChild(document.createElement('th'));
     th.textContent = env;
-    th.title = t.files.filter((f) => f.env === env).map((f) => f.file).join(', ') || `${env}: set inside another file`;
+    const from = t.files.filter((f) => f.env === env);
+    const unread = [...new Set(from.flatMap((f) => f.unread || []))];
+    th.title = [
+      from.map((f) => f.file).join(', ') || `${env}: set inside another file`,
+      from.some((f) => f.helm) ? 'The variables of its chart (ConfigMaps and the env of its Deployments) put in the ${...} of the files' : '',
+      unread.length ? `Not read (a form of template the app does not follow): ${unread.join(', ')}` : '',
+      MV_PROD.test(env) ? MV_PROD_NOTE : '',
+    ].filter(Boolean).join('\n');
+    if (MV_PROD.test(env)) th.classList.add('mv-prod');
   }
   const body = table.createTBody();
   shown.forEach((key, i) => {

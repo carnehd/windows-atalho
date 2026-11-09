@@ -171,6 +171,8 @@ contextBridge.exposeInMainWorld('database', {
   columns: (id, schema, table) => ipcRenderer.invoke('db-columns', id, schema, table),
   rows: (id, schema, table, opts) => ipcRenderer.invoke('db-rows', id, schema, table, opts),
   query: (id, sql) => ipcRenderer.invoke('db-query', id, sql),
+  catalog: (id) => ipcRenderer.invoke('db-catalog', id),
+  check: (id, sql) => ipcRenderer.invoke('db-check', id, sql),
 });
 
 contextBridge.exposeInMainWorld('maven', {
@@ -338,6 +340,20 @@ contextBridge.exposeInMainWorld('consoleAnalysis', {
   start: (path, input) => ipcRenderer.invoke('console-analysis-start', path, input),
   stop: (path) => ipcRenderer.invoke('console-analysis-stop', path),
   onEvent: (cb) => ipcRenderer.on('console-analysis-event', (_, data) => cb(data)),
+});
+
+// consola-agente: a conversation with Claude CLI in a project folder (agent-console.js). Each line it writes comes in
+// an event, as it wrote it.
+contextBridge.exposeInMainWorld('agentConsole', {
+  info: (again) => ipcRenderer.invoke('agent-console-info', again),
+  pickFolder: () => ipcRenderer.invoke('agent-console-folder'),
+  send: (cwd, text) => ipcRenderer.invoke('agent-console-send', cwd, text),
+  answer: (requestId, choice, answers) => ipcRenderer.invoke('agent-console-permission', requestId, choice, answers),
+  interrupt: () => ipcRenderer.invoke('agent-console-interrupt'),
+  newSession: () => ipcRenderer.invoke('agent-console-new'),
+  endSession: () => ipcRenderer.invoke('agent-console-end'),
+  setChoice: (kind, value) => ipcRenderer.invoke('agent-console-set', kind, value),
+  onEvent: (cb) => ipcRenderer.on('agent-console-event', (_, data) => cb(data)),
 });
 
 contextBridge.exposeInMainWorld('newDb', {

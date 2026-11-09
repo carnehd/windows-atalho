@@ -1,7 +1,7 @@
 {
   "_help": [
-    "Exemplo da configuracao da pagina Logs do Git Quick, para a Grafana com OpenShift e GCP.",
-    "Copia este ficheiro para data\\logs-config.json (a pasta data fica ao lado do GitQuick.exe).",
+    "Exemplo da configuracao da pagina Logs do QuickDeck, para a Grafana com OpenShift e GCP.",
+    "Copia este ficheiro para data\\logs-config.json (a pasta data fica ao lado do exe do QuickDeck).",
     "Preenche grafana.url (ex.: \"http://grafana.empresa.pt\"), grafana.orgId e grafana.datasourceUid com os valores do config.json do log-explorer.",
     "Enquanto faltarem, o botao \"Log in to Grafana\" diz o que falta.",
     "Depois, na pagina Logs, carrega em Search e em \"Log in to Grafana\" (janela do Keycloak ou cookie grafana_session).",

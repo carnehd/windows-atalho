@@ -1,5 +1,5 @@
 // -- A file from the internet into a folder of this computer, and a zip unpacked: through the app's own network (the
-// computer's proxy), checked, and nothing left half done. For the Bruno CLI and the updates of Git Quick. --
+// computer's proxy), checked, and nothing left half done. For the Bruno CLI and the updates of QuickDeck. --
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -66,7 +66,7 @@ async function downloadFile(url, file, { what, size = 0, sha256 = null, progress
     await out.close();
   }
   progress({ got, total });
-  if (sha256 && hash.digest('hex') !== sha256.toLowerCase()) throw new Error(`${what[0].toUpperCase()}${what.slice(1)} downloaded is not the file Git Quick expects (its checksum differs)`);
+  if (sha256 && hash.digest('hex') !== sha256.toLowerCase()) throw new Error(`${what[0].toUpperCase()}${what.slice(1)} downloaded is not the file QuickDeck expects (its checksum differs)`);
   if (size && got !== size) throw new Error(`The download of ${what} is not whole (${got} of ${size} bytes)`);
   return { got };
 }

@@ -362,7 +362,8 @@ function fillAgentCard(box, host) {
     card.appendChild(group);
     for (const f of list) card.appendChild(host.findingEl(f));
   }
-  if (!live.length) card.appendChild(diffSpan('pr-agent-none', review.findings.length ? 'Every finding was dismissed.' : 'The agent found nothing to report.'));
+  if (!live.length && !review.findings.length && agentCouldNotRead(review.summary)) card.appendChild(diffSpan('pr-agent-none agent-not-read', AGENT_NOT_READ_NOTE));
+  else if (!live.length) card.appendChild(diffSpan('pr-agent-none', review.findings.length ? 'Every finding was dismissed.' : 'The agent found nothing to report.'));
   const gone = review.findings.length - live.length;
   if (gone) {
     const note = document.createElement('div');
@@ -409,6 +410,14 @@ function summaryEl(text) {
     }
   }
   return el;
+}
+
+// The agent says it could not read the code (its tools did not work, or it had none): then its "nothing found" means
+// nothing was looked at, and the page says so instead.
+const AGENT_COULD_NOT_READ = /\b(?:could ?n['’]?t|could not|can ?not|can['’]t|unable to|was not able to|wasn['’]t able to)\b[^.]{0,60}?\b(?:inspect|read|access|open|see|view|browse|look at)\b[^.]{0,60}?\b(?:files?|repositor(?:y|ies)|code|folder|director(?:y|ies)|workspace|project)\b|\bno (?:file |tool )?access\b|\bno tools\b/i;
+const AGENT_NOT_READ_NOTE = 'The agent says it could not read the code, so nothing was looked at: this is no result. Run it again, or choose the other agent.';
+function agentCouldNotRead(text) {
+  return AGENT_COULD_NOT_READ.test(String(text || ''));
 }
 
 // "store/CatalogStore.java:160": the last folder, the file and the line.

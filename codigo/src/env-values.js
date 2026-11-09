@@ -1,19 +1,25 @@
 // -- The values of a Spring Boot service per environment, for the Values of the Maven page: each key of its
 // application.properties / .yml (local) and application-<env>.properties / .yml (dev, sit, prod...), with the value
-// each file gives it. Start and Debug then get the values chosen as SPRING_APPLICATION_JSON (over the files). --
+// each file gives it. Start and Debug then get the values chosen as SPRING_APPLICATION_JSON (over the files).
+// The environments of a Helm chart in a k8s folder come too (helm-values.js): each ${NAME} of the files with the
+// value that environment's chart gives NAME. --
 const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
+const helm = require('./helm-values');
 
 const FILE = /^application(?:-([A-Za-z0-9_.-]+))?\.(properties|ya?ml)$/;
 // the usual environments first, in the order they go to production; the others after, by name
-const ORDER = ['dev', 'development', 'local-dev', 'test', 'qa', 'int', 'sit', 'stage', 'staging', 'uat', 'preprod', 'pre', 'prod', 'production'];
+const ORDER = ['k8s-local', 'dev', 'development', 'local-dev', 'test', 'tst', 'qa', 'int', 'sit', 'stage', 'staging', 'uat', 'preprod', 'preprd', 'pre', 'prod', 'prd', 'production', 'dr'];
+// a chart's local environment is a cluster's, not this computer's: named apart from the local of the files
+const helmEnvName = (env) => (env === 'local' ? 'k8s-local' : env);
 const MAX_KEYS = 2000;
 
 const resourcesOf = (dir) => path.join(dir, 'src', 'main', 'resources');
 
-// The environments a service has files for (local first), without reading them: for the page to know there is a choice.
-function listEnvs(dir) {
+// The environments a service has files for (local first), and those of the Helm chart of its k8s folder (root: the
+// repository, whose k8s folder counts too), without reading them: for the page to know there is a choice.
+function listEnvs(dir, root) {
   let names = [];
   try {
     names = fs.readdirSync(resourcesOf(dir));
@@ -25,6 +31,7 @@ function listEnvs(dir) {
     const m = FILE.exec(n);
     if (m) envs.add(m[1] || 'local');
   }
+  if (envs.has('local')) for (const e of helm.listHelmEnvs(dir, root)) envs.add(helmEnvName(e));
   return orderEnvs([...envs]);
 }
 
@@ -80,8 +87,9 @@ function parseYaml(text, fileEnv) {
 }
 
 // Every key and what each environment's file gives it ({ key: { local: '8081', dev: ... } }), the keys in the order
-// the files have them (local first). A file that cannot be read is listed with its error.
-function readEnvValues(dir) {
+// the files have them (local first). A file that cannot be read is listed with its error. root: the repository, for
+// its k8s folder.
+function readEnvValues(dir, root) {
   const res = resourcesOf(dir);
   let names = [];
   try {
@@ -120,8 +128,111 @@ function readEnvValues(dir) {
       files.push({ env, file: name, error: String(e.message || e).split('\n')[0] });
     }
   }
+  if (files.some((f) => f.env === 'local' && !f.error)) addHelmEnvs(dir, root, { files, keys, values });
   const envs = orderEnvs([...new Set([...files.map((f) => f.env), ...keys.flatMap((k) => Object.keys(values[k]))])]);
   return { files, envs, keys, values };
+}
+
+// The name of the variable Spring reads for a key (relaxed binding): server.port from SERVER_PORT.
+const envNameOf = (key) => key.replace(/\[(\d+)\]/g, '_$1').replace(/-/g, '').replace(/\./g, '_').toUpperCase();
+
+// A value with the ${NAME:default} an environment gives NAME put in; the others as they are (their defaults too).
+function resolveWith(text, vars) {
+  const s = String(text);
+  let out = '';
+  let at = 0;
+  let i = s.indexOf('${');
+  while (i !== -1) {
+    let depth = 0;
+    let j = i;
+    for (; j < s.length; j++) {
+      if (s[j] === '$' && s[j + 1] === '{') {
+        depth += 1;
+        j += 1;
+      } else if (s[j] === '}' && --depth === 0) break;
+    }
+    if (j >= s.length) break;
+    const inner = s.slice(i + 2, j);
+    const colon = inner.indexOf(':');
+    const name = (colon === -1 ? inner : inner.slice(0, colon)).trim();
+    out += s.slice(at, i);
+    if (VAR_NAME.test(name) && Object.prototype.hasOwnProperty.call(vars, name)) out += vars[name];
+    else out += colon === -1 ? s.slice(i, j + 1) : `\${${inner.slice(0, colon)}:${resolveWith(inner.slice(colon + 1), vars)}}`;
+    at = j + 1;
+    i = s.indexOf('${', at);
+  }
+  return out + s.slice(at);
+}
+
+// The environments of the Helm chart: for each key, the value of its own file of that environment (dev: application-dev)
+// or the local one, with what the chart gives its variables; set only where that changes it, or where the file is the
+// environment's own (an environment that sets nothing keeps the local value, in italics).
+function addHelmEnvs(dir, root, { files, keys, values }) {
+  let charts = [];
+  try {
+    charts = helm.readHelmEnvs(dir, root);
+  } catch (e) {
+    files.push({ env: 'k8s', file: 'k8s', error: String(e.message || e).split('\n')[0], helm: true });
+    return;
+  }
+  for (const h of charts) {
+    const env = helmEnvName(h.env);
+    for (const key of keys) {
+      const own = values[key][env];
+      const base = own !== undefined ? own : values[key].local;
+      if (base === undefined) continue;
+      const relaxed = envNameOf(key);
+      const got = Object.prototype.hasOwnProperty.call(h.vars, relaxed) ? h.vars[relaxed] : resolveWith(base, h.vars);
+      if (got !== base || own !== undefined) values[key][env] = got;
+    }
+    for (const file of h.files) files.push({ env, file, helm: true, unread: h.unread.slice(0, 20) });
+  }
+}
+
+// The variables a value reads, as Spring resolves ${NAME:default}: the name up to the first ':', the default up to the
+// '}' that closes it (a ${...} in it counted, and read too). Only names a variable can have: ${a.b} reads a key.
+const VAR_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+function placeholdersIn(text, out = []) {
+  const s = String(text);
+  let i = s.indexOf('${');
+  while (i !== -1) {
+    let depth = 0;
+    let j = i;
+    for (; j < s.length; j++) {
+      if (s[j] === '$' && s[j + 1] === '{') {
+        depth += 1;
+        j += 1;
+      } else if (s[j] === '}' && --depth === 0) break;
+    }
+    if (j >= s.length) break; // never closed: not one
+    const inner = s.slice(i + 2, j);
+    const colon = inner.indexOf(':');
+    const name = (colon === -1 ? inner : inner.slice(0, colon)).trim();
+    const def = colon === -1 ? null : inner.slice(colon + 1);
+    if (VAR_NAME.test(name)) out.push({ name, def });
+    if (def !== null) placeholdersIn(def, out);
+    i = s.indexOf('${', j + 1);
+  }
+  return out;
+}
+
+// The variables the files of one environment read (local: application.yml / .properties), in the order the files have
+// them: each once, with the first default given (null: none); keys: the keys that read it.
+function placeholdersOf(table, env = 'local') {
+  const found = new Map();
+  for (const key of table.keys || []) {
+    const value = table.values[key][env];
+    if (value === undefined) continue;
+    for (const p of placeholdersIn(value)) {
+      const had = found.get(p.name);
+      if (!had) found.set(p.name, { name: p.name, def: p.def, keys: [key] });
+      else {
+        if (had.def === null && p.def !== null) had.def = p.def;
+        if (!had.keys.includes(key)) had.keys.push(key);
+      }
+    }
+  }
+  return [...found.values()];
 }
 
 // The values chosen, as they may go to the app: plain keys, text values, not too many nor too long.
@@ -141,4 +252,4 @@ function withValues(env, values) {
   return { ...(env || process.env), SPRING_APPLICATION_JSON: JSON.stringify(values) };
 }
 
-module.exports = { listEnvs, readEnvValues, parseProperties, cleanValues, withValues };
+module.exports = { listEnvs, readEnvValues, parseProperties, placeholdersIn, placeholdersOf, cleanValues, withValues, resolveWith, envNameOf };

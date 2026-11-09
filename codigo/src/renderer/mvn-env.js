@@ -279,7 +279,7 @@ function closeMvnEnv() {
   closeActionMenu();
   modal.classList.add('hidden');
   $('#mvnEnvBtn').setAttribute('aria-expanded', 'false');
-  $('#mvnEnvBtn').focus();
+  mvnFocusBack($('#mvnEnvBtn'));
 }
 
 function openMvnEnvIntellij() {

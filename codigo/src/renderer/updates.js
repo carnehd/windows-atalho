@@ -1,5 +1,5 @@
 // -- Version and updates, at the top of Settings: Check for updates asks GitHub for the latest release; Download puts
-// its GitQuick-<version>.zip in the folder of the exe and takes its GitQuick-<version>.exe out next to it (updater.js);
+// its QuickDeck-<version>.zip in the folder of the exe and takes its QuickDeck-<version>.exe out next to it (updater.js);
 // Open closes this one and opens that one, with the same data folder. --
 let updateState = { phase: 'idle' };
 
@@ -50,7 +50,7 @@ function renderUpdate() {
       break;
     case 'newer': {
       const when = s.latest.date ? ` (${new Date(s.latest.date).toLocaleDateString()})` : '';
-      text.textContent = `Git Quick ${v} is out${when}. It goes into ${s.folder} as GitQuick-${v}.zip, with GitQuick-${v}.exe taken out of it next to it. The data folder stays as it is.`;
+      text.textContent = `QuickDeck ${v} is out${when}. It goes into ${s.folder} as QuickDeck-${v}.zip, with QuickDeck-${v}.exe taken out of it next to it. The data folder stays as it is.`;
       const size = s.latest.asset && s.latest.asset.size ? ` (${mb(s.latest.asset.size)})` : '';
       actions.append(updateButton(`Download ${v}${size}`, downloadUpdate, { primary: true }));
       break;
@@ -59,15 +59,15 @@ function renderUpdate() {
       const pct = s.total ? Math.min(100, Math.round((s.got / s.total) * 100)) : 0;
       $('#updateFill').style.width = `${pct}%`;
       $('#updateTrack').classList.toggle('busy', !s.total);
-      text.textContent = `Downloading Git Quick ${v}: ${s.total ? `${mb(s.got)} of ${mb(s.total)}` : mb(s.got || 0)}`;
+      text.textContent = `Downloading QuickDeck ${v}: ${s.total ? `${mb(s.got)} of ${mb(s.total)}` : mb(s.got || 0)}`;
       break;
     }
     case 'unpack':
       $('#updateFill').style.width = '100%';
-      text.textContent = `Taking GitQuick-${v}.exe out of the zip...`;
+      text.textContent = `Taking QuickDeck-${v}.exe out of the zip...`;
       break;
     case 'ready':
-      text.textContent = `GitQuick-${v}.exe is in ${s.folder}, next to this one. Shortcuts and the taskbar still open the exe you had: point them to the new one.`;
+      text.textContent = `QuickDeck-${v}.exe is in ${s.folder}, next to this one. Shortcuts and the taskbar still open the exe you had: point them to the new one.`;
       if (s.canOpen) actions.append(updateButton(`Open ${v} now`, openUpdate, { primary: true, title: `Closes this one (${s.current}) and opens ${v}, with the same data` }));
       actions.append(updateButton('Show in folder', () => window.updates.reveal(v)));
       break;
@@ -90,7 +90,7 @@ async function downloadUpdate() {
   const r = await window.updates.download();
   if (r.error) return setUpdate({ phase: 'error', error: r.error });
   setUpdate({ phase: 'ready', latest: { ...updateState.latest, version: r.version } });
-  toast(`GitQuick-${r.version}.exe is ready next to this one`, 'success', { plain: true });
+  toast(`QuickDeck-${r.version}.exe is ready next to this one`, 'success', { plain: true });
 }
 
 async function openUpdate() {
@@ -98,7 +98,7 @@ async function openUpdate() {
   // what runs in this one stops with it
   const running = await window.maven.running();
   if (running.length) {
-    const ok = await askConfirm(`Open Git Quick ${v} now? This one closes, and what runs in it stops.\n\n${running.map((r) => `${r.command} (${r.repo.split(/[\\/]/).pop()})`).join('\n')}`, { confirm: `Open ${v}` });
+    const ok = await askConfirm(`Open QuickDeck ${v} now? This one closes, and what runs in it stops.\n\n${running.map((r) => `${r.command} (${r.repo.split(/[\\/]/).pop()})`).join('\n')}`, { confirm: `Open ${v}` });
     if (!ok) return;
   }
   const r = await window.updates.open(v);
@@ -112,7 +112,7 @@ async function setupUpdates() {
   });
   $('#updateCheckBtn').addEventListener('click', checkUpdate);
   const info = await window.updates.info();
-  $('#updateVersion').textContent = `Git Quick ${info.current}`;
+  $('#updateVersion').textContent = `QuickDeck ${info.current}`;
 }
 
 if (!CARD_ID) setupUpdates();

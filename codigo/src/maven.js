@@ -949,7 +949,7 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
       options: OPTIONS.map(({ id, args, label }) => ({ id, flag: args.join(' '), label })),
       profiles: pomProfiles(dir),
       // the environments with an application-<env> file: Start and Debug can take their values (the Values button)
-      valueEnvs: envValues.listEnvs(dir),
+      valueEnvs: envValues.listEnvs(dir, repoPath),
       runEnv: runEnvFor(repoPath),
       container: containerFor(repoPath),
       ports,
@@ -977,11 +977,13 @@ function registerMaven({ isKnownRepo, getWindow, loadPorts, savePorts, loadDir, 
     return infoFor(repoPath);
   });
 
-  // The values of each environment, from the application*.properties / .yml of the folder the commands run in.
+  // The values of each environment, from the application*.properties / .yml of the folder the commands run in; and the
+  // variables its own files read (${NAME:default}), for From Env of Start in container.
   ipcMain.handle('mvn-env-values', (_, repoPath) => {
     if (!isKnownRepo(repoPath)) return { error: 'Unknown repository' };
     const { dir, rel } = chosenDir(repoPath);
-    return { dir: rel, ...envValues.readEnvValues(dir) };
+    const table = envValues.readEnvValues(dir, repoPath);
+    return { dir: rel, ...table, placeholders: envValues.placeholdersOf(table) };
   });
 
   // Saved per repository; used the next time Start or Debug runs.

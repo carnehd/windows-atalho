@@ -1,7 +1,8 @@
 // -- The connections of the Database page, in a dialog: the list on the left (+ New connection), the one chosen on the
 // right (name, host and port, database, user, password, SSL), or all of it in one link (db-link.js). Test tries it as
 // it is in the form; Save keeps it (the password encrypted by the system, never shown again: "saved" says there is
-// one); Delete asks first. --
+// one); Delete asks first. The icon on each kept connection makes a copy of it (same values, same password, a new one
+// that is only kept at Save). New connection and Delete are side by side under the list. --
 const DB_SSL = [['disable', 'Off'], ['require', 'Required'], ['no-verify', 'Required, certificate not checked']];
 const DB_MODE_KEY = 'dbConnMode';
 // list: the connections as the page knows them, plus a new one being made; mode: Fields or Link; autoName: the name
@@ -21,7 +22,10 @@ function dbConnModal() {
       <div class="db-conn-layout">
         <div class="db-conn-side">
           <div id="dbConnList" class="bru-env-list" role="listbox" aria-label="Connections"></div>
-          <button id="dbConnNewBtn" class="btn btn-sm" type="button">+ New connection</button>
+          <div class="db-conn-side-actions">
+            <button id="dbConnNewBtn" class="btn btn-sm" type="button">+ New connection</button>
+            <button id="dbcDeleteBtn" class="btn btn-sm btn-danger" type="button">Delete</button>
+          </div>
         </div>
         <form id="dbConnForm" class="db-conn-form" autocomplete="off">
           <div id="dbcMode" class="seg db-conn-mode" role="group" aria-label="Give it as">
@@ -52,7 +56,6 @@ function dbConnModal() {
         </form>
       </div>
       <div class="action-row settings-actions bru-env-actions">
-        <button id="dbcDeleteBtn" class="btn btn-sm btn-danger" type="button">Delete</button>
         <span class="bru-env-gap"></span>
         <button id="dbcTestBtn" class="btn" type="button">Test</button>
         <button id="dbcCancelBtn" class="btn" type="button">Cancel</button>
@@ -200,6 +203,8 @@ function renderDbConnList() {
   const list = $('#dbConnList');
   list.innerHTML = '';
   dbForm.list.forEach((c, i) => {
+    const row = dbEl('div', 'db-conn-row');
+    row.setAttribute('role', 'presentation');
     const b = dbEl('button', `bru-env-item${i === dbForm.at ? ' on' : ''}`, c.name || 'New connection');
     b.type = 'button';
     b.setAttribute('role', 'option');
@@ -211,8 +216,34 @@ function renderDbConnList() {
       if (!dbForm.list[dbForm.at].id) dbForm.list.splice(dbForm.at, 1);
       showDbConnection(dbForm.list.indexOf(c));
     });
-    list.appendChild(b);
+    row.appendChild(b);
+    // only one that is kept can be copied: a new one is not there yet
+    if (c.id) {
+      const dup = dbEl('button', 'db-conn-dup');
+      dup.type = 'button';
+      dup.title = 'Duplicate: a new connection with the same values';
+      dup.setAttribute('aria-label', `Duplicate ${c.name}`);
+      dup.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ACTION_ICONS.copy}</svg>`;
+      dup.addEventListener('click', () => duplicateDbConnection(c));
+      row.appendChild(dup);
+    }
+    list.appendChild(row);
   });
+}
+
+// The copy of a connection: a new one, not kept until Save, with the same host, port, database, user and SSL, and the same
+// password (the main process gives it at Save and at Test: the page never has it). Its name is the original's + " copy".
+async function duplicateDbConnection(c) {
+  if (dbFormChanged() && !(await askConfirm('Discard the changes to this connection?', { confirm: 'Discard' }))) return;
+  const draft = dbForm.list[dbForm.at];
+  if (draft && !draft.id) dbForm.list.splice(dbForm.at, 1); // a new one not kept goes; the copy takes its place
+  const taken = new Set(dbForm.list.map((x) => (x.name || '').toLowerCase()));
+  const stem = (c.name || 'connection').slice(0, 48);
+  let name = `${stem} copy`;
+  for (let n = 2; taken.has(name.toLowerCase()); n += 1) name = `${stem} copy ${n}`;
+  dbForm.list.push({ name, host: c.host, port: c.port, database: c.database, user: c.user, ssl: c.ssl, hasPassword: c.hasPassword, copyFrom: c.id });
+  showDbConnection(dbForm.list.length - 1);
+  $('#dbcName').select();
 }
 
 function showDbConnection(i) {
@@ -225,7 +256,7 @@ function showDbConnection(i) {
   $('#dbcUser').value = c.user || '';
   $('#dbcPassword').value = '';
   $('#dbcPassword').disabled = false;
-  $('#dbcPassword').placeholder = c.hasPassword ? 'saved: type to change it' : 'none';
+  $('#dbcPassword').placeholder = c.hasPassword ? (c.copyFrom ? 'the same as the original: type to change it' : 'saved: type to change it') : 'none';
   $('#dbcForget').checked = false;
   $('#dbcForgetRow').classList.toggle('hidden', !c.hasPassword);
   $('#dbcSsl').value = c.ssl || 'disable';
@@ -258,6 +289,7 @@ function dbFormValues() {
     password: $('#dbcPassword').value,
     clearPassword: $('#dbcForget').checked,
     ssl: $('#dbcSsl').value,
+    copyPasswordFrom: c.copyFrom || null, // a copy not kept yet: its password is the original's, which only the main process has
   };
 }
 

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- QuickDeck from 16 to 32 px (the tray): the same deck, larger and with thicker lines, so it stays sharp. -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2f6df6"/>
+      <stop offset="1" stop-color="#7b3fe4"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="62" height="62" rx="14" fill="url(#tile)"/>
+  <rect x="10" y="15" width="26" height="35" rx="5" fill="none" stroke="#fff" stroke-width="5.5" opacity=".6" transform="rotate(-14 23 32)"/>
+  <path fill="#fff" fill-rule="evenodd" transform="rotate(6 34 31)" d="M26 10h18a5 5 0 0 1 5 5v32a5 5 0 0 1-5 5H26a5 5 0 0 1-5-5V15a5 5 0 0 1 5-5zM38 15 27 34h8.5l-3.5 14 12.5-19H36z"/>
+</svg>

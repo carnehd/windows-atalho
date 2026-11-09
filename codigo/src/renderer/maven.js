@@ -1090,7 +1090,8 @@ function renderMvnPorts(view) {
   const serverInput = $('#mvnServerPort');
   if (document.activeElement !== debugInput) debugInput.value = String(ports.debug);
   if (document.activeElement !== serverInput) serverInput.value = ports.server ? String(ports.server) : '';
-  $('#mvnPortsBtn').title = `Start / Debug ports: debug ${ports.debug}, app ${ports.server || "the project's own"}`;
+  mvnPortsTitle = `ports: debug ${ports.debug}, app ${ports.server || "the project's own"}`;
+  renderMvnGear();
   $('#mvnCommand option[value="debug"]').textContent = `Debug :${ports.debug}`;
   $('#mvnCommand option[value="start"]').textContent = ports.server ? `Start :${ports.server}` : 'Start';
   $$('#mvnCommand option').forEach((o) => {
@@ -1100,8 +1101,24 @@ function renderMvnPorts(view) {
   renderMvnPreview();
 }
 
-// -- The ports of Start and Debug, in a popover under the gear at the end of the command line: saved when a field is
-// left or Enter is pressed (Enter closes it too); Esc, a click elsewhere or the window left close it. --
+// -- Under the gear at the end of the command line: Values, Env and Local setup, each opening its dialog, then the ports
+// of Start and Debug, saved when a field is left or Enter is pressed (Enter closes it too); Esc, a click elsewhere or the
+// window left close it. The gear has a dot when one of the three is set to something. --
+let mvnPortsTitle = '';
+
+function renderMvnGear() {
+  const items = [...$$('#mvnPortsPop .mvn-gear-items .mvn-values-btn')].filter((b) => !b.classList.contains('hidden'));
+  const on = items.filter((b) => b.classList.contains('on'));
+  const gear = $('#mvnPortsBtn');
+  gear.classList.toggle('has-on', on.length > 0);
+  gear.title = ['Start and Debug: Values, Env, Local setup and the ports', ...on.map((b) => b.textContent.trim()), mvnPortsTitle].filter(Boolean).join('\n');
+}
+
+// a dialog of the gear gives the focus back to its button; hidden under the closed gear, to the gear
+function mvnFocusBack(btn) {
+  if (btn && btn.offsetParent !== null) btn.focus();
+  else $('#mvnPortsBtn').focus();
+}
 function closeMvnPorts(refocus = false) {
   const pop = $('#mvnPortsPop');
   if (pop.classList.contains('hidden')) return;
@@ -1121,14 +1138,23 @@ function openMvnPorts() {
   const a = btn.getBoundingClientRect();
   pop.style.left = `${Math.round(Math.max(8, Math.min(a.right - pop.offsetWidth, window.innerWidth - pop.offsetWidth - 8)))}px`;
   pop.style.top = `${Math.round(a.bottom + 6)}px`;
-  $('#mvnDebugPort').focus();
-  $('#mvnDebugPort').select();
+  const first = [...$$('#mvnPortsPop .mvn-gear-items .mvn-values-btn')].find((b) => !b.classList.contains('hidden'));
+  if (first) first.focus();
+  else {
+    $('#mvnDebugPort').focus();
+    $('#mvnDebugPort').select();
+  }
 }
 
 function setupMvnPorts() {
   const pop = $('#mvnPortsPop');
   const btn = $('#mvnPortsBtn');
   btn.addEventListener('click', () => (pop.classList.contains('hidden') ? openMvnPorts() : closeMvnPorts()));
+  // Values, Env, Local setup: the menu closes before the dialog opens (their own listeners open it)
+  for (const item of $$('#mvnPortsPop .mvn-gear-items .mvn-values-btn')) {
+    item.addEventListener('click', () => closeMvnPorts(), true);
+    new MutationObserver(renderMvnGear).observe(item, { attributes: true, attributeFilter: ['class'], childList: true, subtree: true, characterData: true });
+  }
   ['#mvnDebugPort', '#mvnServerPort'].forEach((sel) => {
     const input = $(sel);
     input.addEventListener('change', saveMvnPorts);
@@ -1205,7 +1231,7 @@ function applyMvnInfo(info) {
   $('#mvnPanel').classList.toggle('hidden', !info.hasPom);
   // "Runs in" at the right of the command line; with no pom.xml in the folder (no command line), on top to choose another
   const row = $('#mvnFolderRow');
-  if (info.hasPom) $('#mvnCmdline').insertBefore(row, $('#mvnValuesBtn'));
+  if (info.hasPom) $('#mvnCmdline').insertBefore(row, $('#mvnPortsBtn'));
   else $('#tab-maven').insertBefore(row, $('#mvnNoPom'));
   renderMvnLine(info);
   // the Maven the commands run with: as in IntelliJ (its settings for the project), else the project's mvnw; the

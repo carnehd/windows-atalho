@@ -69,7 +69,7 @@ const ANSWER_SCHEMA = {
           },
           database: {
             type: 'object',
-            description: 'For a PostgreSQL: Git Quick creates these itself',
+            description: 'For a PostgreSQL: QuickDeck creates these itself',
             properties: {
               name: { type: 'string' }, schema: { type: 'string' }, ddlUser: { type: 'string' }, ddlPassword: { type: 'string' }, dmlUser: { type: 'string' }, dmlPassword: { type: 'string' },
               migrations: { type: 'string', enum: ['liquibase', 'flyway', 'none'] },
@@ -89,7 +89,7 @@ function promptFor({ skill, folder, inText = false }) {
   return [
     'You are finding out what a microservice needs running on this computer to start and to work, following the instructions below.',
     '',
-    `The working directory is a copy of its repository${folder ? `, and the microservice is in its folder ${folder}` : ''}. What Git ignores is left out of it. You can read any file there (Read, Grep, Glob). You cannot change files or run commands, and you do not need to: Git Quick shows your answer to the user, and starts what the user chooses.`,
+    `The working directory is a copy of its repository${folder ? `, and the microservice is in its folder ${folder}` : ''}. What Git ignores is left out of it. You can read any file there (Read, Grep, Glob). You cannot change files or run commands, and you do not need to: QuickDeck shows your answer to the user, and starts what the user chooses.`,
     '',
     '<setup-instructions>',
     skill,

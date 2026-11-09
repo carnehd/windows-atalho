@@ -118,7 +118,7 @@ function cmFilterBox(placeholder, on) {
 
 function openPubsubMessages() {
   cm.pubsub = { project: '', port: 0, topics: [], subscriptions: [], messages: [], seq: 0, topic: '', open: new Set(), loaded: false };
-  $('#cmSub').textContent = 'Everything published to its topics, from when Git Quick started watching this emulator (when Local setup started it, or this page was first opened): it keeps no history of what came before. Your microservice gets its messages as always: this page reads subscriptions of its own, one per topic.';
+  $('#cmSub').textContent = 'Everything published to its topics, from when QuickDeck started watching this emulator (when Local setup started it, or this page was first opened): it keeps no history of what came before. Your microservice gets its messages as always: this page reads subscriptions of its own, one per topic.';
   const bar = $('#cmBar');
   bar.replaceChildren(cmEl('div', 'cm-chips'), cmFilterBox('Filter the messages', drawPubsubMessages));
   const clear = cmEl('button', 'btn btn-sm', 'Clear');

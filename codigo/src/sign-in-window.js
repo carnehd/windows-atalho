@@ -128,7 +128,7 @@ function registerSignInWindows({ stepBack }) {
       height: 820,
       show: false,
       autoHideMenuBar: true,
-      title: `${login.title || host} · Git Quick`,
+      title: `${login.title || host} · QuickDeck`,
       webPreferences: { partition: PARTITION, contextIsolation: true, sandbox: true, nodeIntegration: false },
     });
     manage(win, id, login);

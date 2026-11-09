@@ -1,15 +1,15 @@
-// Run by Git Quick with the computer's Node (or its own, as Node), not inside the app:
+// Run by QuickDeck with the computer's Node (or its own, as Node), not inside the app:
 // `node bruno-runner.js <cli folder> <vars file> run ...`.
 // It starts the Bruno CLI as `bru` would, with two things added around each request it sends:
 //  - the variables the scripts set (bru.setVar) are there from the start, as the last run left them, and saved after
 //    each request, so a request sent alone can use what an earlier one kept (the id of what it created);
-//  - each result is printed on a line of its own, marked, for Git Quick to show it while the rest still runs.
+//  - each result is printed on a line of its own, marked, for QuickDeck to show it while the rest still runs.
 // The app copies this file next to its settings before it runs it (a file inside the packed app cannot be run by Node).
 'use strict';
 const fs = require('fs');
 const path = require('path');
 
-// Run by the app itself as Node (ELECTRON_RUN_AS_NODE: the Bruno CLI Git Quick installed), whose Node is 18: what the
+// Run by the app itself as Node (ELECTRON_RUN_AS_NODE: the Bruno CLI QuickDeck installed), whose Node is 18: what the
 // CLI takes from a newer one (crypto on globalThis), and its arguments read as Node's (yargs takes them for a packed
 // Electron app's otherwise, one fewer).
 if (process.versions.electron) {
@@ -19,7 +19,7 @@ if (process.versions.electron) {
 
 const MARK = '\u001eGQ-BRUNO ';
 // A variable a script set to undefined (res.body.id of a list): JSON would leave it out, so it is kept as this mark, for
-// Git Quick to show it set without a value, and undefined again in the next run.
+// QuickDeck to show it set without a value, and undefined again in the next run.
 const UNSET = '$gitQuickUndefined';
 const MAX_BODY = 512 * 1024;
 const [cliDir, varsFile, ...args] = process.argv.slice(2);
@@ -132,9 +132,9 @@ try {
       }
       return result;
     };
-  } else process.stdout.write(`\n${MARK}${JSON.stringify({ warning: 'This Bruno CLI is not one Git Quick knows: the variables are not kept between runs' })}\n`);
+  } else process.stdout.write(`\n${MARK}${JSON.stringify({ warning: 'This Bruno CLI is not one QuickDeck knows: the variables are not kept between runs' })}\n`);
 } catch {
-  process.stdout.write(`\n${MARK}${JSON.stringify({ warning: 'This Bruno CLI is not one Git Quick knows: the variables are not kept between runs' })}\n`);
+  process.stdout.write(`\n${MARK}${JSON.stringify({ warning: 'This Bruno CLI is not one QuickDeck knows: the variables are not kept between runs' })}\n`);
 }
 
 process.argv = [process.argv[0], path.join(cliDir, 'bin', 'bru.js'), ...args];

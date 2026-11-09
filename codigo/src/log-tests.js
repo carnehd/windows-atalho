@@ -563,7 +563,7 @@ function requestOf(c, { name, seq, base, sets, uses, from = new Map() }) {
     return t.length > MAX_DOCS ? `${t.slice(0, MAX_DOCS)}\n…` : t;
   })();
   const docs = [
-    `Made by Git Quick from the logs${c.service ? ` of ${c.service}` : ''}: the request of ${when(c.rep.ts)} and its response${c.rep.traceId ? ` (trace ${c.rep.traceId})` : ''}.${c.samples.length > 1 ? ` The logs have it ${c.samples.length} times.` : ''}`,
+    `Made by QuickDeck from the logs${c.service ? ` of ${c.service}` : ''}: the request of ${when(c.rep.ts)} and its response${c.rep.traceId ? ` (trace ${c.rep.traceId})` : ''}.${c.samples.length > 1 ? ` The logs have it ${c.samples.length} times.` : ''}`,
     ...(Object.keys(used).length ? ['', `Its address uses ${[...new Set(Object.values(used))].map((v) => `{{${v}}}`).join(', ')}: set by an earlier test of this folder, from what it made.`] : []),
     ...(secrets.length ? ['', `${secrets.map((s) => `{{${s}}}`).join(', ')}: the logs do not have it. Set it in the environment.`] : []),
     ...(checks.unchecked.length ? ['', `Not checked by value, as it changes from one request to the next: ${checks.unchecked.slice(0, 20).join(', ')}${checks.unchecked.length > 20 ? '…' : ''}.`] : []),
@@ -694,7 +694,7 @@ function scenarioItem(s, moreDir, base, casesById) {
     } else {
       const lines = req.json.docs.split('\n');
       const how = s.kind === 'sequence' ? `actions in an order the logs did not have (${what})` : s.kind === 'call' ? `an endpoint of the code the logs never had (${what})` : `a request of the logs with one change (${what})`;
-      lines[0] = `Made by Git Quick from what the logs did not have: ${how}.${multi ? ' The steps before make what it needs, so it starts from something new.' : ''}`;
+      lines[0] = `Made by QuickDeck from what the logs did not have: ${how}.${multi ? ' The steps before make what it needs, so it starts from something new.' : ''}`;
       lines.splice(1, 0, '', `It answered ${r.status} when tried${r.code ? `, as the code says: ${path.basename(r.code.file)}:${r.code.line}${r.code.condition ? ` (${r.code.condition})` : ''}` : ''}.${r.same ? ` The logs have this answer too.` : ''}`);
       req.json.docs = lines.join('\n').replace('The response in the logs:', 'The response when tried:');
       summary = req.summary;

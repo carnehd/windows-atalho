@@ -492,7 +492,10 @@ function runCopilot({ file, command = 'copilot', env, cwd, prompt, onProgress, k
   let child = null;
   let stopped = false;
   const done = new Promise((resolve, reject) => {
-    const args = ['-s', '--no-ask-user', '--available-tools=read', '--allow-tool=read', '--deny-tool=shell', '--deny-tool=write', '--deny-tool=url'];
+    // --available-tools takes the names of the tools the model sees (view reads a file, glob lists, rg searches; grep
+    // for the versions that named it so; a name a version does not have is left out): with "read", a kind of
+    // permission, the model had no tools at all and could not open a file. --allow-tool takes the kinds.
+    const args = ['-s', '--no-ask-user', '--available-tools=view,glob,rg,grep', '--allow-tool=read', '--deny-tool=shell', '--deny-tool=write', '--deny-tool=url'];
     try {
       child = spawn(file, args, { cwd, env, windowsHide: true, detached: !shell.IS_WIN, shell: /\.(cmd|bat)$/i.test(file), stdio: ['pipe', 'pipe', 'pipe'] });
     } catch (e) {

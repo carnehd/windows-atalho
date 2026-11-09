@@ -224,6 +224,19 @@ body.resizing-window,
 body.resizing-window * {
   user-select: none;
 }
+/* The top bar and the rail drag the window (-webkit-app-region: drag), and the system takes a click there for the start of a
+   drag even with something drawn over it: the X in the corner of a tall window, or a button near its top, did nothing. What
+   comes over the page says no-drag; it comes after the bar and the rail in the page, so it takes its place out of the dragging
+   (the rest of the dimmed page stays a place to drag the window by, as before). */
+.settings-card,
+.confirm-card,
+.win-x,
+.clip-menu,
+.pr-line-pop,
+.an-fpop,
+.toast {
+  -webkit-app-region: no-drag;
+}
 .window-size-row {
   display: flex;
   align-items: center;
@@ -297,6 +310,11 @@ body.resizing-window * {
   font-weight: 600;
   font-size: var(--fs-body);
   transition: transform 0.16s cubic-bezier(0.3, 1.4, 0.6, 1);
+}
+.rail-logo-mark svg {
+  width: 24px;
+  height: 24px;
+  display: block;
 }
 .rail-logo:hover .rail-logo-mark {
   transform: scale(1.12);
@@ -393,9 +411,13 @@ body.resizing-window * {
 .rail.no-anim * {
   transition: none !important;
 }
-/* Tabler icons are drawn on 24 units: about the same line as the 16-unit icons */
+/* Tabler and Lucide icons are drawn on 24 units: about the same line as the 16-unit icons */
 .rail-btn svg.tabler {
   stroke-width: 2.2;
+}
+/* A page that Settings > Sidebar leaves out of the sidebar */
+.rail-btn.rail-off {
+  display: none;
 }
 /* Dragging an icon to put the pages in another order: it fades, a line shows where it goes */
 .rail-btn.rail-dragging {
@@ -1440,8 +1462,15 @@ body.resizing-sidebar {
   color: var(--text-muted);
   font-size: var(--fs-caption);
 }
-/* Actions on the ticked files, at the right of the select-all box. They hide when no file is ticked, and the row
-   keeps its height so the list does not jump. */
+/* the count of the files ticked, and the button for all or none */
+.file-list-pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+/* Actions on the ticked files, at the right of the count. They hide when no file is ticked, and the row keeps its
+   height so the list does not jump. */
 .file-list-actions {
   display: flex;
   flex-shrink: 0;
@@ -2167,8 +2196,9 @@ button.push-file:hover {
   width: 15px;
   height: 15px;
   flex-shrink: 0;
-  fill: color-mix(in srgb, var(--accent) 22%, transparent);
-  stroke: color-mix(in srgb, var(--accent) 75%, var(--text-muted));
+  /* an outline only, in the grey of the text around it */
+  fill: none;
+  stroke: var(--text-dim);
   stroke-width: 1.2;
   stroke-linejoin: round;
 }
@@ -3409,6 +3439,50 @@ button.push-file:hover {
   to { transform: rotate(360deg); }
 }
 
+/* QuickDeck's loading icon (qd-loader.js), variant "Sincronizado": the front card with the bolt flips once for each turn
+   of the ring. It is where the app is blocked waiting for an answer (the full-window loading, the switch of repository);
+   the spinner above is for the small busy marks. With reduced motion it only breathes, so it does not look frozen. */
+.qd-loader-slot {
+  display: block;
+  line-height: 0;
+}
+.qd-loader {
+  display: block;
+  flex-shrink: 0;
+}
+.qd-loader * {
+  transform-box: view-box;
+}
+.qd-loader-track {
+  stroke: var(--border);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .qd-loader .qd-front {
+    transform-origin: 33px 31px;
+    animation: qd-loader-flip 1.2s ease-in-out infinite;
+  }
+  .qd-loader .qd-ring {
+    transform-origin: 32px 32px;
+    animation: qd-loader-spin 1.2s linear infinite;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .qd-loader {
+    animation: qd-loader-breathe 1.6s ease-in-out infinite;
+  }
+}
+@keyframes qd-loader-flip {
+  0%, 100% { transform: scaleX(1); }
+  50% { transform: scaleX(0.06); }
+}
+@keyframes qd-loader-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes qd-loader-breathe {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
@@ -4623,6 +4697,15 @@ body.card-window .vault-card {
 .mv-seg-item:first-child {
   border-left: none;
 }
+/* production: the values of a chart that make a service started here call the production systems */
+.mv-seg-item.mv-prod,
+.mv-table th.mv-prod {
+  color: color-mix(in srgb, var(--red) 82%, var(--text));
+}
+.mv-seg-item.mv-prod:has(input:checked) {
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+  color: color-mix(in srgb, var(--red) 82%, var(--text));
+}
 .mv-seg-item:has(input:checked) {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   color: var(--accent);
@@ -4934,10 +5017,46 @@ body.card-window .vault-card {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-/* the ports of Start and Debug, under the gear */
+/* under the gear: Values, Env and Local setup as rows of a menu, then the ports of Start and Debug */
 .mvn-ports-pop {
-  width: 270px;
+  width: 300px;
   padding: 12px;
+}
+.mvn-gear-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: -4px 0 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.mvn-gear-items .mvn-values-btn {
+  width: 100%;
+  max-width: none;
+  height: 32px;
+  justify-content: flex-start;
+  padding: 0 8px;
+  border-color: transparent;
+  font-size: var(--fs-body);
+  text-align: left;
+}
+.mvn-gear-items .mvn-values-btn.on {
+  border-color: transparent;
+}
+/* the gear tells that one of them is set to something */
+.mvn-ports-btn {
+  position: relative;
+}
+.mvn-ports-btn.has-on::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--bg);
 }
 .mvn-ports-title {
   margin-bottom: 10px;
@@ -6876,6 +6995,114 @@ body.card-window .vault-card {
   opacity: 0.3;
   cursor: default;
 }
+/* Settings > Sidebar: the pages in the order of the sidebar */
+.rail-pages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rail-page {
+  display: grid;
+  grid-template-columns: 16px 26px minmax(0, 1fr) 26px 26px 22px;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px 3px 4px;
+  border-radius: 6px;
+  cursor: grab;
+}
+.rail-page:hover {
+  background: var(--bg-hover);
+}
+.rail-page.dragging {
+  opacity: 0.4;
+}
+.rail-page.drop-before {
+  box-shadow: 0 -2px 0 var(--accent);
+}
+.rail-page.drop-after {
+  box-shadow: 0 2px 0 var(--accent);
+}
+.rail-page-grip,
+.rail-page-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+.rail-page-grip svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+.rail-page-icon svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.rail-page-icon svg.tabler {
+  stroke-width: 2.2;
+}
+.rail-page-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-small);
+  color: var(--text);
+}
+.rail-page.off .rail-page-name,
+.rail-page.off .rail-page-icon {
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+.rail-page-move {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  padding: 0;
+}
+.rail-page-move svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.rail-page-move:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.rail-page-move:disabled:hover {
+  background: none;
+  color: var(--text-muted);
+}
+.rail-page-show {
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+.rail-pages-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 8px;
+}
+.rail-pages-count {
+  font-size: var(--fs-caption);
+  color: var(--text-muted);
+}
 
 /* Clipboard pins */
 .clip-col-actions,
@@ -6897,13 +7124,6 @@ body.card-window .vault-card {
 }
 
 /* Choose files to commit */
-.select-all {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-}
-.select-all input,
 .file-check {
   width: 14px;
   height: 14px;
@@ -8355,6 +8575,24 @@ label.file-item {
 }
 .help-to-term:hover {
   color: var(--accent);
+}
+/* A script of several lines: shown as it is written, in a box that scrolls; it is copied, not sent to the terminal */
+.help-to-term:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.help-to-term:disabled:hover {
+  color: var(--text-muted);
+}
+.help-cmd.multi {
+  justify-self: stretch;
+  max-height: 200px;
+  overflow: auto;
+  text-overflow: clip;
+  white-space: pre;
+}
+.help-row:has(.help-cmd.multi) {
+  align-items: start;
 }
 .help-term {
   display: flex;
@@ -15406,6 +15644,12 @@ textarea:not(.tool-area, .bru-code-edit)::placeholder {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+/* the agent says it could not read the code: no result, said as a warning */
+.ls-empty.agent-not-read,
+.pr-agent-none.agent-not-read {
+  color: var(--yellow);
+  border-color: color-mix(in srgb, var(--yellow) 45%, var(--border));
 }
 .ls-empty {
   margin: 0;

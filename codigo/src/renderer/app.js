@@ -1840,16 +1840,21 @@ function addDirItem(container, dir, depth) {
 function updateSelectionInfo() {
   const total = currentEntries.length;
   const selected = selectedEntries().length;
-  $('#changesCount').textContent = total === 0
-    ? '0 changes'
-    : `${selected} of ${total} file${total !== 1 ? 's' : ''} selected for the commit`;
-  const all = $('#selectAllFiles');
-  all.disabled = total === 0;
-  all.checked = total > 0 && selected === total;
-  all.indeterminate = selected > 0 && selected < total;
+  // how many are ticked, of how many: the whole sentence in its tooltip
+  const count = $('#changesCount');
+  count.textContent = total === 0 ? '0 changes' : `${selected} of ${total}`;
+  count.title = total === 0 ? '' : `${selected} of ${total} file${total !== 1 ? 's' : ''} selected for the commit`;
   selectedCount = selected;
   $('#commitBtn .btn-label').textContent = selected > 0 && selected < total ? `Commit ${selected}` : 'Commit';
-  // Revert and Move to ignored folder act on the ticked files, so they only show when some are ticked.
+  // the button for all or none says what a click does: none when all are ticked, else all
+  const allOn = total > 0 && selected === total;
+  const toggle = $('#toggleAllFilesBtn');
+  toggle.classList.toggle('hidden', total === 0);
+  toggle.setAttribute('aria-pressed', String(allOn));
+  toggle.querySelector('.btn-label').textContent = allOn ? 'Select none' : 'Select all';
+  toggle.title = allOn ? 'Untick every file: none goes in the commit' : 'Tick every file for the commit';
+  toggle.querySelector('svg').innerHTML = allOn ? '<path d="M3 5a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-14z"/>' : '<path d="M3 5a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-14z"/><path d="M9 12l2 2l4 -4"/>';
+  // Revert and Ignore act on the ticked files, so they only show when some are ticked.
   for (const id of ['#revertBtn', '#parkBtn']) {
     $(id).disabled = selected === 0;
     $(id).classList.toggle('hidden', selected === 0);
@@ -4525,10 +4530,12 @@ function setupEvents() {
   // branch and changes of every repository. Without that folder it asks for it first.
   renderReposRoot();
 
-  $('#selectAllFiles').addEventListener('change', (e) => {
+  // all or none: all ticked now, so none; else all
+  $('#toggleAllFilesBtn').addEventListener('click', () => {
     const off = deselectedFiles();
+    const allOn = off.size === 0 || currentEntries.every((entry) => !off.has(entry.file));
     off.clear();
-    if (!e.target.checked) currentEntries.forEach((entry) => off.add(entry.file));
+    if (allOn) currentEntries.forEach((entry) => off.add(entry.file));
     renderFileList();
   });
 
@@ -5369,7 +5376,7 @@ function renderIgnoredList(error) {
     return;
   }
   if (ignoredData.length === 0) {
-    box.appendChild(noteEl('No files kept out of commits. Use "Move to ignored folder..." in Changes.'));
+    box.appendChild(noteEl('No files kept out of commits. Use "Ignore..." in Changes.'));
     return;
   }
   ignoredData.forEach((group) => {
@@ -5637,6 +5644,9 @@ function updateCrumb() {
   } else if (currentMode === 'pulls') {
     mode = 'Pull requests';
     ctx = allPullsCrumb();
+  } else if (currentMode === 'agent') {
+    mode = 'consola-agente';
+    ctx = acCrumb();
   } else {
     mode = 'Tasks';
     const open = todoTasks.filter((t) => t.status !== 'done').length;
@@ -5649,7 +5659,7 @@ function updateCrumb() {
 
 function setMode(mode) {
   const before = currentMode;
-  currentMode = ['pulls', 'vault', 'todo', 'clip', 'help', 'logs', 'docker', 'tools', 'analysis', 'search', 'db'].includes(mode) ? mode : 'git';
+  currentMode = ['pulls', 'vault', 'todo', 'clip', 'help', 'logs', 'docker', 'tools', 'analysis', 'search', 'db', 'agent'].includes(mode) ? mode : 'git';
   if (before === 'pulls' && currentMode !== 'pulls') allPullsLeft();
   $('#gitView').classList.toggle('hidden', currentMode !== 'git');
   $('#vaultView').classList.toggle('hidden', currentMode !== 'vault');
@@ -5663,6 +5673,7 @@ function setMode(mode) {
   $('#searchView').classList.toggle('hidden', currentMode !== 'search');
   $('#dbView').classList.toggle('hidden', currentMode !== 'db');
   $('#pullsView').classList.toggle('hidden', currentMode !== 'pulls');
+  $('#agentView').classList.toggle('hidden', currentMode !== 'agent');
   if (currentMode === 'pulls' && before !== 'pulls') allPullsEntered();
   $$('.mode-tab').forEach((t) => t.classList.toggle('active', t.dataset.mode === currentMode));
   updateHotkeyBadge();
@@ -5734,6 +5745,8 @@ function activateMode(mode, ide) {
     showSearch();
   } else if (currentMode === 'db') {
     refreshDb();
+  } else if (currentMode === 'agent') {
+    showAgentConsole();
   } else if (currentMode === 'help') {
     renderTermFolders(); // the repositories may have changed
   } else {
@@ -5783,9 +5796,27 @@ function setupRailNames() {
 
 // -- The rail: its icons can be put in another order by dragging them (or Alt+Up/Down); kept on this PC --
 const RAIL_ORDER_KEY = 'railOrder';
+const RAIL_HIDDEN_KEY = 'railHidden'; // the pages left out of the sidebar (Settings > Sidebar)
 const railItems = () => [...$('.rail').querySelectorAll('.rail-btn.mode-tab')];
 const railKey = (b) => b.dataset.mode || b.id;
+const railShown = () => railItems().filter((b) => !b.classList.contains('rail-off'));
 let railDefault = [];
+
+// The pages left out of the sidebar. At least one stays: a saved list that left none out is not believed.
+function applyRailHidden(off) {
+  for (const b of railItems()) b.classList.toggle('rail-off', off.includes(railKey(b)));
+  if (railShown().length === 0) railItems().forEach((b) => b.classList.remove('rail-off'));
+}
+
+function saveRailHidden() {
+  const off = railItems().filter((b) => b.classList.contains('rail-off')).map(railKey);
+  try {
+    if (off.length) localStorage.setItem(RAIL_HIDDEN_KEY, JSON.stringify(off));
+    else localStorage.removeItem(RAIL_HIDDEN_KEY);
+  } catch {
+    // only for this session
+  }
+}
 
 function applyRailOrder(order) {
   const rail = $('.rail');
@@ -5811,6 +5842,12 @@ function setupRailOrder() {
     if (Array.isArray(saved)) applyRailOrder(saved);
   } catch {
     // the default order
+  }
+  try {
+    const off = JSON.parse(localStorage.getItem(RAIL_HIDDEN_KEY));
+    if (Array.isArray(off)) applyRailHidden(off);
+  } catch {
+    // all of them
   }
   let dragged = null;
   const clearMarks = () => railItems().forEach((b) => b.classList.remove('rail-drop-before', 'rail-drop-after'));
@@ -5850,7 +5887,7 @@ function setupRailOrder() {
     btn.addEventListener('keydown', (e) => {
       if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
       e.preventDefault();
-      const items = railItems();
+      const items = railShown(); // the pages left out of the sidebar are skipped
       const i = items.indexOf(btn);
       const j = e.key === 'ArrowUp' ? i - 1 : i + 1;
       if (j < 0 || j >= items.length) return;
@@ -5881,6 +5918,131 @@ function setupRailOrder() {
       ],
     });
   });
+}
+
+// -- Settings > Sidebar: the pages in the order of the sidebar, each with a tick to keep it in the sidebar; a change
+// shows in the sidebar at once (as the theme does) and is kept on this PC --
+const ARROW_UP = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 10l4-4 4 4"/></svg>';
+const ARROW_DOWN = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>';
+const GRIP = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="6" cy="4" r="1"/><circle cx="10" cy="4" r="1"/><circle cx="6" cy="8" r="1"/><circle cx="10" cy="8" r="1"/><circle cx="6" cy="12" r="1"/><circle cx="10" cy="12" r="1"/></svg>';
+const railName = (b) => b.querySelector('.rail-label').textContent;
+
+function renderRailPages(focus = null) {
+  const list = $('#railPages');
+  list.textContent = '';
+  const items = railItems();
+  const updateCount = () => {
+    $('#railPagesCount').textContent = `${railShown().length} of ${items.length} pages in the sidebar`;
+  };
+  const move = (btn, dir) => {
+    const all = railItems();
+    const at = all.indexOf(btn);
+    const other = all[at + dir];
+    if (!other) return;
+    other.parentNode.insertBefore(btn, dir < 0 ? other : other.nextSibling);
+    saveRailOrder();
+    renderRailPages({ key: railKey(btn), dir });
+  };
+  let dragKey = null;
+  const clearMarks = () => list.querySelectorAll('.rail-page').forEach((x) => x.classList.remove('drop-before', 'drop-after'));
+  items.forEach((btn, i) => {
+    const key = railKey(btn);
+    const name = railName(btn);
+    const li = document.createElement('li');
+    li.className = `rail-page${btn.classList.contains('rail-off') ? ' off' : ''}`;
+    li.dataset.key = key;
+    li.draggable = true;
+    const grip = document.createElement('span');
+    grip.className = 'rail-page-grip';
+    grip.innerHTML = GRIP;
+    const icon = document.createElement('span');
+    icon.className = 'rail-page-icon';
+    icon.appendChild(btn.querySelector('svg').cloneNode(true));
+    const label = document.createElement('span');
+    label.className = 'rail-page-name';
+    label.textContent = name;
+    const arrow = (cls, svg, text, dir, disabled) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `icon-btn-plain rail-page-move ${cls}`;
+      b.title = text;
+      b.setAttribute('aria-label', text);
+      b.innerHTML = svg;
+      b.disabled = disabled;
+      b.addEventListener('click', () => move(btn, dir));
+      return b;
+    };
+    const up = arrow('up', ARROW_UP, `Move ${name} up`, -1, i === 0);
+    const down = arrow('down', ARROW_DOWN, `Move ${name} down`, 1, i === items.length - 1);
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.className = 'rail-page-show';
+    box.checked = !btn.classList.contains('rail-off');
+    box.title = `Show ${name} in the sidebar`;
+    box.setAttribute('aria-label', `Show ${name} in the sidebar`);
+    box.addEventListener('change', () => {
+      if (!box.checked && railShown().length <= 1) {
+        box.checked = true;
+        toast('At least one page stays in the sidebar', 'error');
+        return;
+      }
+      btn.classList.toggle('rail-off', !box.checked);
+      li.classList.toggle('off', !box.checked);
+      saveRailHidden();
+      updateCount();
+    });
+    li.addEventListener('dragstart', (e) => {
+      dragKey = key;
+      li.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', key);
+    });
+    li.addEventListener('dragover', (e) => {
+      if (!dragKey || dragKey === key) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const r = li.getBoundingClientRect();
+      clearMarks();
+      li.classList.add(e.clientY < r.top + r.height / 2 ? 'drop-before' : 'drop-after');
+    });
+    li.addEventListener('dragleave', () => li.classList.remove('drop-before', 'drop-after'));
+    li.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const moving = railItems().find((b) => railKey(b) === dragKey);
+      if (!moving || dragKey === key) return;
+      btn.parentNode.insertBefore(moving, li.classList.contains('drop-before') ? btn : btn.nextSibling);
+      saveRailOrder();
+      const movedKey = dragKey;
+      dragKey = null;
+      renderRailPages({ key: movedKey });
+    });
+    li.addEventListener('dragend', () => {
+      dragKey = null;
+      li.classList.remove('dragging');
+      clearMarks();
+    });
+    li.append(grip, icon, label, up, down, box);
+    list.appendChild(li);
+  });
+  updateCount();
+  if (focus) {
+    // the arrow just used keeps the focus (the one for the other way when it has gone to an end)
+    const row = list.querySelector(`.rail-page[data-key="${focus.key}"]`);
+    const target = row && (focus.dir ? [row.querySelector(focus.dir < 0 ? '.up' : '.down'), row.querySelector(focus.dir < 0 ? '.down' : '.up')].find((x) => x && !x.disabled) : row);
+    if (target) target.focus();
+  }
+}
+
+function resetRailPages() {
+  applyRailOrder(railDefault);
+  applyRailHidden([]);
+  try {
+    localStorage.removeItem(RAIL_ORDER_KEY);
+    localStorage.removeItem(RAIL_HIDDEN_KEY);
+  } catch {
+    // nothing saved
+  }
+  renderRailPages();
 }
 
 // -- Pin (keep the window open when it loses focus) --
@@ -5958,6 +6120,7 @@ function updateHotkeyBadge() {
 
 function openSettings() {
   for (const name of Object.keys(hotkeyState)) setPendingHotkey(name, null);
+  renderRailPages();
   $('#settingsPanel').classList.remove('hidden');
 }
 
@@ -6054,6 +6217,7 @@ async function setupSettings() {
 
   $('#settingsBtn').addEventListener('click', openSettings);
   $('#settingsCancelBtn').addEventListener('click', closeSettings);
+  $('#railPagesReset').addEventListener('click', resetRailPages);
 
   $('#hotkeyResetBtn').addEventListener('click', () => {
     for (const [name, s] of Object.entries(hotkeyState)) setPendingHotkey(name, s.def);

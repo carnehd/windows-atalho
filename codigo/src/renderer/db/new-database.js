@@ -33,7 +33,7 @@ function newDatabaseModal() {
   modal.innerHTML = `
     <div class="settings-card nd-card" role="dialog" aria-modal="true" aria-labelledby="ndTitle">
       <div class="nd-head"><h3 id="ndTitle">New database</h3><span class="nd-gap"></span><button id="ndClose" class="close-btn" type="button" title="Close (Esc)" aria-label="Close">&#x2715;</button></div>
-      <p class="nd-sub">A database for a microservice in a PostgreSQL of this computer: its schema, a user that makes the tables and a user for the application. Git Quick writes the SQL from these values and runs it in the container; what is there already is kept as it is.</p>
+      <p class="nd-sub">A database for a microservice in a PostgreSQL of this computer: its schema, a user that makes the tables and a user for the application. QuickDeck writes the SQL from these values and runs it in the container; what is there already is kept as it is.</p>
       <div class="nd-main">
         <form id="ndForm" class="nd-form" autocomplete="off">
           <div class="nd-sec">The database <span class="nd-line"></span></div>

@@ -168,7 +168,7 @@ function drawConsoleAnalysis() {
     }));
     agent.value = info.agent;
     agent.disabled = ca.running;
-    $('#caSub').textContent = `The agent reads the lines selected and the code of this microservice, and proposes a fix: it changes nothing. They go to ${CA_PROVIDERS[info.agent] || 'the provider of the agent'}, with your account there, without the passwords Git Quick recognises and what Git ignores.`;
+    $('#caSub').textContent = `The agent reads the lines selected and the code of this microservice, and proposes a fix: it changes nothing. They go to ${CA_PROVIDERS[info.agent] || 'the provider of the agent'}, with your account there, without the passwords QuickDeck recognises and what Git ignores.`;
   }).catch(() => {});
   const a = ca.analysis;
   const meta = $('#caMeta');

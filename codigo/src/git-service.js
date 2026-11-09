@@ -44,6 +44,7 @@ const JS_FUNCNAME = [
 let diffAttributesFile;
 
 const PARK_DEFAULT_FOLDER = 'local-changes';
+// Written in the repositories' .git/info/exclude. It keeps the app's old name, so the lists written before are still found.
 const PARK_MARKER = '# Git Quick: files kept out of commits';
 const MAX_PARKED_FILES = 2000;
 const MAX_SIDE_BYTES = 5 * 1024 * 1024; // the most a diff side may be to change it from the app

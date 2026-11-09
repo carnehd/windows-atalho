@@ -110,7 +110,9 @@ async function chooseDbTable(schema, table) {
   db.view = { offset: 0, sort: null, desc: false };
   db.data = null;
   db.cols = null;
-  if (db.tab === 'sql' && !$('#dbSqlText')?.value.trim()) setDbSql(`select * from ${dbIdent(schema)}.${dbIdent(table)} limit 50`);
+  // SQL: Build takes the table; Write, when nothing is written yet, a query of it
+  if (db.tab === 'sql' && dbSqlMode() === 'build') dbBuildFromTable(schema, table);
+  else if (db.tab === 'sql' && !savedDbSql().trim()) setDbSql(`select * from ${dbIdent(schema)}.${dbIdent(table)} limit 50`);
   renderDbTree();
   await loadDbTab();
 }
@@ -384,94 +386,7 @@ function renderDbColumns(pane) {
   pane.appendChild(dbGrid(fields, rows));
 }
 
-// -- SQL: one statement that reads, kept per connection while it is written --
-function setDbSql(text) {
-  const area = $('#dbSqlText');
-  if (area) area.value = text;
-  saveDbSql(text);
-}
-
-function saveDbSql(text) {
-  try {
-    const all = JSON.parse(dbLoad(DB_SQL_KEY) || '{}');
-    all[db.id] = text;
-    dbStore(DB_SQL_KEY, JSON.stringify(all));
-  } catch {
-    // only for now
-  }
-}
-
-function savedDbSql() {
-  try {
-    return JSON.parse(dbLoad(DB_SQL_KEY) || '{}')[db.id] || '';
-  } catch {
-    return '';
-  }
-}
-
-function renderDbSql(pane) {
-  pane.innerHTML = '';
-  const box = dbEl('div', 'db-sql');
-  const area = dbEl('textarea', 'db-sql-text');
-  area.id = 'dbSqlText';
-  area.spellcheck = false;
-  area.rows = 6;
-  area.placeholder = db.sel ? `select * from ${dbIdent(db.sel.schema)}.${dbIdent(db.sel.table)} limit 50` : 'select * from my_schema.my_table limit 50';
-  area.value = savedDbSql();
-  area.setAttribute('aria-label', 'SQL');
-  area.addEventListener('input', () => saveDbSql(area.value));
-  area.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      runDbSql();
-    }
-  });
-  const bar = dbEl('div', 'db-sql-bar');
-  const run = dbEl('button', 'btn btn-primary btn-sm', 'Run');
-  run.id = 'dbRunBtn';
-  run.type = 'button';
-  run.title = 'Run it (Cmd+Enter)';
-  run.disabled = !db.id;
-  run.addEventListener('click', runDbSql);
-  bar.append(run, dbEl('span', 'db-dim', 'Read only: one SELECT, WITH, SHOW, EXPLAIN, VALUES or TABLE · up to 1000 rows · 30 s at most'));
-  box.append(area, bar);
-  pane.appendChild(box);
-  const out = dbEl('div', 'db-sql-out');
-  out.id = 'dbSqlOut';
-  pane.appendChild(out);
-  renderDbSqlResult();
-}
-
-async function runDbSql() {
-  const area = $('#dbSqlText');
-  if (!area || !db.id) return;
-  const sql = area.value.trim() || area.placeholder;
-  const id = db.id;
-  db.sql = { running: true };
-  renderDbSqlResult();
-  const r = await window.database.query(id, sql);
-  if (db.id !== id) return;
-  db.sql = r;
-  renderDbSqlResult();
-}
-
-function renderDbSqlResult() {
-  const out = $('#dbSqlOut');
-  if (!out) return;
-  out.innerHTML = '';
-  const r = db.sql;
-  if (!r) return;
-  if (r.running) {
-    out.append(dbEl('span', 'db-spin'), dbEl('span', 'db-dim', ' Running…'));
-    return;
-  }
-  if (r.error) {
-    out.appendChild(dbEl('div', 'db-error', r.error));
-    return;
-  }
-  out.appendChild(dbEl('div', 'db-dim db-sql-status', `${dbNumber(r.rows.length)} row${r.rows.length === 1 ? '' : 's'}${r.truncated ? ` (the first ${dbNumber(r.max)}: there are more)` : ''} · ${r.ms} ms`));
-  if (r.fields.length) out.appendChild(dbGrid(r.fields, r.rows));
-}
+// -- SQL: the tab is in db-sql.js (Write and Build) --
 
 function setupDb() {
   $('#dbConn').addEventListener('change', (e) => openDbConnection(e.target.value));

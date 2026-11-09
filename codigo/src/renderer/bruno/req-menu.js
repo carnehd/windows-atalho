@@ -1,5 +1,5 @@
 // -- A request's menu (right click on it, or the menu key): Duplicate, Move to a folder (or a new one), Rename, Save in
-// Git Quick (a copy in the app's own folder of saved requests, and that folder), Delete. Each changes its file
+// QuickDeck (a copy in the app's own folder of saved requests, and that folder), Delete. Each changes its file
 // (bruno/files.js); then the list is read again, and its results and the request chosen go where it went. --
 function openBrunoReqMenu(req, x, y) {
   const busy = bru.run ? 'A run is going: wait for it, or stop it' : '';
@@ -12,8 +12,8 @@ function openBrunoReqMenu(req, x, y) {
       { icon: 'copy', label: 'Duplicate...', disabled: Boolean(off), hint: off, run: () => bruReqNameForm(req, x, y, 'duplicate') },
       { icon: 'folder', label: 'Move to...', disabled: Boolean(off), hint: off, run: () => openBrunoMoveMenu(req, x, y) },
       { icon: 'rename', label: 'Rename...', disabled: Boolean(off), hint: off || 'Its name and its file', run: () => bruReqNameForm(req, x, y, 'rename') },
-      { icon: 'pull', label: 'Save in Git Quick', disabled: Boolean(dirty), hint: dirty || "A copy in Git Quick's own folder of saved requests (data/saved-requests), with the others saved there", run: () => keepBrunoRequest(req) },
-      { icon: 'stash', label: 'Saved requests folder', hint: 'Open the folder of the requests saved in Git Quick', run: () => openBrunoSavedFolder() },
+      { icon: 'pull', label: 'Save in QuickDeck', disabled: Boolean(dirty), hint: dirty || "A copy in QuickDeck's own folder of saved requests (data/saved-requests), with the others saved there", run: () => keepBrunoRequest(req) },
+      { icon: 'stash', label: 'Saved requests folder', hint: 'Open the folder of the requests saved in QuickDeck', run: () => openBrunoSavedFolder() },
       { icon: 'delete', label: 'Delete...', danger: true, disabled: Boolean(busy), hint: busy || 'Its file goes to the Trash', run: () => deleteBrunoRequest(req) },
     ],
   });
@@ -89,7 +89,7 @@ async function keepBrunoRequest(req) {
   const r = await window.bruno.requestOp(bru.repo, bru.dir, 'keep', req.path);
   if (r.error) return toast(r.error, 'error', { plain: true });
   const where = `saved-requests/${r.kept.split(/[\\/]/).pop()}`;
-  toast(r.already ? `${req.name} is saved in Git Quick already: ${where}` : `${req.name} saved in Git Quick: ${where}`, 'success', { plain: true });
+  toast(r.already ? `${req.name} is saved in QuickDeck already: ${where}` : `${req.name} saved in QuickDeck: ${where}`, 'success', { plain: true });
 }
 
 async function openBrunoSavedFolder() {

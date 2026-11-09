@@ -95,7 +95,7 @@ async function showBrunoView() {
   else await reloadBrunoTree();
 }
 
-// No Bruno CLI: Install (Git Quick puts it in its data folder, no Node.js or npm needed), or npm in a terminal.
+// No Bruno CLI: Install (QuickDeck puts it in its data folder, no Node.js or npm needed), or npm in a terminal.
 function renderBrunoNote() {
   const note = $('#bruNote');
   const cli = bru.cli;
@@ -104,7 +104,7 @@ function renderBrunoNote() {
   if (!cli || cli.ok) return;
   note.innerHTML = '';
   const text = bruEl('div', 'bru-note-text');
-  text.append(bruEl('strong', '', cli.reason), bruEl('span', '', ' Git Quick sends the requests with it.'));
+  text.append(bruEl('strong', '', cli.reason), bruEl('span', '', ' QuickDeck sends the requests with it.'));
   note.appendChild(text);
   if (cli.install) {
     const mb = (n) => Math.max(1, Math.round(n / 1048576));

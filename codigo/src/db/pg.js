@@ -23,7 +23,7 @@ async function withClient(conn, fn) {
     password: conn.password || undefined,
     ssl: conn.ssl === 'require' ? true : conn.ssl === 'no-verify' ? { rejectUnauthorized: false } : false,
     connectionTimeoutMillis: 8000,
-    application_name: 'Git Quick (read only)',
+    application_name: 'QuickDeck (read only)',
     options: `-c default_transaction_read_only=on -c statement_timeout=${TIMEOUT_MS}`,
     types: AS_TEXT,
   });
@@ -160,6 +160,91 @@ async function query(conn, sql) {
   });
 }
 
+const MAX_CATALOG = 50000; // columns, for the SQL tab to offer and check names
+const jsonList = (v) => {
+  try {
+    const list = JSON.parse(v || '[]');
+    return Array.isArray(list) ? list.map(String) : [];
+  } catch {
+    return [];
+  }
+};
+
+// Every table and view the user can see, with its columns, the foreign keys between them and the schemas of the
+// search path: what the SQL tab offers as it is typed and checks a name against. Read once per connection.
+async function catalog(conn) {
+  return withClient(conn, async (c) => {
+    const cols = await c.query({
+      text: `
+        select n.nspname, cl.relname, cl.relkind, a.attname, format_type(a.atttypid, a.atttypmod)
+        from pg_class cl join pg_namespace n on n.oid = cl.relnamespace
+          left join pg_attribute a on a.attrelid = cl.oid and a.attnum > 0 and not a.attisdropped
+        where cl.relkind in ('r','p','v','m','f') and n.nspname not in ('pg_catalog', 'information_schema')
+          and n.nspname not like 'pg\\_toast%' and n.nspname not like 'pg\\_temp%' and has_schema_privilege(n.oid, 'USAGE')
+        order by n.nspname, cl.relname, a.attnum
+        limit ${MAX_CATALOG + 1}`,
+      rowMode: 'array',
+    });
+    const truncated = cols.rows.length > MAX_CATALOG;
+    if (truncated) cols.rows.length = MAX_CATALOG;
+    const schemas = new Map();
+    for (const [schema, table, kind, column, type] of cols.rows) {
+      if (!schemas.has(schema)) schemas.set(schema, new Map());
+      const tablesOf = schemas.get(schema);
+      if (!tablesOf.has(table)) tablesOf.set(table, { name: table, kind: KINDS[kind] || kind, columns: [] });
+      if (column !== null) tablesOf.get(table).columns.push({ name: column, type: type || '' });
+    }
+    const fks = await c.query({
+      text: `
+        select n.nspname, cl.relname, rn.nspname, rc.relname,
+          array_to_json(array(select a.attname from unnest(co.conkey) with ordinality k(num, i) join pg_attribute a on a.attrelid = co.conrelid and a.attnum = k.num order by k.i))::text,
+          array_to_json(array(select a.attname from unnest(co.confkey) with ordinality k(num, i) join pg_attribute a on a.attrelid = co.confrelid and a.attnum = k.num order by k.i))::text
+        from pg_constraint co join pg_class cl on cl.oid = co.conrelid join pg_namespace n on n.oid = cl.relnamespace
+          join pg_class rc on rc.oid = co.confrelid join pg_namespace rn on rn.oid = rc.relnamespace
+        where co.contype = 'f' and has_schema_privilege(n.oid, 'USAGE')
+        limit 5000`,
+      rowMode: 'array',
+    });
+    const searchPath = await c.query('select array_to_json(current_schemas(false))::text as path');
+    return {
+      schemas: [...schemas].map(([name, tablesOf]) => ({ name, tables: [...tablesOf.values()] })),
+      fks: fks.rows.map(([schema, table, refSchema, refTable, columnsOf, refColumns]) => ({ schema, table, refSchema, refTable, columns: jsonList(columnsOf), refColumns: jsonList(refColumns) })),
+      path: jsonList(searchPath.rows[0] && searchPath.rows[0].path),
+      truncated,
+    };
+  });
+}
+
+// SQL typed in, checked by PostgreSQL without running it: EXPLAIN (which plans a query, so it reads its names, and does
+// not run it), in the read-only transaction. { ok } when PostgreSQL takes it; { problem: { message, hint, position } }
+// when not, position counted in the text as typed (1 is its first character), null when PostgreSQL gives none.
+// SHOW and EXPLAIN typed in are not checked (skipped): they cannot go under an EXPLAIN.
+async function check(conn, sql) {
+  const raw = String(sql || '');
+  let read;
+  try {
+    read = readOnlySql(raw);
+  } catch (e) {
+    return { problem: { message: e.message, hint: '', position: null } };
+  }
+  if (!['select', 'with', 'values', 'table'].includes(read.first)) return { ok: true, skipped: true };
+  const lead = raw.length - raw.trimStart().length;
+  const head = 'explain (costs off) ';
+  return withClient(conn, async (c) => {
+    await c.query("set local statement_timeout = '5s'");
+    try {
+      await c.query(head + read.text);
+      return { ok: true };
+    } catch (e) {
+      // the connection's own trouble is not the query's: said as an error, not a problem of the text
+      if (!e.code || /^(08|28|3D|57P)/.test(e.code)) throw e;
+      if (e.code === '57014') return { ok: true, slow: true };
+      const at = Number(e.position) || 0;
+      return { problem: { message: e.message, hint: e.hint || '', position: at > head.length ? at - head.length + lead : null, code: e.code } };
+    }
+  });
+}
+
 // What went wrong, in a sentence: the connection first, then what PostgreSQL said.
 function explain(e, conn) {
   const where = conn ? `${conn.host}:${conn.port}` : 'the server';
@@ -174,4 +259,4 @@ function explain(e, conn) {
   return e.position ? `${e.message} (at character ${e.position})` : e.message;
 }
 
-module.exports = { test, schemas, tables, columns, rows, query, readOnlySql, explain, PAGE, MAX_ROWS };
+module.exports = { test, schemas, tables, columns, rows, query, catalog, check, readOnlySql, explain, PAGE, MAX_ROWS, MAX_CATALOG };

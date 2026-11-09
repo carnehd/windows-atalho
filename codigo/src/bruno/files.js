@@ -252,7 +252,7 @@ async function moveRequest(file, dir) {
 function keepRequest(file, dir) {
   fs.mkdirSync(dir, { recursive: true });
   const manifest = path.join(dir, 'bruno.json');
-  if (!fs.existsSync(manifest)) fs.writeFileSync(manifest, `${JSON.stringify({ version: '1', name: 'Saved in Git Quick', type: 'collection', ignore: ['node_modules', '.git'] }, null, 2)}\n`);
+  if (!fs.existsSync(manifest)) fs.writeFileSync(manifest, `${JSON.stringify({ version: '1', name: 'Saved in QuickDeck', type: 'collection', ignore: ['node_modules', '.git'] }, null, 2)}\n`);
   const text = fs.readFileSync(file);
   const base = path.basename(file, '.bru');
   for (let n = 1; ; n++) {
