@@ -1,0 +1,50 @@
+{
+  "name": "quickdeck",
+  "productName": "QuickDeck",
+  "version": "1.7.0",
+  "description": "Git, logs, containers and the other tools of a microservice, in a popup for Windows",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "dist": "electron-builder --win portable",
+    "icons": "electron scripts/make-icons.js"
+  },
+  "keywords": [
+    "git",
+    "electron",
+    "popup"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "js-yaml": "^4.3.2",
+    "pg": "^8.23.1",
+    "simple-git": "^4.0.2"
+  },
+  "devDependencies": {
+    "electron": "^28.3.3",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.local.gitquick",
+    "productName": "QuickDeck",
+    "electronVersion": "28.3.3",
+    "electronDist": "node_modules/electron/dist",
+    "files": [
+      "src/**/*",
+      "skills/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "portable",
+      "signAndEditExecutable": false
+    },
+    "portable": {
+      "artifactName": "QuickDeck-${version}.exe"
+    }
+  }
+}
