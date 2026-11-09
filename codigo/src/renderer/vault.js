@@ -294,8 +294,9 @@ function visibleVariables(type = typeFilter) {
 }
 
 // -- The page: the environment shown on top (or all of them), then a section per kind: the links, the users as a
-// table, the databases, the notes. A row opens the variable on the right, with a tab per environment it has. The
-// general links and users (for every environment, or of GERAL) show with any environment, first. --
+// table, the databases, the notes. A row opens the variable on the right, with a tab per environment it has. With an
+// environment shown, a section lists only what has values there; with all shown, the general links and users (for
+// every environment, or of GERAL) come first. --
 const VIEW_ENV_KEY = 'vaultViewEnv';
 const DEFAULT_ENV_NAME = 'geral'; // the environment the Vault opens on, when there is one by that name
 let vaultViewEnv = 'all';
@@ -321,16 +322,16 @@ const SECTIONS = [
 const viewEnv = () => (vaultViewEnv === 'all' ? null : envById(vaultViewEnv) || null);
 // The values of a variable in an environment: its own there, else the ones for no environment (the same for all).
 const entryIn = (v, env) => v.entries.find((e) => e.env.id === env.id) || v.entries.find((e) => e.env.generic) || null;
-// A general link or user: one for every environment, or one of GERAL. It is there with any environment shown, first,
-// tagged GERAL; with another environment shown (not GERAL), the rows of that one have its colour, faintly.
+// A general link or user: one for every environment, or one of GERAL. With all the environments shown it is first,
+// tagged GERAL. With one environment shown it is not there (a link or user of GERAL is GERAL's, not DEV's); the rows
+// of an environment other than GERAL have its colour, faintly.
 const GENERAL_TYPES = ['link', 'credential'];
 const isGeralEnv = (env) => Boolean(env && !env.generic && env.name.trim().toLowerCase() === DEFAULT_ENV_NAME);
-const isGeneralEnv = (env) => Boolean(env && (env.generic || isGeralEnv(env)));
 const geralEntry = (v) => v.entries.find((e) => e.env.generic) || v.entries.find((e) => isGeralEnv(e.env)) || null;
-// what a section lists with an environment shown: what has values there, and the general links and users
-const entryShown = (v, env) => entryIn(v, env) || (GENERAL_TYPES.includes(v.type) ? geralEntry(v) : null);
-// general where it is shown: the values shown are the general ones (with every environment shown: it has some)
-const isGeneralRow = (v, env) => GENERAL_TYPES.includes(v.type) && (env ? isGeneralEnv((entryShown(v, env) || {}).env) : Boolean(geralEntry(v)));
+// what a section lists with an environment shown: what has values there (its own, or the ones for no environment)
+const entryShown = (v, env) => entryIn(v, env);
+// general where it is shown: only with every environment shown, and it has a general value
+const isGeneralRow = (v, env) => GENERAL_TYPES.includes(v.type) && !env && Boolean(geralEntry(v));
 // the rows of the environment shown, when it is not GERAL: its colour, faintly
 function tintOwn(tr, e, env) {
   if (!env || isGeralEnv(env) || !e || e.env.id !== env.id) return;
@@ -368,8 +369,8 @@ function renderItems() {
   const env = viewEnv();
   const sections = vEl('div', 'vd-sections');
   for (const sec of SECTIONS) {
-    // with an environment shown, only what has values there (its own, or the ones for every environment), and the
-    // general links and users; those first
+    // with an environment shown, only what has values there (its own, or the ones for no environment); with all
+    // shown, the general links and users first
     const list = shownRows.filter((v) => v.type === sec.type && (!env || entryShown(v, env)));
     if (GENERAL_TYPES.includes(sec.type)) list.sort((a, b) => Number(isGeneralRow(b, env)) - Number(isGeneralRow(a, env)));
     // users, links and notes are always there to add to; the others only when there are some (or a search finds them)
@@ -487,7 +488,7 @@ async function deleteSection(sec, list, env) {
   await refreshVault();
 }
 
-// The name; a general link or user (not with GERAL shown) tagged GERAL, at the right of the cell.
+// The name; with all the environments shown, a general link or user tagged GERAL, at the right of the cell.
 function nameCell(v, e, env) {
   const td = vEl('td', 'vd-td-name');
   const wrap = td.appendChild(vEl('div', 'vd-name-wrap'));
@@ -499,7 +500,7 @@ function nameCell(v, e, env) {
     wrap.appendChild(star);
   }
   if (!isGeralEnv(env) && isGeneralRow(v, env)) {
-    const from = env ? e.env : geralEntry(v).env;
+    const from = geralEntry(v).env;
     const tag = wrap.appendChild(vEl('span', 'vd-tag-geral', 'GERAL'));
     tag.title = from.generic ? 'The same for every environment' : `Of ${from.name}: shown with every environment`;
   } else if (env && e && e.env.generic) wrap.appendChild(vEl('span', 'vd-tag-all', 'all'));
