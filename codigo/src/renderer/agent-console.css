@@ -19,6 +19,10 @@
   gap: 10px;
   min-width: 0;
 }
+.ac-agent {
+  width: 130px;
+  height: 30px;
+}
 .ac-project {
   max-width: 240px;
   height: 30px;

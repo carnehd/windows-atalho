@@ -380,8 +380,12 @@ function fillPullFiles(box, p) {
   if (!data.files.length) box.appendChild(noteEl('No differences in the files.'));
   const ctx = { from: data.base, to: data.to, files: data.files, fromLabel: `${p.base.ref} (${data.base.slice(0, 7)}, where #${p.number} starts)`, toLabel: `#${p.number} ${p.head.label}`, pull: { number: p.number, headSha: p.head.sha } };
   prState.ctx.set(p.number, ctx);
-  if (prGrouped) pullFilesTree(box, p, changesTree(data.files), ctx, 0);
-  else for (const f of data.files) box.appendChild(cmpFileRow(f, ctx));
+  // the files on a white panel inside the grey card; the head above it stays on the card
+  const list = document.createElement('div');
+  list.className = 'pr-files-panel';
+  if (data.files.length) box.appendChild(list);
+  if (prGrouped) pullFilesTree(box, p, changesTree(data.files), ctx, 0, list);
+  else for (const f of data.files) list.appendChild(cmpFileRow(f, ctx));
   markPullFileTalk(p.number);
   markPullFileAgent(p.number);
   markSelectedFile();
@@ -421,14 +425,15 @@ function setPullsGrouped(on) {
 
 // The files as a tree: folders first, by name (one with only a folder in it shares its line), then the files. A
 // click on a folder folds it, with its lines changed still on its row.
-function pullFilesTree(box, p, node, ctx, depth) {
+// box: the changes of the pull request (a folder row fills it again); into: where the rows go (its panel)
+function pullFilesTree(box, p, node, ctx, depth, into = box) {
   const dirs = [...node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
   for (const d of dirs) {
     const open = !prState.closed.has(`${p.number}:${d.path}`);
-    box.appendChild(pullDirRow(box, p, d, depth, open));
-    if (open) pullFilesTree(box, p, d, ctx, depth + 1);
+    into.appendChild(pullDirRow(box, p, d, depth, open));
+    if (open) pullFilesTree(box, p, d, ctx, depth + 1, into);
   }
-  for (const f of node.files) box.appendChild(pullTreeFileRow(f, ctx, depth));
+  for (const f of node.files) into.appendChild(pullTreeFileRow(f, ctx, depth));
 }
 
 function pullDirRow(box, p, dir, depth, open) {

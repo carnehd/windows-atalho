@@ -1,4 +1,4 @@
-// consola-agente: a conversation with Claude CLI in a project folder (left) and each thing it does as it does it
+// consola-agente: a conversation with Claude CLI or Copilot CLI (the user chooses) in a project folder (left) and each thing it does as it does it
 // (right): the files it reads and writes, its searches, its commands and what they print, its subagents. The lines of
 // the CLI come from main (agent-console.js) as it wrote them; this page reads them. The page is in Portuguese, as
 // the user named it and its buttons.
@@ -20,10 +20,22 @@ const AC_MODES = [
   ['auto', 'Automático', 'Um classificador decide o que é seguro (não está em todos os planos)'],
   ['bypassPermissions', 'Tudo sem perguntar', 'Sem nenhuma pergunta: o Claude pode alterar e apagar ficheiros e correr comandos'],
 ];
-const AC_SAVED = { model: 'acModel', mode: 'acMode' };
+const AC_SAVED = { model: 'acModel', mode: 'acMode', agent: 'acAgent' };
+// the agents the page offers, and the modes of permission that Copilot CLI has (the app answers the requests of edits, or all
+// of them, for the user: acp.js)
+const AC_AGENTS = [['claude', 'Claude CLI'], ['copilot', 'Copilot CLI']];
+const AC_COPILOT_MODES = ['default', 'acceptEdits', 'plan', 'bypassPermissions'];
+const acIs = () => acS.agentId === 'copilot';
+const acName = () => (acIs() ? 'Copilot' : 'Claude');
+const acCli = () => (acIs() ? 'Copilot CLI' : 'Claude CLI');
+// a text written for Claude, said for the agent in use
+const acWho = (text) => (acIs() ? String(text).replace(/Claude CLI/g, 'Copilot CLI').replace(/\bClaude\b/g, 'Copilot') : String(text));
+const acModes = () => (acIs() ? AC_MODES.filter((m) => AC_COPILOT_MODES.includes(m[0])) : AC_MODES);
 
 const acS = {
-  agent: null, // { found, name, command, version }
+  agent: null, // { found, name, command, version } of the one in use
+  agentId: 'claude', // claude | copilot
+  agents: null, // both, as main found them
   events: [], // all of the session, in order, as main sent them
   running: false,
   starting: false,
@@ -68,6 +80,7 @@ function acClock(at) {
 }
 
 function acMoney(v) {
+  if (acIs()) return ''; // Copilot CLI does not say what a session costs
   const n = Number(v) || 0;
   return new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'USD', minimumFractionDigits: n < 1 ? 4 : 2, maximumFractionDigits: n < 1 ? 4 : 2 }).format(n);
 }
@@ -234,7 +247,7 @@ function acTagsPaint() {
     b.className = 'ac-tag';
     b.dataset.kind = k;
     b.setAttribute('aria-pressed', String(!off));
-    b.title = `${hint}. ${off ? 'Clica para mostrar' : 'Clica para esconder'}; Shift+clique mostra só este tipo`;
+    b.title = `${acWho(hint)}. ${off ? 'Clica para mostrar' : 'Clica para esconder'}; Shift+clique mostra só este tipo`;
     b.innerHTML = `<span class="ac-tag-dot" aria-hidden="true"></span>${acEsc(label)}<span class="ac-tag-n">${acS.counts[k] || 0}</span>`;
     bar.appendChild(b);
   }
@@ -382,7 +395,7 @@ function acToolResult(block, e, at) {
   if (error && meta && meta.non_execution_kind) {
     const stopped = acS.interrupting || /interrupt/i.test(String(meta.non_execution_kind));
     acStatus(line, stopped ? 'interrompido' : 'recusado', 'bad');
-    if (text.trim()) line.appendChild(acDetails('O que o Claude soube', acCut(text), 'bad'));
+    if (text.trim()) line.appendChild(acDetails(`O que o ${acName()} soube`, acCut(text), 'bad'));
     return;
   }
   if (AC_AGENT.has(name)) {
@@ -423,7 +436,7 @@ function acChatAdd(el) {
 function acBubble(role, text, at) {
   const el = document.createElement('div');
   el.className = `ac-msg ac-msg-${role}`;
-  el.innerHTML = `<div class="ac-msg-who">${role === 'user' ? 'Tu' : 'Claude'} · ${acClock(at)}</div><div class="ac-msg-text"></div>`;
+  el.innerHTML = `<div class="ac-msg-who">${role === 'user' ? 'Tu' : acName()} · ${acClock(at)}</div><div class="ac-msg-text"></div>`;
   const t = el.querySelector('.ac-msg-text');
   if (role === 'user') t.textContent = text;
   else t.innerHTML = acMarkdown(text);
@@ -455,7 +468,7 @@ function acCard(id, req, at) {
   el.className = 'ac-card';
   el.dataset.request = id;
   const ask = name === 'AskUserQuestion' && Array.isArray(input.questions);
-  el.innerHTML = `<div class="ac-card-title">${ask ? 'O Claude pergunta' : `O Claude pede autorização para ${acEsc(acToolTitle(name))}`}<span class="ac-card-time">${acClock(at)}</span></div><div class="ac-card-body"></div><div class="ac-card-actions"></div><div class="ac-card-done hidden"></div>`;
+  el.innerHTML = `<div class="ac-card-title">${ask ? `O ${acName()} pergunta` : `O ${acName()} pede autorização para ${acEsc(acToolTitle(name))}`}<span class="ac-card-time">${acClock(at)}</span></div><div class="ac-card-body"></div><div class="ac-card-actions"></div><div class="ac-card-done hidden"></div>`;
   const body = el.querySelector('.ac-card-body');
   const add = (cls, text) => {
     const d = document.createElement('div');
@@ -698,10 +711,10 @@ function acOut(e, ev) {
     if (stopped) acS.interrupting = false;
     const said = String(e.result || '');
     if (e.is_error && !stopped) {
-      const login = /not logged in|\/login/i.test(said);
-      acNote(login ? `O Claude CLI não tem sessão iniciada neste computador. Abre um terminal, corre "${(acS.agent && acS.agent.command) || 'claude'}", escreve /login e segue os passos.` : `O pedido falhou: ${said || (Array.isArray(e.errors) ? e.errors.join(' ') : e.subtype || 'erro')}`.slice(0, 1200), 'bad');
+      const login = /not logged in|\/login|copilot login|sign in|unauthori|authenticat/i.test(said);
+      acNote(login ? `O ${acCli()} não tem sessão iniciada neste computador. Abre um terminal, ${acIs() ? `corre "${(acS.agent && acS.agent.command) || 'copilot'} login"` : `corre "${(acS.agent && acS.agent.command) || 'claude'}", escreve /login`} e segue os passos.` : `O pedido falhou: ${said || (Array.isArray(e.errors) ? e.errors.join(' ') : e.subtype || 'erro')}`.slice(0, 1200), 'bad');
     }
-    const line = acLine({ kind: e.is_error && !stopped ? 'bad' : 'done', label: stopped ? 'Interrompido' : e.is_error ? 'Falhou' : 'Concluído', what: `${acDuration(e.duration_ms)} · ${e.num_turns || 0} ${e.num_turns === 1 ? 'volta' : 'voltas'} · ${acMoney(acS.last.cost)}`, at });
+    const line = acLine({ kind: e.is_error && !stopped ? 'bad' : 'done', label: stopped ? 'Interrompido' : e.is_error ? 'Falhou' : 'Concluído', what: [acDuration(e.duration_ms), `${e.num_turns || 0} ${e.num_turns === 1 ? 'volta' : 'voltas'}`, acMoney(acS.last.cost)].filter(Boolean).join(' · '), at });
     line.appendChild(acDetails('O resultado', acCut(JSON.stringify({ ...e, result: said.length > 4000 ? `${said.slice(0, 4000)}…` : said }, null, 2))));
     return;
   }
@@ -746,7 +759,7 @@ function acIn(e, ev) {
   }
   if (e.type === 'control_request' && e.request && e.request.subtype === 'interrupt') {
     acS.interrupting = true;
-    acLine({ kind: 'state', label: 'Interromper', what: 'pedido ao Claude para parar', at: ev.at });
+    acLine({ kind: 'state', label: 'Interromper', what: `pedido ao ${acName()} para parar`, at: ev.at });
   }
 }
 
@@ -795,18 +808,18 @@ function acApply(ev) {
       acS.running = true;
       acS.starting = false;
       acS.version = ev.version || acS.version;
-      if (ev.resumed) acLine({ kind: 'state', label: 'Claude CLI', what: 'arrancou de novo e retomou a sessão', at: ev.at });
+      if (ev.resumed) acLine({ kind: 'state', label: acCli(), what: 'arrancou de novo e retomou a sessão', at: ev.at });
     } else if (ev.state === 'ended') {
       acS.running = false;
       acS.busy = false;
       acS.turnAt = 0;
       acS.interrupting = false;
-      for (const id of [...acS.pending.keys()]) acCardDone(id, 'Cancelado (o Claude CLI terminou)', 'bad', ev.at);
+      for (const id of [...acS.pending.keys()]) acCardDone(id, `Cancelado (o ${acCli()} terminou)`, 'bad', ev.at);
       const how = ev.error || `${ev.signal ? `sinal ${ev.signal}` : `código ${ev.code}`}${ev.stderr ? ` · ${ev.stderr}` : ''}`;
-      acLine({ kind: ev.code === 0 ? 'state' : 'bad', label: 'Claude CLI', what: `terminou (${how})`, at: ev.at });
-      if (ev.code !== 0) acNote(`O Claude CLI terminou: ${how}. O próximo pedido arranca-o de novo e retoma a sessão.`, 'bad');
+      acLine({ kind: ev.code === 0 ? 'state' : 'bad', label: acCli(), what: `terminou (${how})`, at: ev.at });
+      if (ev.code !== 0) acNote(`O ${acCli()} terminou: ${how}. O próximo pedido arranca-o de novo e retoma a sessão.`, 'bad');
     } else if (ev.state === 'sigint') {
-      acLine({ kind: 'bad', label: 'Interromper', what: 'sem resposta: enviado SIGINT ao Claude CLI', at: ev.at });
+      acLine({ kind: 'bad', label: 'Interromper', what: `sem resposta: enviado SIGINT ao ${acCli()}`, at: ev.at });
     }
   }
 }
@@ -884,8 +897,56 @@ function acFillProjects() {
   sel.value = acS.cwd || acS.chosen || AC_PICK;
 }
 
+// The agent: chosen before a session starts (a session belongs to its agent); Nova sessão lets it change. The texts of the page
+// that name it say the one in use.
+function acFillAgents() {
+  const sel = $('#acAgent');
+  if (!sel) return;
+  sel.innerHTML = '';
+  for (const [id, label] of AC_AGENTS) {
+    const info = acS.agents && acS.agents[id];
+    sel.appendChild(Object.assign(document.createElement('option'), { value: id, textContent: info && !info.found ? `${label} (não encontrado)` : label }));
+  }
+  sel.value = acS.agentId;
+}
+
+function acPaintAgent() {
+  const sel = $('#acAgent');
+  if (!sel) return;
+  if (sel.value !== acS.agentId) sel.value = acS.agentId;
+  const locked = Boolean(acS.cwd) && !acS.finished;
+  sel.disabled = locked;
+  sel.title = locked ? `Esta sessão é do ${acCli()}: Nova sessão para mudar de agente` : 'Com que agente falas: o Claude CLI ou o Copilot CLI, o que tens neste computador';
+  $('#acInput').setAttribute('aria-label', `Mensagem para o ${acName()}`);
+  $('#acInterrupt').title = `Pede ao ${acName()} para parar o que está a fazer`;
+  $('#acEnd').title = `Termina a conversa e o ${acCli()}. O que foi dito fica aqui para ler, e nada a retoma`;
+  const intro = $('#acEmptyIntro');
+  if (intro) intro.textContent = `Escreve em baixo o que queres que o ${acName()} faça na pasta do projeto. Cada ação que precisa da tua autorização aparece aqui como um cartão.`;
+  const note = $('#acEmptyNote');
+  if (note) note.textContent = `O ${acCli()} corre neste computador, na pasta do projeto, e envia ${acIs() ? 'ao GitHub' : 'à Anthropic'} o que lê e o que escreves, como num terminal.`;
+  const none = $('#acNoAgentText');
+  if (none) none.innerHTML = `O ${acCli()} não foi encontrado neste computador. Instala-o e entra uma vez com <code>${acIs() ? 'copilot login' : 'claude'}</code> num terminal.`;
+}
+
+async function acChooseAgent(value) {
+  const was = acS.agentId;
+  acS.agentId = value;
+  acFillChoices();
+  acPaint();
+  const r = await window.agentConsole.setChoice('agent', value);
+  if (r && r.error) {
+    acS.agentId = was;
+    acFillChoices();
+    acPaint();
+    toast(r.error, 'error');
+    return;
+  }
+  acSave('agent', value);
+  await acRefreshInfo();
+}
+
 function acStateText() {
-  if (acS.agent && !acS.agent.found) return ['Claude CLI não encontrado', 'bad'];
+  if (acS.agent && !acS.agent.found) return [`${acCli()} não encontrado`, 'bad'];
   if (acS.finished) return ['Conversa terminada', ''];
   if (acS.pending.size) return ['À espera da tua resposta', 'ask'];
   if (acS.interrupting) return ['A interromper…', 'run'];
@@ -903,18 +964,19 @@ function acPaint() {
   $('#acState').className = `ac-state ${cls}`.trim();
   const live = acS.busy && acS.running && acS.turnAt ? Date.now() - acS.turnAt : 0;
   // the cost and the tokens once an answer has said them; the time worked from the first message
-  const meta = acS.last ? [acMoney(acS.cost), `${acCount(acS.tokens)} tokens`, `${acDuration(acS.worked + live)} de trabalho`] : live ? [`${acDuration(live)} de trabalho`] : [];
+  const meta = acS.last ? [acMoney(acS.cost), `${acCount(acS.tokens)} tokens`, `${acDuration(acS.worked + live)} de trabalho`].filter(Boolean) : live ? [`${acDuration(live)} de trabalho`] : [];
   $('#acMeta').textContent = meta.join(' · ');
-  $('#acMeta').title = 'O custo é o que o Claude CLI estima para esta sessão; os tokens somam os lidos e os escritos em cada resposta';
+  $('#acMeta').title = `O custo é o que o ${acCli()} estima para esta sessão; os tokens somam os lidos e os escritos em cada resposta`;
+  acPaintAgent();
   const sel = $('#acProject');
   sel.disabled = Boolean(acS.cwd);
-  sel.title = acS.cwd ? `${acS.cwd}\nEsta sessão é deste projeto: Nova sessão para mudar` : 'A pasta onde o Claude trabalha';
+  sel.title = acS.cwd ? `${acS.cwd}\nEsta sessão é deste projeto: Nova sessão para mudar` : `A pasta onde o ${acName()} trabalha`;
   $('#acInterrupt').disabled = acS.finished || !(acS.running && (acS.busy || acS.pending.size)) || acS.interrupting;
   $('#acEnd').disabled = acS.finished || !(acS.cwd || acS.sessionId || acS.events.length);
   $('#acNew').disabled = !(acS.cwd || acS.events.length);
   const found = !acS.agent || acS.agent.found;
   $('#acInput').disabled = acS.finished;
-  $('#acInput').placeholder = acS.finished ? 'A conversa terminou. Nova sessão começa outra.' : acS.placeholder;
+  $('#acInput').placeholder = acS.finished ? 'A conversa terminou. Nova sessão começa outra.' : `Escreve ao ${acName()}… (Enter envia, Shift+Enter muda de linha)`;
   $('#acSend').disabled = acS.finished || !found || !$('#acInput').value.trim();
   acSyncChoices();
   $('#acNoAgent').classList.toggle('hidden', found);
@@ -923,7 +985,7 @@ function acPaint() {
     `Última resposta: ${acDuration(l.ms)}`,
     `${l.turns} ${l.turns === 1 ? 'volta' : 'voltas'}`,
     `${acCount(l.wrote)} tokens escritos, ${acCount(l.read)} lidos`,
-    acMoney(l.cost),
+    ...(acMoney(l.cost) ? [acMoney(l.cost)] : []),
     ...(l.models.length ? [l.models.join(', ')] : acS.model ? [acS.model] : []),
     ...(acS.sessionId ? [`sessão ${acS.sessionId.slice(0, 8)}`] : []),
   ].join(' · ') : acS.sessionId ? `Sessão ${acS.sessionId.slice(0, 8)}${acS.model ? ` · ${acS.model}` : ''}` : '';
@@ -960,7 +1022,7 @@ function acFillChoices() {
   for (const [value, label] of AC_MODELS) model.appendChild(Object.assign(document.createElement('option'), { value, textContent: label }));
   const mode = $('#acMode');
   mode.innerHTML = '';
-  for (const [value, label, hint] of AC_MODES) mode.appendChild(Object.assign(document.createElement('option'), { value, textContent: label, title: hint }));
+  for (const [value, label, hint] of acModes()) mode.appendChild(Object.assign(document.createElement('option'), { value, textContent: label, title: acWho(hint) }));
 }
 
 function acSyncChoices() {
@@ -969,17 +1031,18 @@ function acSyncChoices() {
   if (!model || !mode) return;
   if (model.value !== acS.choiceModel) model.value = acS.choiceModel;
   if (mode.value !== acS.mode) mode.value = acS.mode;
-  const current = AC_MODES.find((m) => m[0] === acS.mode) || AC_MODES[0];
-  $('#acModeHint').textContent = current[2];
+  const current = acModes().find((m) => m[0] === acS.mode) || acModes()[0];
+  model.closest('.ac-opt').classList.toggle('hidden', acIs()); // Copilot CLI chooses its model itself
+  $('#acModeHint').textContent = acWho(current[2]);
   mode.classList.toggle('danger', acS.mode === 'bypassPermissions');
-  model.title = acS.model ? `Modelo em uso: ${acS.model}` : 'O modelo do Claude CLI. Predefinido é o que ele usa sem lhe dizerem nada';
-  mode.title = current[2];
+  model.title = acS.model ? `Modelo em uso: ${acS.model}` : `O modelo do ${acCli()}. Predefinido é o que ele usa sem lhe dizerem nada`;
+  mode.title = acWho(current[2]);
 }
 
 async function acChoose(kind, value) {
   if (kind === 'mode' && value === 'bypassPermissions' && acS.mode !== 'bypassPermissions') {
     const where = acProjectName(acS.cwd || acS.chosen) || 'a pasta do projeto';
-    const yes = await askConfirm(`Permitir tudo sem perguntar?\nO Claude poderá alterar e apagar ficheiros e correr comandos em "${where}" sem pedir autorização. Usa isto só numa pasta que podes perder.`, { confirm: 'Permitir tudo', cancel: 'Cancelar', danger: true });
+    const yes = await askConfirm(`Permitir tudo sem perguntar?\nO ${acName()} poderá alterar e apagar ficheiros e correr comandos em "${where}" sem pedir autorização. Usa isto só numa pasta que podes perder.`, { confirm: 'Permitir tudo', cancel: 'Cancelar', danger: true });
     if (!yes) {
       acSyncChoices();
       return;
@@ -1005,10 +1068,20 @@ async function acChoose(kind, value) {
 // what the user chose last time goes to main when the app has just opened (nothing said yet, no session)
 async function acRestoreChoices(info) {
   if (info.running || info.sessionId || info.finished || info.events.length) return;
-  for (const kind of ['model', 'mode']) {
+  // the agent first: the modes and the model are of it
+  const agent = acSaved('agent');
+  if (AC_AGENTS.some((a) => a[0] === agent) && agent !== info.agentId) {
+    const r = await window.agentConsole.setChoice('agent', agent);
+    if (!r || !r.error) {
+      acS.agentId = agent;
+      info = { ...info, model: '', mode: acModes().some((m) => m[0] === info.mode) ? info.mode : 'default' };
+      acFillChoices();
+    }
+  }
+  for (const kind of acIs() ? ['mode'] : ['model', 'mode']) {
     const saved = acSaved(kind);
     const current = kind === 'model' ? info.model : info.mode;
-    const valid = kind === 'model' ? AC_MODELS.some((m) => m[0] === saved) : AC_MODES.some((m) => m[0] === saved) && saved !== 'bypassPermissions';
+    const valid = kind === 'model' ? AC_MODELS.some((m) => m[0] === saved) : acModes().some((m) => m[0] === saved) && saved !== 'bypassPermissions';
     if (saved && valid && saved !== current) await window.agentConsole.setChoice(kind, saved);
     if (saved && valid) {
       if (kind === 'model') acS.choiceModel = saved;
@@ -1116,6 +1189,11 @@ async function acRefreshInfo(again = false) {
   const info = await window.agentConsole.info(again);
   if (!info || info.error) return;
   acS.agent = info.agent;
+  acS.agents = info.agents || null;
+  if (info.agentId && info.agentId !== acS.agentId) {
+    acS.agentId = info.agentId;
+    acFillChoices();
+  }
   const known = acS.events.length ? acS.events[acS.events.length - 1].n : 0;
   const latest = info.events.length ? info.events[info.events.length - 1].n : 0;
   // drawn again only when something came that this page did not see (it was reloaded, or opened late)
@@ -1130,6 +1208,7 @@ async function acRefreshInfo(again = false) {
   acS.finished = Boolean(info.finished);
   if (info.liveModel) acS.model = info.liveModel;
   await acRestoreChoices(info);
+  acFillAgents();
   acFillProjects();
   acPaint();
 }
@@ -1146,6 +1225,11 @@ function showAgentConsole() {
 function setupAgentConsole() {
   if (!$('#agentView') || !window.agentConsole) return;
   window.agentConsole.onEvent((ev) => {
+    if (ev.kind === 'state' && ev.agentId && ev.agentId !== acS.agentId) {
+      acS.agentId = ev.agentId;
+      acFillChoices();
+      acFillAgents();
+    }
     if (ev.kind === 'state' && ev.state === 'reset') {
       acReset();
       acFillProjects();
@@ -1157,13 +1241,15 @@ function setupAgentConsole() {
       const value = ev.what === 'model' ? ev.model : ev.mode;
       if (typeof value === 'string' && value !== 'bypassPermissions') acSave(ev.what, value);
     }
-    if (ev.kind === 'state' && ev.state === 'refused') toast(`${ev.what === 'model' ? 'O modelo' : 'As permissões'}: ${ev.error || 'o Claude CLI recusou'}`, 'error');
+    if (ev.kind === 'state' && ev.state === 'refused') toast(`${ev.what === 'model' ? 'O modelo' : 'As permissões'}: ${ev.error || `o ${acCli()} recusou`}`, 'error');
     if (!ev.transient) acS.events.push(ev);
     acApply(ev);
     acPaint();
   });
   acS.placeholder = $('#acInput').placeholder;
   acFillChoices();
+  acFillAgents();
+  $('#acAgent').addEventListener('change', (e) => acChooseAgent(e.target.value));
   $('#acModel').addEventListener('change', (e) => acChoose('model', e.target.value));
   $('#acMode').addEventListener('change', (e) => acChoose('mode', e.target.value));
   $('#acEnd').addEventListener('click', acEndSession);

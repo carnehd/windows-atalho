@@ -12813,6 +12813,14 @@ strong.api-code-file {
 .pr-files .log-more {
   margin: 0 0 4px 10px;
 }
+/* the files of a pull request on a white panel inside the grey card; the head ("N files changed") stays on the card */
+.pr-files-panel {
+  margin: 0 0 4px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
 .pr-group-btn {
   margin-left: auto;
 }
@@ -15792,6 +15800,205 @@ textarea:not(.tool-area, .bru-code-edit)::placeholder {
   font-size: var(--fs-small);
   line-height: 1.45;
   word-break: break-word;
+}
+/* what a start shows: its steps and, under them, its log */
+.ls-run {
+  margin: 8px 0 2px 17px;
+}
+.ls-run-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ls-run-title {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+.ls-run-title.error {
+  color: var(--red);
+}
+.ls-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+}
+.ls-step {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 4px 8px;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-size: var(--fs-small);
+}
+.ls-step.run,
+.ls-step.fail {
+  background: var(--bg);
+  border-color: var(--border);
+}
+.ls-step.fail {
+  border-color: var(--red);
+}
+.ls-step.wait {
+  color: var(--text-muted);
+}
+.ls-step-name {
+  font-weight: 500;
+}
+.ls-step-detail {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+.ls-step-ms {
+  color: var(--text-muted);
+}
+.ls-step-ico {
+  width: 12px;
+  height: 12px;
+  margin: 3px 0 0 2px;
+  border: 1.5px solid var(--text-muted);
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+.ls-step.wait .ls-step-ico {
+  border-style: dashed;
+}
+.ls-step.run .ls-step-ico {
+  border-color: var(--accent);
+  border-right-color: transparent;
+  animation: ls-spin 0.9s linear infinite;
+}
+.ls-step.ok .ls-step-ico {
+  border-color: var(--green);
+  background: var(--green);
+}
+.ls-step.fail .ls-step-ico {
+  border-color: var(--red);
+  background: var(--red);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ls-step.run .ls-step-ico {
+    animation: none;
+  }
+}
+.ls-step-tail,
+.ls-step-fail {
+  grid-column: 2 / 4;
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ls-step-tail {
+  color: var(--text-muted);
+}
+.ls-step-fail {
+  color: var(--red);
+}
+.ls-hint {
+  grid-column: 2 / 4;
+  padding: 7px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+  line-height: 1.5;
+}
+.ls-step-actions {
+  grid-column: 2 / 4;
+  display: flex;
+  gap: 8px;
+}
+.ls-log {
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  overflow: hidden;
+}
+.ls-log-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-small);
+}
+.ls-log-space {
+  flex: 1;
+}
+.ls-seg,
+.ls-act {
+  padding: 2px 9px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.ls-seg:hover,
+.ls-act:hover {
+  background: var(--bg-hover);
+}
+.ls-seg.on,
+.ls-act.on {
+  background: var(--bg-hover);
+  color: var(--text);
+  font-weight: 500;
+}
+.ls-log-body {
+  max-height: 220px;
+  overflow: auto;
+  padding: 6px 10px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  line-height: 1.65;
+}
+.ls-ln {
+  display: flex;
+  gap: 8px;
+  white-space: pre-wrap;
+}
+.ls-tx {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ls-ln.dim {
+  color: var(--text-muted);
+}
+.ls-ln.ok .ls-tx {
+  color: var(--green);
+}
+.ls-ln.error .ls-tx {
+  color: var(--red);
+}
+.ls-ts {
+  flex: none;
+  color: var(--text-muted);
+}
+.ls-src {
+  flex: none;
+  width: 66px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-muted);
+}
+.ls-src.app {
+  color: var(--accent);
+}
+.ls-src.container {
+  color: var(--mauve);
+}
+.ls-log-foot {
+  padding: 4px 10px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
 }
 .ls-details {
   display: flex;

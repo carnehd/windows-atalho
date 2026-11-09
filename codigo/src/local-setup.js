@@ -11,6 +11,7 @@ const os = require('os');
 const net = require('net');
 const path = require('path');
 const crypto = require('crypto');
+const { spawn } = require('child_process');
 const { ipcMain } = require('electron');
 const shell = require('./shell');
 const agents = require('./agent-review');
@@ -379,42 +380,190 @@ function registerLocalSetup({ dataDir, getWindow, isKnownRepo, gitFor, pathKey, 
     return { success: true };
   }));
 
+  // -- What a start shows: its steps, and the lines of the engine, of this app and of the container, as they come. The
+  // page draws them (Local setup: the steps of each one and, under them, its log). --
+  const followers = new Map(); // the `logs -f` of the containers started here, by key
+
+  // A secret of the list never goes to the page: what any of the containers was given with the name of a password, the
+  // values the agent marked as secret, and the passwords of the database. A value that is part of an image or container
+  // name (a password "postgres" for a PostgreSQL) is not hidden: it would hide the name too.
+  const secretsOf = (d, setup) => {
+    const all = setup ? setup.dependencies : [d];
+    const names = all.map((x) => (x.container ? x.container.image + ' ' + x.container.name : '') + ' ' + x.name).join(' ').toLowerCase();
+    const found = [];
+    const add = (v) => {
+      const t = String(v == null ? '' : v);
+      if (t.length >= 4 && !names.includes(t.toLowerCase())) found.push(t);
+    };
+    for (const x of all) {
+      if (x.container) for (const e of x.container.env) if (SECRET_NAME.test(e.key)) add(e.value);
+      for (const v of [...(x.variables || []), ...(x.settings || [])]) if (v.secret) add(v.value);
+    }
+    const db = databaseValues(d);
+    if (db && db.v) for (const p of [db.v.ddlPassword, db.v.dmlPassword]) add(p);
+    return [...new Set(found)].sort((x, y) => y.length - x.length);
+  };
+
+  const makeRun = (repoPath, folder, d) => {
+    const hide = secretsOf(d, kept.get(keyOf(repoPath, folder)));
+    const mask = (t) => hide.reduce((x, secret) => x.split(secret).join('••••'), t);
+    const lastBy = {};
+    const recent = []; // the last lines said, whoever said them
+    const steps = [];
+    let buf = [];
+    let timer = null;
+    let current = null;
+    const flush = () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+      if (!buf.length) return;
+      const lines = buf;
+      buf = [];
+      send(repoPath, folder, { type: 'dep-log', id: d.id, lines });
+    };
+    // src: app (this window), engine (what docker or podman prints), container (its own log)
+    const log = (src, text, kind = '') => {
+      for (const raw of String(text).split(/\r\n|\r|\n/)) {
+        const t = mask(raw.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').trimEnd()).slice(0, 400);
+        if (!t.trim() || (src !== 'app' && lastBy[src] === t)) continue; // a line the engine says again is said once
+        lastBy[src] = t;
+        recent.push(t);
+        if (recent.length > 8) recent.shift();
+        buf.push({ ts: Date.now(), src, text: t, kind });
+      }
+      if (buf.length >= 100) flush();
+      else if (buf.length && !timer) timer = setTimeout(flush, 120);
+    };
+    const begin = (list) => {
+      steps.length = 0;
+      current = null;
+      for (const [key, label] of list) steps.push({ key, label, state: 'wait', at: 0 });
+      send(repoPath, folder, { type: 'dep-steps', id: d.id, steps: steps.map(({ key, label, state }) => ({ key, label, state })) });
+    };
+    const step = (key, state, detail = '') => {
+      const st = steps.find((x) => x.key === key);
+      if (!st) return;
+      flush(); // the lines said before this are shown before it
+      if (state === 'run' && !st.at) st.at = Date.now();
+      const ms = (state === 'ok' || state === 'fail') && st.at ? Date.now() - st.at : 0;
+      if (state === 'run') current = key;
+      else if (current === key) current = null;
+      st.state = state;
+      send(repoPath, folder, { type: 'dep-step', id: d.id, key, state, detail: mask(String(detail)).slice(0, 400), ms });
+    };
+    // the step on its way (or the next one) fails with the reason
+    const fail = (message) => {
+      const key = current || (steps.find((x) => x.state === 'wait') || {}).key;
+      if (key) step(key, 'fail', message);
+      if (!recent.includes(mask(message).slice(0, 400))) log('app', message, 'error'); // not again what the engine just said
+      flush();
+    };
+    return { log, begin, step, fail, flush };
+  };
+
+  // The log of the container itself, from its last lines on, for as long as it runs: `logs -f` ends when it does.
+  const follow = (engine, d, run, repoPath, folder) => {
+    const key = `${keyOf(repoPath, folder)}#${d.id}`;
+    if (followers.has(key)) return;
+    let child;
+    try {
+      child = spawn(engine.exe, ['logs', '-f', '--tail', '40', d.container.name], { env: engine.env, windowsHide: true });
+    } catch {
+      return;
+    }
+    followers.set(key, child);
+    const lines = (chunk) => run.log('container', chunk);
+    child.stdout.on('data', lines);
+    child.stderr.on('data', lines);
+    const done = () => {
+      if (followers.get(key) === child) followers.delete(key);
+    };
+    child.on('error', done);
+    child.on('close', done);
+  };
+  const unfollow = (repoPath, folder, id) => {
+    const key = `${keyOf(repoPath, folder)}#${id}`;
+    const child = followers.get(key);
+    if (child) child.kill();
+    followers.delete(key);
+  };
+
   // Runs in the container until it says it is ready. Without such a command: until its port answers.
-  const waitReady = async (engine, d, say) => {
+  const waitReady = async (engine, d, say, run) => {
     const c = d.container;
     const until = Date.now() + READY_TIMEOUT_MS;
+    const most = Math.ceil(READY_TIMEOUT_MS / READY_EVERY_MS);
     say(`Waiting for ${d.name}`);
-    for (;;) {
+    run.step('ready', 'run', 'attempt 1');
+    run.log('app', c.ready.length ? `Waiting for ${d.name}: ${c.ready.join(' ').slice(0, 120)}` : `Waiting for ${d.name} to answer on :${d.port}`);
+    for (let n = 1; ; n++) {
       if (c.ready.length) {
         const r = await newDb.call(engine.exe, execArgsOf(c, c.ready), engine.env, { timeout: 30000 });
-        if (r.code === 0) return;
+        if (r.code === 0) {
+          run.step('ready', 'ok', `after ${n} attempt${n > 1 ? 's' : ''}`);
+          run.log('app', `${d.name} is ready`, 'ok');
+          return;
+        }
         if (/no such container|no container with name|is not running|has stopped|state improper/i.test(r.stderr)) throw new Error(`The container stopped: ${r.stderr.trim().split('\n').pop().slice(0, 300)}`);
-      } else if (!d.port || await portAnswers(d.port)) return;
+        const why = `${r.stderr}\n${r.stdout}`.trim().split('\n').filter(Boolean).pop();
+        if (why && n % 5 === 1) run.log('engine', why.slice(0, 200)); // why it is not yet: now and then
+      } else if (!d.port || await portAnswers(d.port)) {
+        run.step('ready', 'ok', `after ${n} attempt${n > 1 ? 's' : ''}`);
+        run.log('app', `${d.name} is ready`, 'ok');
+        return;
+      }
       if (Date.now() > until) throw new Error(`${d.name} did not get ready in ${READY_TIMEOUT_MS / 60000} minutes: see its logs on the Containers page`);
+      run.step('ready', 'run', `attempt ${n + 1} of ${most}`);
       await new Promise((resolve) => setTimeout(resolve, READY_EVERY_MS));
     }
   };
 
   // What leaves it as the microservice expects: the database of a PostgreSQL, then the steps. A step that fails stops the rest.
-  const finishSetup = async (engine, d, say) => {
+  const finishSetup = async (engine, d, say, run) => {
     const c = d.container;
     const values = databaseValues(d);
-    if (values && values.problems.length) say(`Not creating the database: ${values.problems[0]}. New database can.`);
-    else if (values) {
+    const total = (values ? 1 : 0) + c.steps.length;
+    if (total) run.step('setup', 'run', `0 of ${total}`);
+    let done = 0;
+    if (values && values.problems.length) {
+      say(`Not creating the database: ${values.problems[0]}. New database can.`);
+      run.log('app', `Not creating the database: ${values.problems[0]}. New database can.`);
+    } else if (values) {
       say(`Creating the database ${values.v.database}`);
+      run.log('app', `Creating the database ${values.v.database}`);
       const hideAll = (t) => [values.v.ddlPassword, values.v.dmlPassword].reduce((x, p) => x.split(p).join('••••'), String(t));
       const r = await newDb.call(engine.exe, newDb.execArgs({ kind: 'container', container: c.name, admin: 'postgres' }), engine.env, { timeout: STEP_TIMEOUT_MS, input: `\n${newDb.plain(newDb.sqlFor(values.v))}\n` });
       if (r.code !== 0) throw new Error(`The database: ${newDb.explain(hideAll(`${r.stdout}\n${r.stderr}`), { kind: 'container', admin: 'postgres' })}`);
+      done += 1;
+      run.log('app', `The database ${values.v.database} is made`, 'ok');
+      run.step('setup', 'run', `${done} of ${total}`);
     }
     for (const s of c.steps) {
-      say(s.title || s.command.join(' ').slice(0, 80));
+      const title = s.title || s.command.join(' ').slice(0, 80);
+      say(title);
+      run.log('app', `Step ${done + 1} of ${total}: ${title}`);
       const r = await newDb.call(engine.exe, execArgsOf(c, s.command), engine.env, { timeout: STEP_TIMEOUT_MS });
       if (r.code !== 0) throw new Error(`${s.title || 'A step'}: ${`${r.stderr}\n${r.stdout}`.trim().split('\n').filter(Boolean).pop() || `exit ${r.code}`}`.slice(0, 500));
+      const out = `${r.stdout}`.trim().split('\n').filter(Boolean).pop();
+      if (out) run.log('engine', out.slice(0, 200));
+      done += 1;
+      run.step('setup', 'run', `${done} of ${total}`);
+    }
+    if (total) {
+      run.step('setup', 'ok', plural(total, 'step'));
+      run.log('app', `The setup is done: ${plural(total, 'step')}`, 'ok');
     }
   };
 
   // The Messages of a Pub/Sub emulator see what is published once they are watching: from now. A failure here stops nothing.
   const watchFromTheStart = (d) => (PUBSUB_IMAGE.test(d.container.image) ? watchPubsub(d.container.name).catch(() => {}) : Promise.resolve());
+
+  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  const READY_LABEL = 'Wait until it is ready';
+  const setupLabel = (d) => {
+    const n = (databaseValues(d) ? 1 : 0) + d.container.steps.length;
+    return n ? [['setup', n === 1 ? 'Run the setup step' : `Run the ${n} setup steps`]] : [];
+  };
 
   // Starts one: the container made and set up, or started again if it is there (its setup is done, then).
   ipcMain.handle('local-setup-start-dep', guard(async (repoPath, folder, id, { stepsOnly = false } = {}) => {
@@ -424,44 +573,68 @@ function registerLocalSetup({ dataDir, getWindow, isKnownRepo, gitFor, pathKey, 
     if (starting.has(key)) throw new Error(`${d.name} is starting already`);
     starting.set(key, true);
     const say = (text) => send(repoPath, folder, { type: 'dep', id: d.id, text });
+    const run = makeRun(repoPath, folder, d);
     try {
       const engine = await engineCall();
       const rows = await listContainers();
       const mine = rows.find((c) => c.name === d.container.name);
       if (stepsOnly) {
         if (!mine || mine.state !== 'running') throw new Error(`${d.name} is not running`);
-        await waitReady(engine, d, say);
-        await finishSetup(engine, d, say);
+        run.begin([['ready', READY_LABEL], ...setupLabel(d)]);
+        follow(engine, d, run, repoPath, folder);
+        await waitReady(engine, d, say, run);
+        await finishSetup(engine, d, say, run);
         return { success: true };
       }
       if (mine) {
         if (mine.state === 'running') return { success: true };
+        // the Pub/Sub emulator forgets when it stops: its steps run again; the others keep what they made
+        run.begin([['start', 'Start the container again'], ['ready', READY_LABEL], ...(d.kind === 'messaging' ? setupLabel(d) : [])]);
         say(`Starting ${mine.name} again`);
+        run.step('start', 'run');
+        run.log('app', `Starting ${mine.name} again`);
         const r = await newDb.call(engine.exe, ['start', mine.name], engine.env, { timeout: 60000 });
         if (r.code !== 0) throw new Error(r.stderr.trim().split('\n').pop() || 'It did not start');
-        await waitReady(engine, d, say);
-        // the Pub/Sub emulator forgets when it stops: its steps run again; the others keep what they made
+        run.step('start', 'ok', mine.name);
+        follow(engine, d, run, repoPath, folder);
+        await waitReady(engine, d, say, run);
         if (d.kind === 'messaging') {
-          await finishSetup(engine, d, say);
+          await finishSetup(engine, d, say, run);
           await watchFromTheStart(d);
         }
         return { success: true };
       }
+      run.begin([['image', 'Get the image'], ['container', 'Create the container'], ['ready', READY_LABEL], ...setupLabel(d)]);
       say('Starting the container');
+      run.log('app', `Starting ${d.container.image}`);
+      run.step('image', 'run');
       // what the engine prints as it downloads the image: its layers, one by one
+      let pulled = false;
       const onData = (text) => {
-        if (/pull|download|copying|layer|blob|manifest|digest|unable to find image|[0-9a-f]{12}:/i.test(String(text))) say('Getting the image: the first time takes a while');
+        run.log('engine', text);
+        if (/pull|download|copying|layer|blob|manifest|digest|unable to find image|[0-9a-f]{12}:/i.test(String(text))) {
+          pulled = true;
+          say('Getting the image: the first time takes a while');
+        }
       };
       const r = await newDb.call(engine.exe, runArgsOf(d.container, serviceOf(repoPath, folder)), engine.env, { timeout: PULL_TIMEOUT_MS, onData });
       if (r.code !== 0) {
         const why = `${r.stderr}`.trim().split('\n').filter(Boolean).pop() || 'It did not start';
         throw new Error(/address already in use|port is already allocated|bind/i.test(why) ? `Port ${d.port || ''} is taken on this computer: ${why}`.slice(0, 400) : why.slice(0, 400));
       }
-      await waitReady(engine, d, say);
-      await finishSetup(engine, d, say);
+      run.step('image', 'ok', pulled ? 'downloaded' : 'already here');
+      run.step('container', 'ok', d.container.name);
+      run.log('app', `The container ${d.container.name} is made`, 'ok');
+      follow(engine, d, run, repoPath, folder);
+      await waitReady(engine, d, say, run);
+      await finishSetup(engine, d, say, run);
       await watchFromTheStart(d);
       return { success: true };
+    } catch (e) {
+      run.fail(String((e && e.message) || e));
+      throw e;
     } finally {
+      run.flush();
       starting.delete(key);
     }
   }));
@@ -472,6 +645,7 @@ function registerLocalSetup({ dataDir, getWindow, isKnownRepo, gitFor, pathKey, 
     const engine = await engineCall();
     const r = await newDb.call(engine.exe, ['stop', d.container.name], engine.env, { timeout: 60000 });
     if (r.code !== 0) throw new Error(r.stderr.trim().split('\n').pop() || 'It did not stop');
+    unfollow(repoPath, folder, d.id);
     return { success: true };
   }));
 
@@ -485,6 +659,7 @@ function registerLocalSetup({ dataDir, getWindow, isKnownRepo, gitFor, pathKey, 
     if (!mine.setup) throw new Error(`${mine.name} was not made here: remove it on the Containers page, if you mean to`);
     const r = await newDb.call(engine.exe, ['rm', '-f', mine.name], engine.env, { timeout: 60000 });
     if (r.code !== 0) throw new Error(r.stderr.trim().split('\n').pop() || 'It was not removed');
+    unfollow(repoPath, folder, d.id);
     return { success: true };
   }));
 
@@ -498,7 +673,13 @@ function registerLocalSetup({ dataDir, getWindow, isKnownRepo, gitFor, pathKey, 
     return { success: true };
   }));
 
-  return { stopAll: () => runs.forEach((run) => run.stop()) };
+  return {
+    stopAll: () => {
+      runs.forEach((run) => run.stop());
+      followers.forEach((child) => child.kill());
+      followers.clear();
+    },
+  };
 }
 
 module.exports = { registerLocalSetup, setupOf, promptFor, runArgsOf, execArgsOf, scriptFor, statesOf, databaseValues, ANSWER_SCHEMA };

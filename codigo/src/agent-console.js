@@ -1,5 +1,6 @@
-// consola-agente: a conversation with Claude CLI, the one on this computer, in a project folder, and each thing it
-// does as it does it. The app starts the CLI with stream-json in and out. Each line it writes goes to the page as it
+// consola-agente: a conversation with Claude CLI or with Copilot CLI (the user chooses), the one on this computer, in a
+// project folder, and each thing it does as it does it. The app starts Claude CLI with stream-json in and out; Copilot CLI
+// with --acp (acp.js), and what it says goes to the page in the form of Claude's. Each line it writes goes to the page as it
 // is. What the user writes, and the answers to its permission requests, go to its input in the form it reads
 // (control_request / control_response, as the Agent SDK speaks to it).
 // One session at a time. The process stays open between messages. If it ends, the next message starts it again with
@@ -9,6 +10,7 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const shell = require('./shell');
 const agents = require('./agent-review');
+const { COPILOT_MODES, Translator, pickOption } = require('./acp');
 
 // --permission-prompt-tool stdio: the permission requests come on its output and the answers go to its input.
 // --allow-dangerously-skip-permissions only makes "bypassPermissions" a mode that can be chosen; it is never on until
@@ -61,6 +63,7 @@ function registerAgentConsole({ getWindow, isKnownRepo, withDialog }) {
   const picked = new Set(); // folders the user chose with the dialog, in this run of the app
   const s = {
     cwd: null,
+    agent: 'claude', // claude | copilot: chosen before the session starts
     sessionId: null,
     child: null,
     starting: null,
@@ -105,7 +108,7 @@ function registerAgentConsole({ getWindow, isKnownRepo, withDialog }) {
     const win = getWindow();
     if (win && !win.isDestroyed()) win.webContents.send('agent-console-event', ev);
   };
-  const stateOf = () => ({ running: Boolean(s.child), cwd: s.cwd, sessionId: s.sessionId, pending: [...s.pending.keys()], model: s.model, liveModel: s.liveModel, mode: s.mode, finished: s.finished });
+  const stateOf = () => ({ running: Boolean(s.child), agentId: s.agent, cwd: s.cwd, sessionId: s.sessionId, pending: [...s.pending.keys()], model: s.model, liveModel: s.liveModel, mode: s.mode, finished: s.finished });
 
   const write = (obj) => {
     if (!s.child || !s.child.stdin.writable) throw new Error('O Claude CLI não está a correr');
@@ -174,18 +177,197 @@ function registerAgentConsole({ getWindow, isKnownRepo, withDialog }) {
     }
   };
 
+  // -- Copilot CLI: ACP, JSON-RPC lines on its input and output. What it says goes to the page in Claude's form. --
+  const copilot = { id: 0, calls: new Map(), tr: null, loading: false, turn: null, queue: [], modes: {} };
+  const copilotReset = () => {
+    const calls = [...copilot.calls.values()];
+    copilot.calls.clear();
+    copilot.tr = null;
+    copilot.loading = false;
+    copilot.turn = null;
+    copilot.queue = [];
+    for (const c of calls) c.reject(new Error('O Copilot CLI terminou'));
+  };
+  const rawSend = (obj) => {
+    if (!s.child || !s.child.stdin.writable) throw new Error('O Copilot CLI não está a correr');
+    s.child.stdin.write(`${JSON.stringify(obj)}\n`);
+  };
+  const rpc = (method, params) => new Promise((resolve, reject) => {
+    const id = ++copilot.id;
+    copilot.calls.set(id, { resolve, reject, method });
+    try {
+      rawSend({ jsonrpc: '2.0', id, method, params });
+    } catch (e) {
+      copilot.calls.delete(id);
+      reject(e);
+    }
+  });
+  const out = (event) => emit({ kind: 'out', line: JSON.stringify(event) });
+  const echo = (event) => emit({ kind: 'in', line: JSON.stringify(event) });
+
+  // a request of the agent for permission: the mode can answer for the user; else the page asks
+  const handlePermission = (m) => {
+    const p = m.params || {};
+    const call = p.toolCall || {};
+    const edits = ['edit', 'delete', 'move'].includes(String(call.kind || ''));
+    if (s.mode === 'bypassPermissions' || (s.mode === 'acceptEdits' && edits)) {
+      const optionId = pickOption(p.options, 'allow');
+      rawSend({ jsonrpc: '2.0', id: m.id, result: { outcome: optionId ? { outcome: 'selected', optionId } : { outcome: 'cancelled' } } });
+      return;
+    }
+    const id = `acp-${m.id}`;
+    const ev = copilot.tr.permission(id, call, p.options);
+    s.pending.set(id, { acp: true, rpcId: m.id, options: p.options, input: ev.request.input });
+    out(ev);
+  };
+
+  const takeAcp = (line) => {
+    const text = line.replace(/\r$/, '');
+    if (!text.trim()) return;
+    let m;
+    try {
+      m = JSON.parse(text);
+    } catch {
+      return;
+    }
+    if (!m || typeof m !== 'object') return;
+    if (m.id !== undefined && !m.method && copilot.calls.has(m.id)) {
+      const c = copilot.calls.get(m.id);
+      copilot.calls.delete(m.id);
+      if (m.error) c.reject(Object.assign(new Error(String((m.error && m.error.message) || 'erro')), { code: m.error && m.error.code, data: m.error && m.error.data }));
+      else c.resolve(m.result || {});
+      return;
+    }
+    if (m.method === 'session/update' && m.params) {
+      if (copilot.loading || !copilot.tr) return; // what a session loaded says again is not said twice
+      for (const ev of copilot.tr.update(m.params.update || {})) out(ev);
+      return;
+    }
+    if (m.method === 'session/request_permission' && m.id !== undefined && copilot.tr) {
+      handlePermission(m);
+      return;
+    }
+    // nothing else is asked of a client that did not say it does it
+    if (m.method && m.id !== undefined) {
+      try {
+        rawSend({ jsonrpc: '2.0', id: m.id, error: { code: -32601, message: `QuickDeck does not handle ${String(m.method).slice(0, 60)}` } });
+      } catch {
+        // it has ended
+      }
+    }
+  };
+
+  // one turn at a time: what is written meanwhile waits for its turn
+  const pump = () => {
+    if (copilot.turn || !copilot.queue.length || !copilot.tr) return;
+    const message = copilot.queue.shift();
+    const at = Date.now();
+    out({ type: 'system', subtype: 'session_state_changed', state: 'running', session_id: s.sessionId });
+    const turn = rpc('session/prompt', { sessionId: s.sessionId, prompt: [{ type: 'text', text: message }] });
+    copilot.turn = turn;
+    const done = (stopReason, error, usage) => {
+      if (copilot.turn !== turn) return;
+      copilot.turn = null;
+      if (s.interrupt) {
+        clearTimeout(s.interrupt.timer);
+        s.interrupt = null;
+      }
+      if (copilot.tr) for (const ev of copilot.tr.turnEnd({ stopReason, ms: Date.now() - at, error, usage })) out(ev);
+      out({ type: 'system', subtype: 'session_state_changed', state: 'idle', session_id: s.sessionId });
+      pump();
+    };
+    turn.then((r) => done((r && r.stopReason) || 'end_turn', null, r && r.usage), (e) => done('error', e, null));
+  };
+  const promptCopilot = (message) => {
+    echo({ type: 'user', message: { role: 'user', content: message }, parent_tool_use_id: null, session_id: s.sessionId || '' });
+    copilot.queue.push(message);
+    pump();
+  };
+
+  // plan: the plan mode of the agent; any other: its usual one (the other modes are of the app: it answers the requests)
+  const copilotSetMode = async (v) => {
+    const id = copilot.modes[v === 'plan' ? 'plan' : 'agent'];
+    if (id) await rpc('session/set_mode', { sessionId: s.sessionId, modeId: id });
+  };
+
+  const interruptCopilot = () => {
+    if (!copilot.turn || s.interrupt) return;
+    const id = `gq-interrupt-${s.n + 1}`;
+    echo({ type: 'control_request', request_id: id, request: { subtype: 'interrupt' } });
+    for (const [rid, req] of [...s.pending]) {
+      if (!req.acp) continue;
+      try {
+        rawSend({ jsonrpc: '2.0', id: req.rpcId, result: { outcome: { outcome: 'cancelled' } } });
+      } catch {
+        // it has ended
+      }
+      s.pending.delete(rid);
+      out({ type: 'control_cancel_request', request_id: rid });
+    }
+    try {
+      rawSend({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId: s.sessionId } });
+    } catch {
+      // it has ended
+    }
+    const child = s.child;
+    s.interrupt = {
+      id,
+      timer: setTimeout(() => {
+        s.interrupt = null;
+        if (s.child === child && child.exitCode === null) {
+          emit({ kind: 'state', state: 'sigint', ...stateOf() });
+          try {
+            child.kill('SIGINT');
+          } catch {
+            // gone already
+          }
+        }
+      }, INTERRUPT_WAIT_MS),
+    };
+  };
+
+  // initialize, then the session: new, or the one of before when the process had ended
+  async function handshake(resume) {
+    await rpc('initialize', { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }, clientInfo: { name: 'QuickDeck', version: app.getVersion() } });
+    let res = null;
+    if (resume && s.sessionId) {
+      copilot.loading = true;
+      try {
+        res = await rpc('session/load', { sessionId: s.sessionId, cwd: s.cwd, mcpServers: [] });
+      } catch {
+        res = null;
+        s.sessionId = null;
+      } finally {
+        copilot.loading = false;
+      }
+    }
+    if (!res) {
+      res = await rpc('session/new', { cwd: s.cwd, mcpServers: [] });
+      s.sessionId = String(res.sessionId || '');
+    }
+    const modes = res.modes && Array.isArray(res.modes.availableModes) ? res.modes.availableModes : [];
+    copilot.modes = Object.fromEntries(modes.map((x) => [String(x.id).split('#').pop(), x.id]));
+    copilot.tr = new Translator(s.sessionId, { cwd: s.cwd });
+    out(copilot.tr.init(s.mode));
+    if (s.mode === 'plan') await copilotSetMode('plan').catch(() => {});
+  }
+
   async function start() {
-    const agent = await agents.findAgent('claude');
-    if (!agent || !agent.found) throw { code: 'no-agent', error: 'O Claude CLI não está neste computador. Instala-o, entra uma vez com "claude" num terminal e volta aqui.' };
+    const isCopilot = s.agent === 'copilot';
+    const who = isCopilot ? 'Copilot CLI' : 'Claude CLI';
+    const agent = await agents.findAgent(s.agent);
+    if (!agent || !agent.found) throw { code: 'no-agent', error: isCopilot ? 'O Copilot CLI não está neste computador. Instala-o, entra uma vez com "copilot login" num terminal e volta aqui.' : 'O Claude CLI não está neste computador. Instala-o, entra uma vez com "claude" num terminal e volta aqui.' };
     if (!s.cwd || !fs.existsSync(s.cwd)) throw new Error('A pasta do projeto já não existe');
+    const base = agents.agentEnv(await shell.loginShellEnv());
     // session_state_changed events (running, idle, requires_action): the page knows when it works
-    const env = { ...agents.agentEnv(await shell.loginShellEnv()), CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: '1' };
-    const args = [...ARGS, ...(s.sessionId ? ['--resume', s.sessionId] : [])];
+    const env = isCopilot ? base : { ...base, CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: '1' };
+    const args = isCopilot ? ['--acp'] : [...ARGS, ...(s.sessionId ? ['--resume', s.sessionId] : [])];
+    const read = isCopilot ? takeAcp : take;
     let child;
     try {
-      child = spawn(agent.file, args, { cwd: s.cwd, env, windowsHide: true, detached: !shell.IS_WIN, stdio: ['pipe', 'pipe', 'pipe'] });
+      child = spawn(agent.file, args, { cwd: s.cwd, env, windowsHide: true, detached: !shell.IS_WIN, shell: /\.(cmd|bat)$/i.test(agent.file), stdio: ['pipe', 'pipe', 'pipe'] });
     } catch (e) {
-      throw new Error(`O Claude CLI não arrancou: ${e.message}`);
+      throw new Error(`O ${who} não arrancou: ${e.message}`);
     }
     s.child = child;
     s.stderr = '';
@@ -197,7 +379,7 @@ function registerAgentConsole({ getWindow, isKnownRepo, withDialog }) {
       while ((at = buffer.indexOf('\n')) >= 0) {
         const line = buffer.slice(0, at);
         buffer = buffer.slice(at + 1);
-        if (s.child === child) take(line);
+        if (s.child === child) read(line);
       }
     });
     child.stderr.setEncoding('utf8');
@@ -209,18 +391,34 @@ function registerAgentConsole({ getWindow, isKnownRepo, withDialog }) {
     child.stdin.on('error', () => {});
     const ended = (code, signal, error) => {
       if (s.child !== child) return;
-      if (buffer.trim()) take(buffer);
+      if (buffer.trim()) read(buffer);
       buffer = '';
       s.child = null;
       s.pending.clear();
       s.controls.clear();
+      if (isCopilot) copilotReset();
       if (s.interrupt) clearTimeout(s.interrupt.timer);
       s.interrupt = null;
       emit({ kind: 'state', state: 'ended', code: code ?? null, signal: signal || null, error: error || null, stderr: s.stderr.trim().split('\n').slice(-3).join('\n').slice(0, 600), ...stateOf() });
     };
-    child.on('error', (e) => ended(null, null, `O Claude CLI não arrancou: ${e.message}`));
+    child.on('error', (e) => ended(null, null, `O ${who} não arrancou: ${e.message}`));
     child.on('close', (code, signal) => ended(code, signal, null));
-    emit({ kind: 'state', state: 'started', resumed: args.includes('--resume'), version: agent.version || '', ...stateOf() });
+    const resumed = isCopilot ? Boolean(s.sessionId) : args.includes('--resume');
+    emit({ kind: 'state', state: 'started', resumed, version: agent.version || '', ...stateOf() });
+    if (isCopilot) {
+      try {
+        await handshake(resumed);
+      } catch (e) {
+        const said = String((e && e.message) || e);
+        try {
+          child.kill();
+        } catch {
+          // gone already
+        }
+        throw new Error(/auth|login|sign.?in|unauthori|credential/i.test(said) ? 'O Copilot CLI não tem sessão iniciada neste computador. Abre um terminal, corre "copilot login" e segue os passos.' : `O Copilot CLI não arrancou a sessão: ${said}`);
+      }
+      return;
+    }
     // the choices of the user, before the first message: it takes them at once (and a mode it does not allow here, such
     // as auto on some plans, comes back refused and goes back to the usual)
     try {
@@ -243,6 +441,7 @@ function registerAgentConsole({ getWindow, isKnownRepo, withDialog }) {
     s.child = null;
     s.pending.clear();
     s.controls.clear();
+    copilotReset();
     if (s.interrupt) clearTimeout(s.interrupt.timer);
     s.interrupt = null;
     if (!child) return;
@@ -258,28 +457,49 @@ function registerAgentConsole({ getWindow, isKnownRepo, withDialog }) {
   }
 
   ipcMain.handle('agent-console-info', guard(async (again) => {
-    const agent = await agents.findAgent('claude', Boolean(again));
+    const [claude, copilotInfo] = await Promise.all([agents.findAgent('claude', Boolean(again)), agents.findAgent('copilot', Boolean(again))]);
+    const shown = (a) => (a ? { id: a.id, found: a.found, name: a.name, command: a.command, version: a.version } : { found: false });
+    const now = s.agent === 'copilot' ? copilotInfo : claude;
     return {
-      agent: agent ? { found: agent.found, name: agent.name, command: agent.command, version: agent.version } : { found: false },
+      agent: shown(now),
+      agents: { claude: shown(claude), copilot: shown(copilotInfo) },
       ...stateOf(),
       trimmed: s.trimmed,
       events: s.events.slice(),
     };
   }));
 
-  // The model or the permission mode, for this session and the next: to the CLI at once when it is running.
+  // The agent (before the session starts), the model or the permission mode, for this session and the next: to the agent at
+  // once when it is running.
   ipcMain.handle('agent-console-set', guard(async (kind, value) => {
     const v = String(value ?? '');
-    if (kind === 'model') {
+    if (kind === 'agent') {
+      if (!['claude', 'copilot'].includes(v)) throw new Error('Agente desconhecido');
+      if (s.cwd && !s.finished) throw new Error('Esta sessão já começou: carrega em Nova sessão para mudar de agente');
+      if (v !== s.agent) {
+        s.agent = v;
+        s.model = '';
+        if (v === 'copilot' && !COPILOT_MODES.includes(s.mode)) s.mode = 'default';
+      }
+    } else if (kind === 'model') {
+      if (s.agent === 'copilot') throw new Error('O Copilot CLI escolhe o modelo sozinho');
       if (!MODELS.includes(v)) throw new Error('Modelo desconhecido');
       const prev = s.model;
       s.model = v;
       if (s.child && !s.finished) askChange('model', v, prev);
     } else if (kind === 'mode') {
-      if (!MODES.includes(v)) throw new Error('Modo de permissões desconhecido');
+      if (!(s.agent === 'copilot' ? COPILOT_MODES : MODES).includes(v)) throw new Error('Modo de permissões desconhecido');
       const prev = s.mode;
       s.mode = v;
-      if (s.child && !s.finished) askChange('mode', v, prev);
+      if (s.agent === 'copilot') {
+        // plan is the agent's own mode; the others are of the app (it answers the requests): the agent only has to leave plan
+        if (s.child && !s.finished && copilot.tr && (v === 'plan' || prev === 'plan')) {
+          copilotSetMode(v).then(() => emit({ kind: 'state', state: 'applied', what: 'mode', value: v, ...stateOf() })).catch((e) => {
+            s.mode = prev;
+            emit({ kind: 'state', state: 'refused', what: 'mode', error: String((e && e.message) || e).slice(0, 300), ...stateOf() });
+          });
+        }
+      } else if (s.child && !s.finished) askChange('mode', v, prev);
     } else throw new Error('Escolha desconhecida');
     emit({ kind: 'state', state: 'choice', what: kind, transient: true, ...stateOf() });
     return { ok: true };
@@ -296,7 +516,7 @@ function registerAgentConsole({ getWindow, isKnownRepo, withDialog }) {
 
   ipcMain.handle('agent-console-folder', guard(async () => {
     const win = getWindow();
-    const res = await withDialog(() => dialog.showOpenDialog(win, { title: 'A pasta do projeto para o Claude', properties: ['openDirectory'] }));
+    const res = await withDialog(() => dialog.showOpenDialog(win, { title: `A pasta do projeto para o ${s.agent === 'copilot' ? 'Copilot' : 'Claude'}`, properties: ['openDirectory'] }));
     if (!res || res.canceled || !res.filePaths || !res.filePaths[0]) return { path: null };
     picked.add(res.filePaths[0]);
     return { path: res.filePaths[0] };
@@ -315,7 +535,8 @@ function registerAgentConsole({ getWindow, isKnownRepo, withDialog }) {
       throw new Error('Esta sessão é de outro projeto: começa uma nova sessão para mudar');
     }
     await ensureRunning();
-    write({ type: 'user', message: { role: 'user', content: message }, parent_tool_use_id: null, session_id: s.sessionId || '' });
+    if (s.agent === 'copilot') promptCopilot(message);
+    else write({ type: 'user', message: { role: 'user', content: message }, parent_tool_use_id: null, session_id: s.sessionId || '' });
     return { ok: true };
   }));
 
@@ -323,6 +544,13 @@ function registerAgentConsole({ getWindow, isKnownRepo, withDialog }) {
     const req = s.pending.get(String(requestId));
     if (!req) throw new Error('Este pedido já não está à espera de resposta');
     const how = ['allow', 'always', 'deny'].includes(choice) ? choice : 'deny';
+    if (req.acp) {
+      const optionId = pickOption(req.options, how);
+      rawSend({ jsonrpc: '2.0', id: req.rpcId, result: { outcome: optionId ? { outcome: 'selected', optionId } : { outcome: 'cancelled' } } });
+      echo({ type: 'control_response', response: { subtype: 'success', request_id: String(requestId), response: how === 'deny' ? { behavior: 'deny', message: DENIED } : { behavior: 'allow', updatedInput: req.input, ...(how === 'always' ? { updatedPermissions: [{ type: 'addRules', behavior: 'allow', destination: 'session' }] } : {}) } } });
+      s.pending.delete(String(requestId));
+      return { ok: true };
+    }
     write({ type: 'control_response', response: { subtype: 'success', request_id: String(requestId), response: permissionAnswer(req, how, answers) } });
     s.pending.delete(String(requestId));
     return { ok: true };
@@ -332,6 +560,10 @@ function registerAgentConsole({ getWindow, isKnownRepo, withDialog }) {
   ipcMain.handle('agent-console-interrupt', guard(async () => {
     if (!s.child) return { ok: true };
     if (s.interrupt) return { ok: true };
+    if (s.agent === 'copilot') {
+      interruptCopilot();
+      return { ok: true };
+    }
     const id = `gq-interrupt-${s.n + 1}`;
     write({ type: 'control_request', request_id: id, request: { subtype: 'interrupt' } });
     const child = s.child;

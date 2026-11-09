@@ -753,10 +753,11 @@
       </div>
     </div>
 
-    <!-- consola-agente: a conversation with Claude CLI in a project folder, and what it does as it does it (agent-console.js) -->
+    <!-- consola-agente: a conversation with Claude CLI or Copilot CLI in a project folder, and what it does as it does it (agent-console.js) -->
     <div id="agentView" class="body hidden">
       <div class="content ac-page">
         <div class="ac-bar">
+          <select id="acAgent" class="input ac-agent" aria-label="Agente"></select>
           <select id="acProject" class="input ac-project" aria-label="Projeto"></select>
           <span id="acState" class="ac-state" aria-live="polite"><span class="ac-dot" aria-hidden="true"></span><span id="acStateText">Sem sessão</span></span>
           <span id="acMeta" class="ac-meta"></span>
@@ -771,9 +772,9 @@
             <div class="ac-scroll">
               <div id="acChat" class="ac-chat" role="log">
                 <div id="acChatEmpty" class="ac-empty">
-                  <p>Escreve em baixo o que queres que o Claude faça na pasta do projeto. Cada ação que precisa da tua autorização aparece aqui como um cartão.</p>
-                  <p class="ac-empty-note">O Claude CLI corre neste computador, na pasta do projeto, e envia à Anthropic o que lê e o que escreves, como num terminal.</p>
-                  <div id="acNoAgent" class="ac-no-agent hidden"><p>O Claude CLI não foi encontrado neste computador. Instala-o e entra uma vez com <code>claude</code> num terminal.</p><button id="acAgainBtn" class="btn btn-sm" type="button">Procurar de novo</button></div>
+                  <p id="acEmptyIntro">Escreve em baixo o que queres que o Claude faça na pasta do projeto. Cada ação que precisa da tua autorização aparece aqui como um cartão.</p>
+                  <p id="acEmptyNote" class="ac-empty-note">O Claude CLI corre neste computador, na pasta do projeto, e envia à Anthropic o que lê e o que escreves, como num terminal.</p>
+                  <div id="acNoAgent" class="ac-no-agent hidden"><p id="acNoAgentText">O Claude CLI não foi encontrado neste computador. Instala-o e entra uma vez com <code>claude</code> num terminal.</p><button id="acAgainBtn" class="btn btn-sm" type="button">Procurar de novo</button></div>
                 </div>
               </div>
             </div>
@@ -784,7 +785,7 @@
             <div class="ac-scroll"><div id="acTimeline" class="ac-timeline" role="log"></div></div>
           </section>
         </div>
-        <!-- the model and the permissions of the Claude CLI, for this conversation and the next (agent-console.js) -->
+        <!-- the model and the permissions of the agent, for this conversation and the next (agent-console.js) -->
         <div class="ac-options">
           <label class="ac-opt" for="acModel"><span>Modelo</span><select id="acModel" class="input ac-select" aria-label="Modelo"></select></label>
           <label class="ac-opt" for="acMode"><span>Permissões</span><select id="acMode" class="input ac-select" aria-label="Permissões"></select></label>
