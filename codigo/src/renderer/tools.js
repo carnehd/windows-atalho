@@ -20,6 +20,7 @@ const TOOLS = [
   { id: 'hash', title: 'Hashes', sub: 'MD5, SHA, HMAC', words: 'hash md5 sha sha1 sha256 sha512 hmac checksum digest', build: buildHashTool },
   { id: 'ports', title: 'Ports in use', sub: 'Who listens, end it', words: 'port listen process kill end 8080 lsof netstat pid', build: buildPortsTool },
   { id: 'compare', title: 'Compare texts', sub: 'Two texts, the differences', words: 'diff compare text difference', build: buildCompareTool },
+  { id: 'document', title: 'One document', sub: 'Pastes apart, one file out', words: 'document combine merge join collect bundle areas sections paste markdown concatenate code json text context prompt save file', build: buildDocumentTool },
 ];
 // The list, by what they do: each group under its name, a line between them, its tools in this order.
 const TOOL_GROUPS = [
@@ -27,6 +28,7 @@ const TOOL_GROUPS = [
   ['Convert', ['config', 'springenv', 'time', 'case']],
   ['Encode and decode', ['encode', 'escape', 'jwt', 'hash']],
   ['Compare', ['compare', 'jsondiff', 'apidiff']],
+  ['Combine', ['document']],
   ['Generate', ['ids', 'ptids']],
   ['This computer', ['ports']],
 ];
@@ -3003,6 +3005,361 @@ function buildPtIdsTool() {
     box.appendChild(sec);
   }
   return { el: box, focus: box.querySelector('input') };
+}
+
+// -- One document: pieces pasted in areas (code, text, JSON...), joined in one document with each area apart --
+// Nothing leaves the window: what is pasted is kept only while the app is open, and never saved by itself.
+const DOC_KINDS = [['auto', 'Auto'], ['text', 'Text'], ['json', 'JSON'], ['xml', 'XML'], ['html', 'HTML'], ['yaml', 'YAML'], ['properties', 'Properties'], ['sql', 'SQL'], ['java', 'Java'], ['shell', 'Shell'], ['markdown', 'Markdown']];
+const DOC_NAMES = Object.fromEntries(DOC_KINDS);
+// the word after the three backticks, for a viewer to colour it
+const DOC_LANG = { text: 'text', json: 'json', xml: 'xml', html: 'html', yaml: 'yaml', properties: 'properties', sql: 'sql', java: 'java', shell: 'bash', markdown: 'markdown' };
+
+// What a text looks like, for Auto: only what it shows at first sight, and a plain text when it is not sure.
+function docGuessKind(text) {
+  const t = String(text).trim();
+  if (!t) return 'text';
+  if (/^[[{]/.test(t)) {
+    try {
+      JSON.parse(t);
+      return 'json';
+    } catch {
+      // not JSON
+    }
+  }
+  if (/^<\?xml\b/i.test(t)) return 'xml';
+  if (/^<!doctype html|^<html[\s>]/i.test(t)) return 'html';
+  if (/^<[A-Za-z][\w:.-]*[\s>/][\s\S]*>$/.test(t)) return /<(div|span|p|a|body|head|table|ul|li|h[1-6]|script|style|form|input|br)\b/i.test(t) ? 'html' : 'xml';
+  if (/^\s*(select|insert\s+into|update|delete\s+from|create\s+(table|index|view|sequence)|alter\s+table|with\s+\w+\s+as|drop\s+table)\b/i.test(t)) return 'sql';
+  if (/^\s*(package\s+[\w.]+;|import\s+[\w.*]+;|(public|private|protected|final|abstract)\s+(static\s+)?(class|interface|record|enum)\b|@(Service|RestController|Entity|Component|SpringBootApplication)\b)/m.test(t)) return 'java';
+  if ((/^#!\s*\/(usr\/)?bin\/(env\s+)?(ba|z)?sh/.test(t) || /^\$\s+\S/m.test(t) || /^(curl|docker|podman|git|mvn|kubectl|npm|cd|export|echo)\s/m.test(t)) && !/[{};]\s*$/m.test(t)) return 'shell';
+  const lines = t.split('\n').filter((l) => l.trim() && !/^\s*[#!]/.test(l));
+  const share = (rx) => (lines.length ? lines.filter((l) => rx.test(l)).length / lines.length : 0);
+  if (lines.length >= 2 && share(/^\s*[\w.$[\]-]+\s*=/) >= 0.6) return 'properties';
+  if (/^---\s*$/.test(t.split('\n')[0]) || (lines.length >= 2 && share(/^\s*(-\s|["']?[\w.-]+["']?:(\s|$))/) >= 0.6 && !/[{};]\s*$/m.test(t))) return 'yaml';
+  if (/^#{1,6}\s+\S/m.test(t) || (/^\s*[-*]\s+\S/m.test(t) && /\n\s*\n/.test(t))) return 'markdown';
+  return 'text';
+}
+
+// JSON with its layout redone and nothing else touched: a number, a string or a key comes out as it went in (a long id
+// is not rounded, as JSON.stringify would). Throws when the text is not JSON.
+function docPrettyJson(text) {
+  JSON.parse(text);
+  let out = '';
+  let depth = 0;
+  let inString = false;
+  const line = () => `\n${'  '.repeat(depth)}`;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inString) {
+      out += c;
+      if (c === '\\') out += text[++i];
+      else if (c === '"') inString = false;
+    } else if (c === '"') {
+      inString = true;
+      out += c;
+    } else if (c === '{' || c === '[') {
+      let j = i + 1;
+      while (/\s/.test(text[j])) j++;
+      if (text[j] === (c === '{' ? '}' : ']')) {
+        out += c + text[j];
+        i = j;
+      } else {
+        depth++;
+        out += c + line();
+      }
+    } else if (c === '}' || c === ']') {
+      depth--;
+      out += line() + c;
+    } else if (c === ',') out += `,${line()}`;
+    else if (c === ':') out += ': ';
+    else if (!/\s/.test(c)) out += c;
+  }
+  return out;
+}
+
+const docClean = (text) => String(text).replace(/\r\n?/g, '\n').replace(/^(?:[ \t]*\n)+/, '').replace(/\s+$/, '');
+// GitHub's way of making an anchor from a heading
+const docSlug = (s) => String(s).toLowerCase().trim().replace(/[^\p{L}\p{N}\s_-]/gu, '').replace(/\s/g, '-');
+// a fence longer than any run of backticks inside the text, so what is pasted can never close it
+const docFence = (text) => '`'.repeat(Math.max(3, ...[...String(text).matchAll(/`+/g)].map((m) => m[0].length + 1)));
+const docAttr = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+const docCount = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+// The areas that have text, cleaned, with the kind they are (chosen, or guessed) and a title. In order, numbered from 1.
+function docParts(areas, opts) {
+  const parts = [];
+  const warnings = [];
+  for (const a of areas) {
+    const body = docClean(a.text);
+    if (!body) continue;
+    const n = parts.length + 1;
+    const kind = a.kind === 'auto' ? docGuessKind(body) : a.kind;
+    let text = body;
+    if (kind === 'json' && opts.json) {
+      try {
+        text = docPrettyJson(body);
+      } catch {
+        if (a.kind === 'json') warnings.push(`Area ${n} is set as JSON but is not valid JSON: it stays as it is`);
+      }
+    }
+    parts.push({ n, title: a.title || `Area ${n}`, kind, text });
+  }
+  return { parts, warnings };
+}
+
+function docMarkdown(parts, opts) {
+  const heading = (p) => `${opts.numbered ? `${p.n}. ` : ''}${p.title}`;
+  const out = [];
+  if (opts.title) out.push(`# ${opts.title}`, '');
+  if (opts.index && parts.length > 1) {
+    const seen = new Map();
+    out.push('## Contents', '');
+    for (const p of parts) {
+      const slug = docSlug(heading(p));
+      const again = seen.get(slug) || 0;
+      seen.set(slug, again + 1);
+      out.push(`- [${heading(p)}](#${slug}${again ? `-${again}` : ''})`);
+    }
+    out.push('');
+  }
+  // a rule between the areas; none above the first when nothing comes before it (a file that starts with --- is front matter)
+  const lead = Boolean(opts.title) || (opts.index && parts.length > 1);
+  parts.forEach((p, i) => {
+    const fence = docFence(p.text);
+    if (i > 0 || lead) out.push('---', '');
+    out.push(`## ${heading(p)}`, '', `${fence}${DOC_LANG[p.kind] || 'text'}`, p.text, fence, '');
+  });
+  return out.join('\n').trimEnd();
+}
+
+function docPlain(parts, opts) {
+  const rule = '-'.repeat(72);
+  const out = [];
+  if (opts.title) out.push(opts.title, '='.repeat(Math.min(72, opts.title.length)), '');
+  if (opts.index && parts.length > 1) {
+    out.push('Contents', ...parts.map((p) => `  ${opts.numbered ? `${p.n}. ` : '- '}${p.title}`), '');
+  }
+  for (const p of parts) out.push(rule, `${opts.numbered ? `${p.n}. ` : ''}${p.title} (${DOC_NAMES[p.kind]})`, rule, p.text, '');
+  return out.join('\n').trimEnd();
+}
+
+// For an assistant: each area in a tag of its own, so it knows where one ends. A closing tag inside a text is made harmless.
+function docTags(parts, opts) {
+  const out = [`<document${opts.title ? ` title="${docAttr(opts.title)}"` : ''}>`];
+  for (const p of parts) out.push(`<area n="${p.n}" title="${docAttr(p.title)}" type="${p.kind}">`, p.text.replace(/<\/area>/gi, '<\\/area>'), '</area>', '');
+  out.push('</document>');
+  return out.join('\n');
+}
+
+const DOC_BUILDERS = { markdown: docMarkdown, plain: docPlain, tags: docTags };
+
+function buildDocumentTool() {
+  const box = tEl('div', 'tool');
+  const opts = { format: 'markdown', index: true, numbered: true, json: true, title: '' };
+  const areas = [];
+  const list = tEl('div', 'doc-areas');
+  const out = tEl('pre', 'tool-out tool-out-tall doc-out');
+  const status = tEl('div', 'tool-status doc-status');
+  const docTitle = toolInput('Document title (optional)');
+  docTitle.classList.add('doc-title');
+  docTitle.setAttribute('aria-label', 'Document title');
+  let last = '';
+
+  const render = () => {
+    opts.title = docTitle.value.trim();
+    const { parts, warnings } = docParts(areas.map((a) => ({ title: a.title.value.trim(), kind: a.kind.value, text: a.text.value })), opts);
+    last = parts.length ? DOC_BUILDERS[opts.format](parts, opts) : '';
+    out.textContent = last;
+    status.className = 'tool-status doc-status';
+    if (!parts.length) status.textContent = 'Paste something in an area: the document comes together here.';
+    else {
+      const lines = last.split('\n').length;
+      const bytes = new TextEncoder().encode(last).length;
+      const empty = areas.length - parts.length;
+      status.textContent = [docCount(parts.length, 'area'), docCount(lines, 'line'), bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(bytes < 10240 ? 1 : 0)} KB`, ...(empty ? [`${docCount(empty, 'empty area')} left out`] : []), ...warnings].join(' · ');
+      if (warnings.length) status.classList.add('bad');
+    }
+    // what Auto saw, in each area
+    for (const a of areas) {
+      const seen = a.text.value.trim() ? docGuessKind(a.text.value) : '';
+      const auto = a.kind.options[0];
+      const label = seen ? `Auto · ${DOC_NAMES[seen]}` : 'Auto';
+      if (auto.textContent !== label) auto.textContent = label;
+      const clean = docClean(a.text.value);
+      const meta = clean ? `${docCount(clean.split('\n').length, 'line')} · ${docCount(clean.length, 'character')}` : 'Empty: left out of the document';
+      if (a.meta.textContent !== meta) a.meta.textContent = meta;
+    }
+  };
+  const renderSoon = debounce(render, 120);
+
+  // the numbers and the arrows of the areas, as they are now
+  const arrange = () => {
+    areas.forEach((a, i) => {
+      a.badge.textContent = String(i + 1);
+      a.up.disabled = i === 0;
+      a.down.disabled = i === areas.length - 1;
+    });
+  };
+
+  // a button that asks again before it does what loses text
+  const twice = (btn, asks, run) => {
+    let timer = 0;
+    const text = btn.textContent;
+    const reset = () => {
+      clearTimeout(timer);
+      btn.dataset.sure = '';
+      btn.textContent = text;
+      btn.classList.remove('doc-sure');
+    };
+    btn.addEventListener('click', () => {
+      if (!asks()) {
+        run();
+        return;
+      }
+      if (btn.dataset.sure === '1') {
+        reset();
+        run();
+        return;
+      }
+      btn.dataset.sure = '1';
+      btn.textContent = 'Sure?';
+      btn.classList.add('doc-sure');
+      timer = setTimeout(reset, 2500);
+    });
+  };
+
+  const iconButton = (label, what, onClick) => {
+    const b = toolButton(label, onClick, 'doc-icon');
+    b.title = what;
+    b.setAttribute('aria-label', what);
+    return b;
+  };
+
+  const addArea = (text = '', title = '', after = null) => {
+    const el = tEl('div', 'doc-area');
+    const head = tEl('div', 'doc-area-head');
+    const badge = tEl('span', 'doc-badge');
+    const titleIn = toolInput('Title (optional)', title);
+    titleIn.classList.add('doc-area-title');
+    titleIn.setAttribute('aria-label', 'Title of this area');
+    const kind = tEl('select', 'input doc-kind');
+    kind.setAttribute('aria-label', 'What this text is');
+    for (const [v, name] of DOC_KINDS) kind.appendChild(new Option(name, v));
+    const text$ = toolArea('Paste code, text, JSON...', 7);
+    text$.classList.add('doc-text');
+    text$.value = text;
+    text$.setAttribute('aria-label', 'Text of this area');
+    const meta = tEl('div', 'doc-meta');
+    const a = { el, badge, title: titleIn, kind, text: text$, meta };
+    a.up = iconButton('↑', 'Move this area up', () => move(a, -1));
+    a.down = iconButton('↓', 'Move this area down', () => move(a, 1));
+    a.rm = iconButton('×', 'Remove this area', null);
+    // an area with text asks again before it goes
+    twice(a.rm, () => a.text.value.trim().length > 0, () => remove(a));
+    head.append(badge, titleIn, kind, a.up, a.down, a.rm);
+    el.append(head, text$, meta);
+    const at = after ? areas.indexOf(after) + 1 : areas.length;
+    areas.splice(at, 0, a);
+    list.insertBefore(el, areas[at + 1] ? areas[at + 1].el : null);
+    for (const input of [titleIn, text$]) input.addEventListener('input', renderSoon);
+    kind.addEventListener('change', render);
+    // Ctrl or Cmd + Enter: the next area, ready for the next paste
+    text$.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        addArea('', '', a).text.focus();
+      }
+    });
+    arrange();
+    render();
+    return a;
+  };
+
+  const move = (a, by) => {
+    const i = areas.indexOf(a);
+    const j = i + by;
+    if (j < 0 || j >= areas.length) return;
+    areas.splice(i, 1);
+    areas.splice(j, 0, a);
+    list.insertBefore(a.el, by < 0 ? areas[j + 1].el : areas[j - 1].el.nextSibling);
+    arrange();
+    render();
+    // the arrow that was pressed stays under the finger, unless it has nowhere left to go
+    const btn = by < 0 ? a.up : a.down;
+    (btn.disabled ? (by < 0 ? a.down : a.up) : btn).focus();
+  };
+
+  const remove = (a) => {
+    const i = areas.indexOf(a);
+    areas.splice(i, 1);
+    a.el.remove();
+    if (!areas.length) addArea();
+    arrange();
+    render();
+    const next = areas[Math.min(i, areas.length - 1)];
+    if (next) next.text.focus();
+  };
+  const paste = async () => {
+    const r = await window.tools.paste();
+    if (r.error) {
+      toast(r.error, 'error');
+      return;
+    }
+    // the only area, still empty: the paste goes there
+    const a = areas.length === 1 && !areas[0].text.value.trim() ? areas[0] : addArea('', '', areas[areas.length - 1]);
+    a.text.value = r.text;
+    render();
+    a.title.focus();
+  };
+
+  const copy = () => toolCopy(last, 'The document');
+  const save = async () => {
+    if (!last) {
+      toast('Nothing to save yet', 'info');
+      return;
+    }
+    const r = await window.tools.saveText(last, docSlug(docTitle.value) || 'document', opts.format === 'markdown' ? 'md' : 'txt');
+    if (r.error) toast(r.error, 'error');
+    else if (!r.canceled) toast(`Saved ${r.path}`, 'success');
+  };
+
+  const format = toolSegment([['markdown', 'Markdown'], ['plain', 'Plain text'], ['tags', 'Tags']], opts.format, (v) => {
+    opts.format = v;
+    render();
+  }, 'Format of the document');
+  format.title = 'Markdown: a heading and a code block for each area. Plain text: a line apart each. Tags: an <area> for each, for an assistant.';
+  const bar = tEl('div', 'tool-row');
+  bar.append(
+    format,
+    toolCheck('Contents', opts.index, (v) => { opts.index = v; render(); }),
+    toolCheck('Numbers', opts.numbered, (v) => { opts.numbered = v; render(); }),
+    toolCheck('Format JSON', opts.json, (v) => { opts.json = v; render(); }),
+  );
+  // the title of the document, and what is done with it
+  const bar2 = tEl('div', 'tool-row');
+  bar2.append(docTitle, toolButton('Copy document', copy, 'btn-primary'), toolButton('Save as...', save));
+  docTitle.addEventListener('input', renderSoon);
+
+  const add = tEl('div', 'tool-row');
+  const clear = toolButton('Clear all', null);
+  twice(clear, () => areas.some((a) => a.text.value.trim()), () => {
+    for (const a of areas.splice(0)) a.el.remove();
+    docTitle.value = '';
+    addArea().text.focus();
+  });
+  add.append(
+    toolButton('+ Add area', () => addArea('', '', areas[areas.length - 1]).text.focus()),
+    toolButton('Paste as a new area', paste),
+    clear,
+  );
+  const outHead = tEl('div', 'tool-section-head');
+  outHead.append(tEl('h3', '', 'Document'), status);
+  box.append(
+    toolHead('One document', 'Paste pieces of code, text, JSON and the like, each in its own area, and get them as one document with the areas apart. Nothing is sent anywhere, and nothing is kept when the app closes. Ctrl+Enter in an area opens the next one.'),
+    bar, bar2, list, add, outHead, out,
+  );
+  addArea();
+  return { el: box, focus: areas[0].text };
 }
 
 // -- the page --

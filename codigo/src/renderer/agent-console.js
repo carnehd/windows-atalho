@@ -44,6 +44,27 @@ const acS = {
   sessionId: null,
   model: '', // the model the CLI says it uses
   choiceModel: '', // the alias chosen ('': the CLI's own)
+  copilotModels: [], // the models Copilot CLI lists (main reads them from its help)
+  drawer: '', // what the drawer under the box shows: 'time', 'logs', 'procs', or nothing (closed)
+  lastTab: 'logs', // the one it opens on
+  procSig: '', // of the list of processes as painted
+  stopAsked: new Map(), // run id -> when it was asked to end
+  logRuns: [], // the folders <tmp>/arranque-<name>/ main found: { id, name, dir, files, process }
+  logBase: '', // the folder they are in
+  logRun: '', // the one chosen
+  logFile: '', // its file
+  logFollow: true, // read the end of the file again every 1.5 seconds
+  logBusy: false,
+  logFresh: true, // the file was just chosen: the end is shown
+  logShown: '', // what is on the screen (for the signature, and to copy)
+  logSig: '', // of the last paint: the same file, the same size and time is not painted again
+  logListSig: '',
+  logTick: 0,
+  agentsDir: '', // the folder where the agents are (main keeps it)
+  agentList: [], // what is in it: { id, name, description, cli, skills }
+  agentsNote: '', // what is wrong with the folder, if anything
+  agentsTruncated: false,
+  subagent: '', // the id of the agent chosen ('': the CLI's own)
   mode: 'default', // the permission mode in force
   finished: false, // ended with Terminar: it is not taken up again
   placeholder: '',
@@ -788,6 +809,7 @@ function acApply(ev) {
     acS.cwd = ev.cwd || acS.cwd;
     acS.sessionId = ev.sessionId || acS.sessionId;
     if (typeof ev.model === 'string') acS.choiceModel = ev.model;
+    if (typeof ev.subagent === 'string') acS.subagent = ev.subagent;
     if (ev.liveModel) acS.model = ev.liveModel;
     if (typeof ev.mode === 'string' && ev.mode) acS.mode = ev.mode;
     if (typeof ev.finished === 'boolean') acS.finished = ev.finished;
@@ -809,6 +831,12 @@ function acApply(ev) {
       acS.starting = false;
       acS.version = ev.version || acS.version;
       if (ev.resumed) acLine({ kind: 'state', label: acCli(), what: 'arrancou de novo e retomou a sessão', at: ev.at });
+      if (ev.subagent) {
+        const a = acS.agentList.find((x) => x.id === ev.subagent);
+        acLine({ kind: 'state', label: 'Agente', what: a ? a.name : ev.subagent, at: ev.at });
+      }
+    } else if (ev.state === 'agent-warning') {
+      for (const w of ev.warnings || []) acLine({ kind: 'bad', label: 'Agente', what: String(w).slice(0, 200), at: ev.at });
     } else if (ev.state === 'ended') {
       acS.running = false;
       acS.busy = false;
@@ -818,6 +846,13 @@ function acApply(ev) {
       const how = ev.error || `${ev.signal ? `sinal ${ev.signal}` : `código ${ev.code}`}${ev.stderr ? ` · ${ev.stderr}` : ''}`;
       acLine({ kind: ev.code === 0 ? 'state' : 'bad', label: acCli(), what: `terminou (${how})`, at: ev.at });
       if (ev.code !== 0) acNote(`O ${acCli()} terminou: ${how}. O próximo pedido arranca-o de novo e retoma a sessão.`, 'bad');
+    } else if (ev.state === 'restart') {
+      // Copilot CLI takes its model as it starts: it was stopped, and the next request starts it again on the same session
+      acS.running = false;
+      acS.busy = false;
+      acS.turnAt = 0;
+      acSave('model', ev.value || '');
+      acLine({ kind: 'state', label: 'Modelo', what: `${ev.value || 'predefinido'} · o próximo pedido retoma a sessão com ele`, at: ev.at });
     } else if (ev.state === 'sigint') {
       acLine({ kind: 'bad', label: 'Interromper', what: `sem resposta: enviado SIGINT ao ${acCli()}`, at: ev.at });
     }
@@ -930,19 +965,31 @@ function acPaintAgent() {
 
 async function acChooseAgent(value) {
   const was = acS.agentId;
+  const wasModel = acS.choiceModel;
+  const wasSub = acS.subagent;
   acS.agentId = value;
+  acS.choiceModel = ''; // the model of one agent is no model of the other
+  acS.subagent = '';
   acFillChoices();
+  acFillSubagent();
   acPaint();
   const r = await window.agentConsole.setChoice('agent', value);
   if (r && r.error) {
     acS.agentId = was;
+    acS.choiceModel = wasModel;
+    acS.subagent = wasSub;
     acFillChoices();
+    acFillSubagent();
     acPaint();
     toast(r.error, 'error');
     return;
   }
   acSave('agent', value);
+  await acLoadModels();
   await acRefreshInfo();
+  // the agent that this CLI had last time
+  const saved = acSaved('subagent');
+  if (saved && acAgentsFit().some((a) => a.id === saved)) await acChooseSubagent(saved);
 }
 
 function acStateText() {
@@ -1000,9 +1047,12 @@ function acCrumb() {
 // -- The model and the permissions: two choices over the box to write in, kept on this computer and sent to the CLI at
 // once (main asks it with set_model and set_permission_mode). The CLI changes the mode itself too (a plan accepted
 // goes to acceptEdits): the box follows what it says. --
+// what was chosen is kept for each agent: a model of one is no model of the other
+const acKey = (kind) => (kind === 'subagent' ? (acIs() ? 'acSubagentCopilot' : 'acSubagentClaude') : kind === 'model' && acIs() ? 'acModelCopilot' : AC_SAVED[kind]);
+
 function acSaved(kind) {
   try {
-    return localStorage.getItem(AC_SAVED[kind]) || '';
+    return localStorage.getItem(acKey(kind)) || '';
   } catch {
     return '';
   }
@@ -1010,16 +1060,51 @@ function acSaved(kind) {
 
 function acSave(kind, value) {
   try {
-    localStorage.setItem(AC_SAVED[kind], value);
+    localStorage.setItem(acKey(kind), value);
   } catch {
     // for this session only
   }
 }
 
-function acFillChoices() {
+// What the model box offers: Claude's aliases, or Copilot's own (Predefinido, Auto, and the ones its help lists, by maker).
+const AC_COPILOT_TOP = [['', 'Predefinido'], ['auto', 'Auto (o Copilot escolhe)']];
+const AC_MAKERS = [[/^claude/, 'Claude'], [/^gpt|^mai-/, 'GPT'], [/^gemini/, 'Gemini'], [/^grok/, 'Grok']];
+const acOption = (value, label) => Object.assign(document.createElement('option'), { value, textContent: label });
+const acModelValid = (v) => (acIs() ? AC_COPILOT_TOP.some((m) => m[0] === v) || acS.copilotModels.includes(v) : AC_MODELS.some((m) => m[0] === v));
+
+function acFillModels() {
   const model = $('#acModel');
   model.innerHTML = '';
-  for (const [value, label] of AC_MODELS) model.appendChild(Object.assign(document.createElement('option'), { value, textContent: label }));
+  if (!acIs()) {
+    for (const [value, label] of AC_MODELS) model.appendChild(acOption(value, label));
+    return;
+  }
+  for (const [value, label] of AC_COPILOT_TOP) model.appendChild(acOption(value, label));
+  const groups = new Map();
+  for (const id of acS.copilotModels) {
+    const maker = (AC_MAKERS.find(([rx]) => rx.test(id)) || [null, 'Outros'])[1];
+    if (!groups.has(maker)) groups.set(maker, []);
+    groups.get(maker).push(id);
+  }
+  for (const [maker, ids] of groups) {
+    const group = Object.assign(document.createElement('optgroup'), { label: maker });
+    for (const id of ids) group.appendChild(acOption(id, id));
+    model.appendChild(group);
+  }
+}
+
+// The models Copilot CLI has, asked of main (it reads its help once for each version); the box is filled again with them.
+async function acLoadModels() {
+  if (!acIs()) return;
+  const r = await window.agentConsole.models().catch(() => null);
+  if (!r || r.error || !Array.isArray(r.models)) return;
+  acS.copilotModels = r.models;
+  acFillModels();
+  acSyncChoices();
+}
+
+function acFillChoices() {
+  acFillModels();
   const mode = $('#acMode');
   mode.innerHTML = '';
   for (const [value, label, hint] of acModes()) mode.appendChild(Object.assign(document.createElement('option'), { value, textContent: label, title: acWho(hint) }));
@@ -1032,11 +1117,507 @@ function acSyncChoices() {
   if (model.value !== acS.choiceModel) model.value = acS.choiceModel;
   if (mode.value !== acS.mode) mode.value = acS.mode;
   const current = acModes().find((m) => m[0] === acS.mode) || acModes()[0];
-  model.closest('.ac-opt').classList.toggle('hidden', acIs()); // Copilot CLI chooses its model itself
+  // a model that is not in the box yet (the list has not come) is shown all the same
+  if (acIs() && acS.choiceModel && ![...model.options].some((o) => o.value === acS.choiceModel)) model.appendChild(acOption(acS.choiceModel, acS.choiceModel));
+  model.value = acS.choiceModel;
   $('#acModeHint').textContent = acWho(current[2]);
   mode.classList.toggle('danger', acS.mode === 'bypassPermissions');
-  model.title = acS.model ? `Modelo em uso: ${acS.model}` : `O modelo do ${acCli()}. Predefinido é o que ele usa sem lhe dizerem nada`;
+  model.title = acIs()
+    ? `O modelo do Copilot CLI (--model). Predefinido é o que ele usa sem lhe dizerem nada; mudar com a sessão a decorrer pára-o e o próximo pedido retoma-a com o modelo novo${acS.choiceModel ? `\nPedido: ${acS.choiceModel}` : ''}`
+    : acS.model ? `Modelo em uso: ${acS.model}` : `O modelo do ${acCli()}. Predefinido é o que ele usa sem lhe dizerem nada`;
   mode.title = acWho(current[2]);
+  acSyncAgents();
+}
+
+// -- The agent: the folder where the agents are, the agents in it (for this CLI), and a button that reads the folder again. The
+// session starts as the one chosen; it cannot change once the session has started. --
+const acAgentName = (p) => String(p || '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || p;
+const acAgentsFit = () => acS.agentList.filter((a) => a.cli === 'both' || a.cli === acS.agentId);
+
+function acFillSubagent() {
+  const sel = $('#acSubagent');
+  if (!sel) return;
+  sel.replaceChildren(acOption('', 'Nenhum (o do CLI)'));
+  const fit = acAgentsFit();
+  const count = new Map();
+  for (const a of fit) count.set(a.name, (count.get(a.name) || 0) + 1);
+  for (const a of fit) {
+    // two with one name: told apart by where they are
+    const where = a.id.split('/').slice(0, -1).filter((x) => !/^(agents|claude|copilot|\.claude|\.github)$/.test(x)).join('/');
+    const o = acOption(a.id, count.get(a.name) > 1 && where ? `${a.name} · ${where}` : a.name);
+    o.title = a.description;
+    sel.appendChild(o);
+  }
+  sel.value = fit.some((a) => a.id === acS.subagent) ? acS.subagent : '';
+}
+
+function acSyncAgents() {
+  const folder = $('#acAgentsFolder');
+  if (!folder) return;
+  const sel = $('#acSubagent');
+  const fit = acAgentsFit();
+  if (acS.subagent && !fit.some((a) => a.id === acS.subagent) && acS.agentList.length) acS.subagent = '';
+  folder.textContent = acS.agentsDir ? acAgentName(acS.agentsDir) : 'Escolher a pasta...';
+  folder.title = acS.agentsDir ? `${acS.agentsDir}\nA pasta onde estão os agentes: carrega para escolher outra` : 'A pasta onde estão os agentes';
+  sel.disabled = !acS.agentsDir || !fit.length || Boolean(acS.cwd && !acS.finished);
+  if (sel.value !== acS.subagent) sel.value = fit.some((a) => a.id === acS.subagent) ? acS.subagent : '';
+  sel.title = acS.cwd && !acS.finished ? 'Esta sessão já começou como este agente: Nova sessão para mudar' : 'O agente com que a sessão arranca';
+  $('#acAgentsReload').disabled = !acS.agentsDir;
+  const chosen = fit.find((a) => a.id === acS.subagent);
+  let hint = '';
+  if (!acS.agentsDir) hint = 'Escolhe primeiro a pasta onde estão os agentes: uma pasta de agentes, ou uma pasta com vários pacotes.';
+  else if (acS.agentsNote) hint = acS.agentsNote;
+  else if (!fit.length) hint = `Nenhum agente do ${acCli()} nesta pasta${acS.agentList.length ? ` (há ${acS.agentList.length} de outro CLI)` : ''}.`;
+  else if (chosen) hint = chosen.description;
+  else hint = `${fit.length} agente${fit.length === 1 ? '' : 's'} para o ${acCli()}${acS.agentsTruncated ? ' (a pasta tem mais do que li)' : ''}`;
+  const h = $('#acAgentsHint');
+  h.textContent = hint;
+  h.title = hint;
+}
+
+// What the folder has, read now (asked of main each time: that is what Reload does).
+async function acLoadAgents() {
+  const r = await window.agentConsole.agents().catch((e) => ({ error: e.message }));
+  if (!r || (r.error && !Array.isArray(r.agents))) return null;
+  acS.agentsDir = r.dir || '';
+  acS.agentList = r.agents || [];
+  acS.agentsNote = r.error || '';
+  acS.agentsTruncated = Boolean(r.truncated);
+  acFillSubagent();
+  acSyncAgents();
+  return r;
+}
+
+async function acPickAgentsFolder() {
+  const r = await window.agentConsole.pickAgentsFolder().catch((e) => ({ error: e.message }));
+  if (!r || r.canceled) return;
+  if (r.error && !Array.isArray(r.agents)) {
+    toast(r.error, 'error');
+    return;
+  }
+  acS.agentsDir = r.dir || '';
+  acS.agentList = r.agents || [];
+  acS.agentsNote = r.error || '';
+  acS.agentsTruncated = Boolean(r.truncated);
+  acS.subagent = '';
+  acFillSubagent();
+  acSyncAgents();
+  // the one of last time in this folder, if it is there
+  const saved = acSaved('subagent');
+  if (saved && acAgentsFit().some((a) => a.id === saved)) await acChooseSubagent(saved);
+  const n = acAgentsFit().length;
+  toast(n ? `${n} agente${n === 1 ? '' : 's'} na pasta` : 'Nenhum agente deste CLI nesta pasta', n ? 'success' : 'info', { plain: true });
+}
+
+async function acReloadAgents() {
+  const btn = $('#acAgentsReload');
+  btn.classList.add('busy');
+  const r = await acLoadAgents();
+  btn.classList.remove('busy');
+  if (!r) {
+    toast('Não consegui ler a pasta', 'error');
+    return;
+  }
+  const n = acAgentsFit().length;
+  toast(r.error ? r.error : `${n} agente${n === 1 ? '' : 's'} na pasta`, r.error ? 'error' : 'success', { plain: true });
+}
+
+async function acChooseSubagent(value) {
+  const was = acS.subagent;
+  acS.subagent = value;
+  acSyncAgents();
+  const r = await window.agentConsole.setChoice('subagent', value);
+  if (r && r.error) {
+    acS.subagent = was;
+    acFillSubagent();
+    acSyncAgents();
+    toast(r.error, 'error');
+    if (/recarrega a lista/.test(r.error)) acLoadAgents();
+    return;
+  }
+  acSave('subagent', value);
+}
+
+// -- The logs the arrancador agent leaves, <tmp>/arranque-<microservice>/: the microservice, then its file. The end of the file is
+// shown above and followed while "Seguir" is on. Main reads only there. --
+const AC_LOG_LINES = 3000;
+const AC_PROC_WORDS = { running: 'a correr', stopped: 'parado', other: 'é agora de outro processo', unknown: 'sem estado conhecido' };
+const acLogAgo = (ms) => {
+  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  if (s < 5) return 'agora';
+  if (s < 60) return `há ${s} s`;
+  if (s < 3600) return `há ${Math.round(s / 60)} min`;
+  return s < 86400 ? `há ${Math.round(s / 3600)} h` : `há ${Math.round(s / 86400)} d`;
+};
+const acLogSize = (n) => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(n < 10240 ? 1 : 0)} KB` : `${(n / 1048576).toFixed(1)} MB`);
+const acLogRunNow = () => acS.logRuns.find((r) => r.id === acS.logRun) || null;
+
+function acFillLogRuns() {
+  const sel = $('#acLogRun');
+  sel.replaceChildren(acOption('', acS.logRuns.length ? 'Escolher o microserviço...' : 'Nenhum log ainda'));
+  for (const r of acS.logRuns) {
+    const o = acOption(r.id, r.process && r.process.alive ? `${r.name} (a correr)` : r.name);
+    o.title = r.dir;
+    sel.appendChild(o);
+  }
+  sel.value = acLogRunNow() ? acS.logRun : '';
+  sel.disabled = !acS.logRuns.length;
+}
+
+function acFillLogFiles() {
+  const run = acLogRunNow();
+  const sel = $('#acLogFile');
+  sel.replaceChildren();
+  if (run) for (const f of run.files) sel.appendChild(acOption(f.name, `${f.name} (${acLogSize(f.size)})`));
+  if (!run) acS.logFile = '';
+  else if (!run.files.some((f) => f.name === acS.logFile)) {
+    // the log of the microservice first, any log, any file
+    acS.logFile = (run.files.find((f) => f.name === `${run.name}.log`) || run.files.find((f) => /\.log$/i.test(f.name)) || run.files[0] || { name: '' }).name;
+    acS.logFresh = true;
+  }
+  sel.value = acS.logFile;
+  sel.disabled = !run || !run.files.length;
+}
+
+function acSyncLogs() {
+  const run = acLogRunNow();
+  let text;
+  if (!acS.logRuns.length) text = `Nada em ${acS.logBase || 'a pasta temporária'}: o arrancador cria aqui uma pasta arranque-<nome> quando arranca um microserviço`;
+  else if (!run) text = `${acS.logRuns.length} microserviço${acS.logRuns.length === 1 ? '' : 's'} com logs em ${acS.logBase}`;
+  else text = `${run.dir}${run.process ? ` · processo ${run.process.pid} ${AC_PROC_WORDS[run.process.state] || ''}` : ''}`;
+  const hint = $('#acLogHint');
+  hint.textContent = text;
+  hint.title = text;
+  if (!run || !acS.logFile) acLogNone();
+  acSyncProcs();
+}
+
+// No log chosen: what to do, where the text would be.
+function acLogNone() {
+  const d = document.createElement('div');
+  d.className = 'ac-ll empty';
+  d.textContent = acS.logRuns.length ? 'Escolhe um microserviço para ver o fim do log.' : 'Ainda não há logs: aparecem quando o agente arranca um microserviço.';
+  $('#acLogText').replaceChildren(d);
+  $('#acLogMeta').textContent = '';
+  acS.logShown = '';
+  acS.logSig = '';
+}
+
+function acPaintLog(r, problem) {
+  const box = $('#acLogText');
+  const scroll = $('#acLogScroll');
+  const nearEnd = acS.logFresh || scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 40;
+  const frag = document.createDocumentFragment();
+  const line = (text, cls) => {
+    const d = document.createElement('div');
+    d.className = `ac-ll${cls ? ` ${cls}` : ''}`;
+    d.textContent = text;
+    frag.appendChild(d);
+  };
+  if (problem) line(problem, 'empty');
+  else {
+    const lines = r.text.split('\n');
+    if (lines.length && lines[lines.length - 1] === '') lines.pop();
+    const cut = Math.max(0, lines.length - AC_LOG_LINES);
+    if (!lines.length) line('O ficheiro está vazio.', 'empty');
+    for (const l of lines.slice(cut)) {
+      line(l, /\b(ERROR|FATAL|SEVERE)\b|^Caused by:|Exception\b.*:/.test(l) && !/^\s+at /.test(l) ? 'err' : /\bWARN(ING)?\b/.test(l) ? 'warn' : /^\s+at |^\s+\.\.\. \d+ more/.test(l) ? 'trace' : '');
+    }
+    acS.logShown = lines.slice(cut).join('\n');
+    $('#acLogMeta').textContent = [acLogSize(r.size), acLogAgo(r.mtimeMs), r.truncated ? `só o fim (os últimos ${acLogSize(r.maxBytes)})` : '', cut ? `${AC_LOG_LINES} linhas` : ''].filter(Boolean).join(' · ');
+  }
+  if (problem) $('#acLogMeta').textContent = '';
+  box.replaceChildren(frag);
+  if (nearEnd) scroll.scrollTop = scroll.scrollHeight;
+  acS.logFresh = false;
+}
+
+async function acReadLog(quiet) {
+  const run = acLogRunNow();
+  if (!run || !acS.logFile || acS.logBusy) return;
+  const key = `${run.id}/${acS.logFile}`;
+  acS.logBusy = true;
+  const r = await window.agentConsole.readLog(run.id, acS.logFile).catch((e) => ({ error: e.message }));
+  acS.logBusy = false;
+  if (key !== `${acS.logRun}/${acS.logFile}`) return; // another one was chosen while it was read
+  if (!r || r.error) {
+    acS.logSig = '';
+    acPaintLog(null, (r && r.error) || 'Não consegui ler o ficheiro');
+    if (!quiet) toast((r && r.error) || 'Não consegui ler o ficheiro', 'error');
+    return;
+  }
+  const sig = `${key}|${r.size}|${r.mtimeMs}`;
+  if (sig === acS.logSig && !acS.logFresh) {
+    $('#acLogMeta').textContent = $('#acLogMeta').textContent.replace(/^([^·]+) · [^·]+/, `$1 · ${acLogAgo(r.mtimeMs)}`);
+    return;
+  }
+  acS.logSig = sig;
+  acPaintLog(r);
+}
+
+// The folders now. Each ~6 seconds while the page is open it reads them again quietly (a new microservice, a process that stopped).
+async function acLoadLogs(manual = false) {
+  const r = await window.agentConsole.logs().catch((e) => ({ error: e.message }));
+  if (!r || r.error || !Array.isArray(r.runs)) {
+    if (manual) toast((r && r.error) || 'Não consegui ler a pasta dos logs', 'error');
+    return;
+  }
+  const first = !acS.logListSig && !acS.logRun;
+  acS.logBase = r.base;
+  acS.logRuns = r.runs;
+  if (first) {
+    // the one of last time, if it is still there
+    let saved = '';
+    try {
+      saved = localStorage.getItem('acLogRun') || '';
+      acS.logFollow = localStorage.getItem('acLogFollow') !== '0';
+    } catch {
+      saved = '';
+    }
+    $('#acLogFollow').checked = acS.logFollow;
+    if (saved && r.runs.some((x) => x.id === saved)) acS.logRun = saved;
+  }
+  if (acS.logRun && !acLogRunNow()) {
+    acS.logRun = '';
+    acS.logFile = '';
+  }
+  const sig = JSON.stringify(r.runs.map((x) => [x.id, x.files.map((f) => f.name), x.process && x.process.state]));
+  if (sig !== acS.logListSig) {
+    acS.logListSig = sig;
+    acFillLogRuns();
+    acFillLogFiles();
+  }
+  acSyncLogs();
+  if (manual) {
+    toast(r.runs.length ? `${r.runs.length} microserviço${r.runs.length === 1 ? '' : 's'} com logs` : 'Nenhum log ainda', r.runs.length ? 'success' : 'info', { plain: true });
+    acS.logSig = '';
+  }
+  if (acLogRunNow() && (manual || first)) acReadLog(true);
+}
+
+function acChooseLogRun(id) {
+  acS.logRun = id;
+  acS.logFile = '';
+  acS.logSig = '';
+  acS.logShown = '';
+  acFillLogFiles();
+  acSyncLogs();
+  try {
+    localStorage.setItem('acLogRun', id);
+  } catch {
+    // for this session only
+  }
+  acReadLog();
+}
+
+// -- The Java processes the arrancador started (the numbers in the .pid files of those folders): which are still there, and a way to
+// stop them so they do not run for ever. Main checks that each is still the agent's before it touches it. --
+const AC_PROC_CHIP = { running: 'a correr', stopped: 'parado', other: 'outro processo', unknown: 'desconhecido' };
+const AC_FORCE_AFTER_MS = 5000;
+const acProcRuns = () => acS.logRuns.filter((r) => r.process);
+const acProcRunning = () => acProcRuns().filter((r) => r.process.state === 'running');
+const acDur = (ms) => {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s} s`;
+  if (s < 3600) return `${Math.round(s / 60)} min`;
+  return s < 86400 ? `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min` : `${Math.floor(s / 86400)} d ${Math.floor((s % 86400) / 3600)} h`;
+};
+
+function acProcMetaText(p) {
+  const bits = [`PID ${p.pid}`];
+  if (p.state === 'running' && p.startedMs) bits.push(`a correr há ${acDur(Date.now() - p.startedMs)}`);
+  if (p.ports && p.ports.length) bits.push(`porta${p.ports.length === 1 ? '' : 's'} ${p.ports.join(', ')}`);
+  return bits.join(' · ');
+}
+
+function acProcRow(r) {
+  const p = r.process;
+  const asked = acS.stopAsked.get(r.id);
+  const row = document.createElement('div');
+  row.className = 'ac-pr';
+  row.dataset.run = r.id;
+  row._p = p;
+  const name = document.createElement('span');
+  name.className = 'ac-pr-name';
+  name.textContent = r.name;
+  const chip = document.createElement('span');
+  chip.className = `ac-pr-chip ${p.state}`;
+  chip.textContent = p.state === 'running' && asked ? 'a parar...' : AC_PROC_CHIP[p.state] || p.state;
+  if (p.state === 'other') chip.title = `O número ${p.pid} está no ficheiro .pid, mas agora é de outro processo: o do agente já terminou. Não lhe toco`;
+  const meta = document.createElement('span');
+  meta.className = 'ac-pr-meta';
+  meta.textContent = acProcMetaText(p);
+  const cmd = document.createElement('span');
+  cmd.className = 'ac-pr-cmd';
+  cmd.textContent = p.state === 'other' ? '' : p.command || '';
+  cmd.title = p.command || '';
+  row.append(name, chip, meta, cmd);
+  const button = (label, title, handler, cls) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `btn btn-sm${cls ? ` ${cls}` : ''}`;
+    b.textContent = label;
+    b.title = title;
+    b.addEventListener('click', handler);
+    row.appendChild(b);
+  };
+  button('Ver log', 'Abre o log deste microserviço', () => acViewLogOf(r.id));
+  if (p.state === 'running') {
+    button('Parar', 'Pede ao processo que termine (SIGTERM): o Spring fecha as ligações', () => acStopProc(r.id, false));
+    if (asked && Date.now() - asked > AC_FORCE_AFTER_MS) button('Forçar', 'O processo não terminou: mata-o já (SIGKILL)', () => acStopProc(r.id, true), 'danger');
+  }
+  return row;
+}
+
+function acSyncProcs() {
+  const runs = acProcRuns();
+  const running = acProcRunning().length;
+  const btn = $('#acProcBtn');
+  btn.textContent = running ? `Processos · ${running} a correr` : 'Processos';
+  btn.classList.toggle('live', running > 0);
+  btn.title = running ? 'Há processos Java do agente a correr: abre a lista para os parar' : 'Os processos Java que o agente arrancou, para os parar';
+  for (const id of [...acS.stopAsked.keys()]) if (!runs.some((r) => r.id === id && r.process.state === 'running')) acS.stopAsked.delete(id);
+  if (acS.drawer !== 'procs') return;
+  runs.sort((a, b) => Number(b.process.state === 'running') - Number(a.process.state === 'running') || a.name.localeCompare(b.name));
+  const sig = JSON.stringify(runs.map((r) => {
+    const asked = acS.stopAsked.get(r.id);
+    return [r.id, r.process.pid, r.process.state, r.process.ports, r.process.command, asked ? (Date.now() - asked > AC_FORCE_AFTER_MS ? 2 : 1) : 0];
+  }));
+  const list = $('#acProcList');
+  if (sig !== acS.procSig) {
+    acS.procSig = sig;
+    list.replaceChildren();
+    if (!runs.length) {
+      const d = document.createElement('div');
+      d.className = 'ac-ll empty';
+      d.style.padding = '10px 12px';
+      d.textContent = 'Nenhum processo registado: quando o agente arrancar um microserviço, aparece aqui.';
+      list.appendChild(d);
+    }
+    for (const r of runs) list.appendChild(acProcRow(r));
+  } else {
+    for (const row of list.querySelectorAll('.ac-pr')) row.querySelector('.ac-pr-meta').textContent = acProcMetaText(row._p);
+  }
+  $('#acProcMeta').textContent = runs.length ? `${running} a correr · ${runs.length - running} sem processo do agente` : '';
+  $('#acProcStopAll').disabled = !running;
+}
+
+function acViewLogOf(runId) {
+  $('#acLogRun').value = runId;
+  acChooseLogRun(runId);
+  acDrawerSet('logs');
+}
+
+// -- The drawer: closed, or open on one tab. A tab chosen again closes it. The tab of the processes says how many are running. --
+function acDrawerPaint() {
+  const open = Boolean(acS.drawer);
+  $('#acDrawer').classList.toggle('open', open);
+  $('#acDrawerBody').classList.toggle('hidden', !open);
+  for (const [sel, tab] of [['#acTabTime', 'time'], ['#acTabLogs', 'logs'], ['#acProcBtn', 'procs']]) {
+    $(sel).classList.toggle('on', acS.drawer === tab);
+    $(sel).setAttribute('aria-selected', String(acS.drawer === tab));
+  }
+  $('#acPanelTime').classList.toggle('hidden', acS.drawer !== 'time');
+  $('#acPanelLogs').classList.toggle('hidden', acS.drawer !== 'logs');
+  $('#acPanelProcs').classList.toggle('hidden', acS.drawer !== 'procs');
+  const toggle = $('#acDrawerToggle');
+  toggle.title = open ? 'Fechar a gaveta' : 'Abrir a gaveta';
+  toggle.setAttribute('aria-label', toggle.title);
+}
+
+function acDrawerSet(tab) {
+  acS.drawer = ['time', 'logs', 'procs'].includes(tab) ? tab : '';
+  if (acS.drawer) acS.lastTab = acS.drawer;
+  try {
+    localStorage.setItem('acDrawer', acS.drawer);
+  } catch {
+    // for this session only
+  }
+  acDrawerPaint();
+  if (acS.drawer === 'procs') {
+    acS.procSig = '';
+    acSyncProcs();
+    acLoadLogs();
+  } else if (acS.drawer === 'logs') {
+    acS.logFresh = true;
+    acS.logSig = '';
+    acSyncLogs();
+    acReadLog(true);
+  } else if (acS.drawer === 'time') {
+    // what came while it was shut: the latest is in view
+    requestAnimationFrame(() => {
+      const sc = $('#acTimeline').closest('.ac-scroll');
+      if (sc) sc.scrollTop = sc.scrollHeight;
+    });
+  }
+}
+
+const acDrawerTab = (tab) => acDrawerSet(acS.drawer === tab ? '' : tab);
+
+// After a stop: look again soon, and once the time to force it has passed.
+function acProcLookAgain() {
+  for (const ms of [1200, 3500, AC_FORCE_AFTER_MS + 1200]) setTimeout(() => acLoadLogs(), ms);
+}
+
+async function acStopProc(runId, force) {
+  const run = acS.logRuns.find((r) => r.id === runId);
+  if (!run || !run.process) return;
+  if (force && !(await askConfirm(`Forçar a paragem do ${run.name} (PID ${run.process.pid})?\nÉ como kill -9: o processo não fecha as ligações nem acaba o que estava a fazer.`, { confirm: 'Forçar', cancel: 'Cancelar', danger: true }))) return;
+  const r = await window.agentConsole.stopProc(runId, force).catch((e) => ({ error: e.message }));
+  if (r && r.error) {
+    toast(r.error, 'error');
+    acLoadLogs();
+    return;
+  }
+  if (!force) acS.stopAsked.set(runId, Date.now());
+  toast(force ? `Enviei kill -9 ao ${run.name} (PID ${run.process.pid})` : `Pedi ao ${run.name} (PID ${run.process.pid}) que termine`, 'success', { plain: true });
+  acS.procSig = '';
+  acSyncProcs();
+  acProcLookAgain();
+}
+
+async function acStopAllProcs() {
+  await acLoadLogs(); // what is running now, not what it was a moment ago
+  const running = acProcRunning();
+  if (!running.length) return;
+  const names = running.map((r) => `${r.name} (PID ${r.process.pid})`).join('\n');
+  if (!(await askConfirm(`Parar ${running.length} processo${running.length === 1 ? '' : 's'} Java do agente?\n${names}`, { confirm: 'Parar', cancel: 'Cancelar', danger: true }))) return;
+  let sent = 0;
+  for (const r of running) {
+    const res = await window.agentConsole.stopProc(r.id, false).catch((e) => ({ error: e.message }));
+    if (res && res.error) toast(`${r.name}: ${res.error}`, 'error');
+    else {
+      sent += 1;
+      acS.stopAsked.set(r.id, Date.now());
+    }
+  }
+  if (sent) toast(`Pedi a ${sent} processo${sent === 1 ? '' : 's'} que terminem`, 'success', { plain: true });
+  acS.procSig = '';
+  acSyncProcs();
+  acProcLookAgain();
+}
+
+// The folder with all the recipes (the ones the Local setup writes), where the agent reads them.
+async function acOpenRecipes() {
+  const r = await window.localSetup.recipesFolder().catch((e) => ({ error: e.message }));
+  if (r && r.error) toast(r.error, 'error');
+  else if (r && r.empty) toast('Ainda não há receitas: faz Analyse de um microserviço no Local setup e ficam escritas aqui', 'info', { plain: true });
+}
+
+async function acCopyLog() {
+  if (!acS.logShown) return;
+  const r = await window.tools.copySecret(acS.logShown).catch((e) => ({ error: e.message }));
+  toast(r.error || 'O log foi copiado (limpa-se da área de transferência em 30 segundos)', r.error ? 'error' : 'success', { plain: true });
+}
+
+async function acOpenLogFolder() {
+  const run = acLogRunNow();
+  if (!run) return;
+  const r = await window.agentConsole.openLogs(run.id).catch((e) => ({ error: e.message }));
+  if (r && r.error) {
+    toast(r.error, 'error');
+    acLoadLogs();
+  }
 }
 
 async function acChoose(kind, value) {
@@ -1078,14 +1659,24 @@ async function acRestoreChoices(info) {
       acFillChoices();
     }
   }
-  for (const kind of acIs() ? ['mode'] : ['model', 'mode']) {
+  await acLoadModels();
+  for (const kind of ['model', 'mode']) {
     const saved = acSaved(kind);
     const current = kind === 'model' ? info.model : info.mode;
-    const valid = kind === 'model' ? AC_MODELS.some((m) => m[0] === saved) : acModes().some((m) => m[0] === saved) && saved !== 'bypassPermissions';
+    const valid = kind === 'model' ? acModelValid(saved) : acModes().some((m) => m[0] === saved) && saved !== 'bypassPermissions';
     if (saved && valid && saved !== current) await window.agentConsole.setChoice(kind, saved);
     if (saved && valid) {
       if (kind === 'model') acS.choiceModel = saved;
       else acS.mode = saved;
+    }
+  }
+  // the agent of last time, if it is still in the folder
+  const savedSub = acSaved('subagent');
+  if (savedSub && savedSub !== acS.subagent && acAgentsFit().some((a) => a.id === savedSub)) {
+    const r = await window.agentConsole.setChoice('subagent', savedSub);
+    if (!r || !r.error) {
+      acS.subagent = savedSub;
+      acFillSubagent();
     }
   }
 }
@@ -1204,9 +1795,12 @@ async function acRefreshInfo(again = false) {
   }
   // main knows what is in force; on a fresh app, what the user chose last time goes to it first
   acS.choiceModel = info.model || '';
+  acS.subagent = info.subagent || '';
   acS.mode = info.mode || 'default';
   acS.finished = Boolean(info.finished);
   if (info.liveModel) acS.model = info.liveModel;
+  await acLoadModels();
+  await acLoadAgents();
   await acRestoreChoices(info);
   acFillAgents();
   acFillProjects();
@@ -1218,6 +1812,9 @@ function showAgentConsole() {
   // the projects at once; whether the CLI is there, and the session main keeps, when main has looked
   acFillProjects();
   acPaint();
+  // the agents of the folder do not wait for the CLI to be looked for: reading a folder is quick
+  acLoadAgents();
+  acLoadLogs();
   acRefreshInfo();
   setTimeout(() => $('#acInput').focus(), 0);
 }
@@ -1227,8 +1824,10 @@ function setupAgentConsole() {
   window.agentConsole.onEvent((ev) => {
     if (ev.kind === 'state' && ev.agentId && ev.agentId !== acS.agentId) {
       acS.agentId = ev.agentId;
+      acS.choiceModel = '';
       acFillChoices();
       acFillAgents();
+      acLoadModels();
     }
     if (ev.kind === 'state' && ev.state === 'reset') {
       acReset();
@@ -1248,9 +1847,50 @@ function setupAgentConsole() {
   });
   acS.placeholder = $('#acInput').placeholder;
   acFillChoices();
+  acFillSubagent();
+  acSyncAgents();
   acFillAgents();
   $('#acAgent').addEventListener('change', (e) => acChooseAgent(e.target.value));
   $('#acModel').addEventListener('change', (e) => acChoose('model', e.target.value));
+  $('#acLogRun').addEventListener('change', (e) => acChooseLogRun(e.target.value));
+  $('#acLogFile').addEventListener('change', (e) => {
+    acS.logFile = e.target.value;
+    acS.logFresh = true;
+    acS.logSig = '';
+    acSyncLogs();
+    acReadLog();
+  });
+  $('#acLogReload').addEventListener('click', () => acLoadLogs(true));
+  $('#acLogFollow').addEventListener('change', (e) => {
+    acS.logFollow = e.target.checked;
+    try {
+      localStorage.setItem('acLogFollow', e.target.checked ? '1' : '0');
+    } catch {
+      // for this session only
+    }
+    if (acS.logFollow) acReadLog(true);
+  });
+  $('#acTabTime').addEventListener('click', () => acDrawerTab('time'));
+  $('#acTabLogs').addEventListener('click', () => acDrawerTab('logs'));
+  $('#acProcBtn').addEventListener('click', () => acDrawerTab('procs'));
+  $('#acDrawerToggle').addEventListener('click', () => acDrawerSet(acS.drawer ? '' : acS.lastTab));
+  try {
+    const kept = localStorage.getItem('acDrawer');
+    if (['time', 'logs', 'procs'].includes(kept)) {
+      acS.drawer = kept;
+      acS.lastTab = kept;
+    }
+  } catch {
+    // closed
+  }
+  acDrawerPaint();
+  $('#acRecipesBtn').addEventListener('click', acOpenRecipes);
+  $('#acProcStopAll').addEventListener('click', acStopAllProcs);
+  $('#acLogCopy').addEventListener('click', acCopyLog);
+  $('#acLogOpen').addEventListener('click', acOpenLogFolder);
+  $('#acAgentsFolder').addEventListener('click', acPickAgentsFolder);
+  $('#acAgentsReload').addEventListener('click', acReloadAgents);
+  $('#acSubagent').addEventListener('change', (e) => acChooseSubagent(e.target.value));
   $('#acMode').addEventListener('change', (e) => acChoose('mode', e.target.value));
   $('#acEnd').addEventListener('click', acEndSession);
   $('#acSend').addEventListener('click', acSend);
@@ -1280,6 +1920,13 @@ function setupAgentConsole() {
   setInterval(() => {
     if (typeof currentMode !== 'undefined' && currentMode === 'agent' && acS.busy && acS.running) acPaint();
   }, 1000);
+  // the log chosen, while the page is open and "Seguir" is on: its end again every 1.5 seconds, and the folders every ~6 seconds
+  setInterval(() => {
+    if (typeof currentMode === 'undefined' || currentMode !== 'agent' || document.hidden) return;
+    acS.logTick += 1;
+    if (acS.logTick % 4 === 0) acLoadLogs();
+    if (acS.logFollow && acS.drawer === 'logs' && acLogRunNow() && acS.logFile) acReadLog(true);
+  }, 1500);
 }
 
 setupAgentConsole();

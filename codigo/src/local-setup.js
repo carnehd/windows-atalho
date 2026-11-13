@@ -12,12 +12,13 @@ const net = require('net');
 const path = require('path');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
-const { ipcMain } = require('electron');
+const { ipcMain, shell: electronShell } = require('electron');
 const shell = require('./shell');
 const agents = require('./agent-review');
 const { engineCall, findEngine, listContainers, shownCommand, IMAGE, REF, ENV_KEY, SETUP_LABEL } = require('./containers');
 const newDb = require('./new-database');
 const { watchPubsub, PUBSUB_IMAGE } = require('./container-messages');
+const recipes = require('./local-recipes');
 
 const MAX_DEPENDENCIES = 30;
 const READY_TIMEOUT_MS = 4 * 60 * 1000;
@@ -40,12 +41,29 @@ const ANSWER_SCHEMA = {
   type: 'object',
   properties: {
     summary: { type: 'string', minLength: 30, description: 'One or two short sentences, 35 words at most: how many things it needs, and what to know first' },
+    microservice: {
+      type: 'object',
+      description: 'The microservice itself: what it takes to build it and to start it here. Its recipe is written from this',
+      properties: {
+        buildTool: { type: 'string', enum: ['maven', 'gradle', 'other'] },
+        wrapper: { type: 'boolean', description: 'true when the folder has mvnw or gradlew' },
+        java: { type: 'string', description: 'The Java version it is built with: 17, 21...' },
+        jar: { type: 'string', description: 'The runnable jar the build makes, from the microservice folder: target/orders-service-1.4.0.jar. Empty when there is none' },
+        port: { type: 'integer', description: 'The port it listens on when nothing changes it (server.port, else 8080)' },
+        managementPort: { type: 'integer', description: 'Only when the actuator has a port of its own' },
+        healthPath: { type: 'string', description: 'The address that says it is up, as /actuator/health. Empty when there is none' },
+        profile: { type: 'string', description: 'The Spring profile for local work (local, dev...). Empty when there is none' },
+        variables: named('Environment variables it has to be given to start here, besides those of what it needs', { why: { type: 'string', description: 'A few words' } }),
+        notes: { type: 'array', items: { type: 'string' }, description: 'What to know to start it, in short sentences: 6 at most' },
+      },
+      required: ['buildTool'],
+    },
     dependencies: {
       type: 'array',
       items: {
         type: 'object',
         properties: {
-          id: { type: 'string', description: 'A short lowercase word, different for each: postgres, redis, pubsub, keycloak' },
+          id: { type: 'string', description: 'A short lowercase word, the same name each time for the same thing: postgres, redis, pubsub, keycloak' },
           name: { type: 'string', description: 'As a person calls it: PostgreSQL, Redis, Pub/Sub emulator, Keycloak' },
           kind: { type: 'string', enum: KINDS },
           required: { type: 'boolean', description: 'true: it fails to start, or its main work fails, without this' },
@@ -83,7 +101,7 @@ const ANSWER_SCHEMA = {
       },
     },
   },
-  required: ['summary', 'dependencies'],
+  required: ['summary', 'microservice', 'dependencies'],
 };
 
 function promptFor({ skill, folder, inText = false }) {
@@ -91,6 +109,8 @@ function promptFor({ skill, folder, inText = false }) {
     'You are finding out what a microservice needs running on this computer to start and to work, following the instructions below.',
     '',
     `The working directory is a copy of its repository${folder ? `, and the microservice is in its folder ${folder}` : ''}. What Git ignores is left out of it. You can read any file there (Read, Grep, Glob). You cannot change files or run commands, and you do not need to: QuickDeck shows your answer to the user, and starts what the user chooses.`,
+    '',
+    'Your answer is also written into recipe files, one for the microservice and one for each thing it needs, that a person or an assistant follows later to start them without reading the code again: give commands, ports, names and values exactly.',
     '',
     '<setup-instructions>',
     skill,
@@ -131,6 +151,31 @@ function containerOf(raw, fallback) {
   };
 }
 
+const variablesOf = (list) => arrayOf(list, 40).map((v) => ({ name: clip(v.name, 200), value: String(v.value ?? '').slice(0, 4000), secret: Boolean(v.secret) || SECRET_NAME.test(String(v.name)), why: clip(v.why, 200) })).filter((v) => /^[A-Za-z_][A-Za-z0-9_.-]*$/.test(v.name));
+
+// The microservice itself, for its recipe: only what can be written into one, each part checked (a jar is a relative path that
+// ends in .jar, a health address starts with /, a profile is words). Nothing here runs by itself: the recipe is text.
+function microserviceOf(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const tool = ['maven', 'gradle', 'other'].includes(raw.buildTool) ? raw.buildTool : 'other';
+  const jar = clip(raw.jar, 300).replace(/\\/g, '/').replace(/^\.\//, '');
+  const java = clip(raw.java, 12);
+  const health = clip(raw.healthPath, 200);
+  const profile = clip(raw.profile, 100);
+  return {
+    buildTool: tool,
+    wrapper: tool !== 'other' && raw.wrapper === true,
+    java: /^[0-9][0-9.]{0,9}$/.test(java) ? java : '',
+    jar: /^[A-Za-z0-9_@+./-]+\.jar$/.test(jar) && !jar.startsWith('/') && !jar.split('/').includes('..') ? jar : '',
+    port: isPort(Number(raw.port)) ? Number(raw.port) : null,
+    managementPort: isPort(Number(raw.managementPort)) ? Number(raw.managementPort) : null,
+    healthPath: /^\/[A-Za-z0-9_./-]{0,199}$/.test(health) ? health : '',
+    profile: /^[A-Za-z0-9_.,-]{1,100}$/.test(profile) ? profile : '',
+    variables: variablesOf(raw.variables),
+    notes: (Array.isArray(raw.notes) ? raw.notes : []).slice(0, 6).map((t) => clip(t, 300)).filter(Boolean),
+  };
+}
+
 // The agent's answer as the page shows it and as it starts: only these parts, each one checked.
 function setupOf(answer, service) {
   const data = answer && typeof answer === 'object' ? answer : {};
@@ -165,7 +210,7 @@ function setupOf(answer, service) {
       byHand: (Array.isArray(raw.byHand) ? raw.byHand : []).slice(0, 12).map((t) => clip(t, 500)).filter(Boolean),
     });
   }
-  return { summary: clip(data.summary, 1200), dependencies };
+  return { summary: clip(data.summary, 1200), microservice: microserviceOf(data.microservice), dependencies };
 }
 
 // What runs the container: on this computer only (127.0.0.1), with no folder of it, and only these options.
@@ -275,6 +320,26 @@ function registerLocalSetup({ dataDir, getWindow, isKnownRepo, gitFor, pathKey, 
     return d;
   };
 
+  // -- The recipes: this answer as files for an assistant, or a person, to start the microservice and what it needs. They are
+  // written when the agent has answered, and again on request, under data/recipes. --
+  const recipesDir = path.join(dataDir, 'recipes');
+  const folderPathOf = (repoPath, folder) => (folder ? path.join(repoPath, folder) : repoPath);
+  const recipesInfo = (repoPath, folder, setup) => (setup ? {
+    dir: recipesDir,
+    hasMicroservice: Boolean(setup.microservice),
+    files: recipes.recipeFiles(recipesDir, setup, serviceOf(repoPath, folder)).map(({ rel, kind, name, exists, file }) => ({ rel, kind, name, exists, file })),
+  } : null);
+  const writeRecipes = async (repoPath, folder, setup) => {
+    const found = await findEngine().catch(() => ({ engine: null }));
+    const service = serviceOf(repoPath, folder);
+    const built = recipes.buildRecipes(setup, {
+      service, folderPath: folderPathOf(repoPath, folder), engineName: found.engine || 'docker',
+      runArgsOf, databaseValues, scriptFor, sqlOf: (v) => newDb.plain(newDb.sqlFor(v)),
+    });
+    recipes.writeRecipes(recipesDir, built);
+    return recipesInfo(repoPath, folder, setup);
+  };
+
   const info = async () => {
     const { agents: found, localSkills, agent, localSkill } = await agentReview.info();
     return { agents: found, skills: localSkills, agent, skill: localSkill };
@@ -307,7 +372,8 @@ function registerLocalSetup({ dataDir, getWindow, isKnownRepo, gitFor, pathKey, 
 
   ipcMain.handle('local-setup-get', guard(async (repoPath, folder) => {
     known(repoPath);
-    return { setup: await shownOf(repoPath, folder, kept.get(keyOf(repoPath, folder))), running: runs.has(keyOf(repoPath, folder)), starting: [...starting.keys()].filter((k) => k.startsWith(`${keyOf(repoPath, folder)}#`)).map((k) => k.split('#').pop()), info: await info() };
+    const was = kept.get(keyOf(repoPath, folder));
+    return { setup: await shownOf(repoPath, folder, was), recipes: recipesInfo(repoPath, folder, was), running: runs.has(keyOf(repoPath, folder)), starting: [...starting.keys()].filter((k) => k.startsWith(`${keyOf(repoPath, folder)}#`)).map((k) => k.split('#').pop()), info: await info() };
   }));
 
   // The kept answer's state, cheap to ask often. Says nothing about one that has no answer yet.
@@ -361,7 +427,9 @@ function registerLocalSetup({ dataDir, getWindow, isKnownRepo, gitFor, pathKey, 
           agent: agent.name, skill: chosen.skill,
         };
         kept.set(key, setup);
-        send(repoPath, folder, { type: 'done', setup: await shownOf(repoPath, folder, setup) });
+        // the recipes come with the answer; a failure to write them does not take the answer away
+        const written = await writeRecipes(repoPath, folder, setup).catch((e) => ({ error: String((e && e.message) || e) }));
+        send(repoPath, folder, { type: 'done', setup: await shownOf(repoPath, folder, setup), recipes: written });
       } catch (e) {
         const said = e && typeof e.error === 'string';
         send(repoPath, folder, { type: 'failed', code: said ? e.code : 'failed', error: said ? e.error : String((e && e.message) || e) });
@@ -372,6 +440,63 @@ function registerLocalSetup({ dataDir, getWindow, isKnownRepo, gitFor, pathKey, 
       }
     })();
     return { started: true, agent: agent.name, skill: chosen.skill };
+  }));
+
+  // The recipes written again (for a list kept before there were any, or after the folder was emptied).
+  ipcMain.handle('local-setup-recipes', guard(async (repoPath, folder) => {
+    known(repoPath);
+    const setup = kept.get(keyOf(repoPath, folder));
+    if (!setup) throw new Error('Analyse this microservice first: the recipes are made from what the agent found');
+    return writeRecipes(repoPath, folder, setup);
+  }));
+
+  // The text of one recipe, for the window that shows it. Only the files this list has, and the index.
+  ipcMain.handle('local-setup-recipes-read', guard(async (repoPath, folder, rel = '') => {
+    known(repoPath);
+    const setup = kept.get(keyOf(repoPath, folder));
+    if (!setup) throw new Error('Analyse this microservice first');
+    let file = '';
+    if (rel === 'README.md') file = path.join(recipesDir, 'README.md');
+    else {
+      const found = recipes.recipeFiles(recipesDir, setup, serviceOf(repoPath, folder)).find((f) => f.rel === String(rel));
+      if (!found) throw new Error('That is not a recipe of this microservice');
+      file = found.file;
+    }
+    if (!fs.existsSync(file)) throw new Error('That recipe is not written yet: press "Write again"');
+    const stat = fs.statSync(file);
+    if (stat.size > 2 * 1024 * 1024) throw new Error('That recipe is too long to show (over 2 MB)');
+    return { rel: String(rel), file, text: fs.readFileSync(file, 'utf8') };
+  }));
+
+  // The folder with ALL the recipes (data/recipes), in the app of the system: it needs no microservice analysed first, and it is made if
+  // it is not there yet.
+  ipcMain.handle('local-setup-recipes-folder', guard(async () => {
+    fs.mkdirSync(recipesDir, { recursive: true });
+    const empty = fs.readdirSync(recipesDir).length === 0;
+    const failed = await electronShell.openPath(recipesDir);
+    if (failed) throw new Error(failed);
+    return { success: true, dir: recipesDir, empty };
+  }));
+
+  // One recipe, or the folder (with no name), in the app of the system. Only the files this list has, and the index.
+  ipcMain.handle('local-setup-recipes-open', guard(async (repoPath, folder, rel = '') => {
+    known(repoPath);
+    const setup = kept.get(keyOf(repoPath, folder));
+    if (!setup) throw new Error('Analyse this microservice first');
+    let target = recipesDir;
+    if (rel === 'README.md') target = path.join(recipesDir, 'README.md');
+    else if (rel) {
+      const file = recipes.recipeFiles(recipesDir, setup, serviceOf(repoPath, folder)).find((f) => f.rel === String(rel));
+      if (!file) throw new Error('That is not a recipe of this microservice');
+      target = file.file;
+    }
+    if (!fs.existsSync(target)) {
+      if (target !== recipesDir) throw new Error('That recipe is not written yet: press "Write again"');
+      fs.mkdirSync(recipesDir, { recursive: true });
+    }
+    const failed = await electronShell.openPath(target);
+    if (failed) throw new Error(failed);
+    return { success: true };
   }));
 
   ipcMain.handle('local-setup-stop', guard((repoPath, folder) => {

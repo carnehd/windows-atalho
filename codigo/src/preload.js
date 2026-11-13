@@ -281,6 +281,8 @@ contextBridge.exposeInMainWorld('tools', {
   endProcess: (pid) => ipcRenderer.invoke('tools-end-process', pid),
   copy: (text) => ipcRenderer.invoke('tools-copy', text),
   copySecret: (text) => ipcRenderer.invoke('tools-copy-secret', text),
+  paste: () => ipcRenderer.invoke('tools-paste'),
+  saveText: (text, name, ext) => ipcRenderer.invoke('tools-save-text', text, name, ext),
 });
 
 // Git > Pull requests: the list comes from GitHub (the token stays in the main process), the commits from origin
@@ -334,6 +336,10 @@ contextBridge.exposeInMainWorld('localSetup', {
   stopDep: (path, folder, id) => ipcRenderer.invoke('local-setup-stop-dep', path, folder, id),
   removeDep: (path, folder, id) => ipcRenderer.invoke('local-setup-remove-dep', path, folder, id),
   copy: (path, folder, id) => ipcRenderer.invoke('local-setup-copy', path, folder, id),
+  recipes: (path, folder) => ipcRenderer.invoke('local-setup-recipes', path, folder),
+  openRecipe: (path, folder, rel) => ipcRenderer.invoke('local-setup-recipes-open', path, folder, rel),
+  recipesFolder: () => ipcRenderer.invoke('local-setup-recipes-folder'),
+  readRecipe: (path, folder, rel) => ipcRenderer.invoke('local-setup-recipes-read', path, folder, rel),
   onEvent: (cb) => ipcRenderer.on('local-setup-event', (_, data) => cb(data)),
 });
 
@@ -355,6 +361,13 @@ contextBridge.exposeInMainWorld('agentConsole', {
   newSession: () => ipcRenderer.invoke('agent-console-new'),
   endSession: () => ipcRenderer.invoke('agent-console-end'),
   setChoice: (kind, value) => ipcRenderer.invoke('agent-console-set', kind, value),
+  models: (again) => ipcRenderer.invoke('agent-console-models', again),
+  agents: () => ipcRenderer.invoke('agent-console-agents'),
+  pickAgentsFolder: () => ipcRenderer.invoke('agent-console-agents-folder'),
+  logs: () => ipcRenderer.invoke('agent-console-logs'),
+  readLog: (run, file) => ipcRenderer.invoke('agent-console-log-read', run, file),
+  openLogs: (run) => ipcRenderer.invoke('agent-console-logs-open', run),
+  stopProc: (run, force) => ipcRenderer.invoke('agent-console-proc-stop', run, force),
   onEvent: (cb) => ipcRenderer.on('agent-console-event', (_, data) => cb(data)),
 });
 

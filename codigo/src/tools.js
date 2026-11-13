@@ -1,9 +1,10 @@
 // Tools page, the parts that need Node: hashes (MD5 is not in the browser), YAML / .properties / JSON conversion,
-// the programs listening on a port (and ending one), and copying long or secret text. The rest of the page runs in
-// the window (see renderer/tools.js).
+// the programs listening on a port (and ending one), copying long or secret text, and, for One document, taking the
+// text on the clipboard and saving a document to a file. The rest of the page runs in the window (see renderer/tools.js).
 const { execFile } = require('child_process');
 const crypto = require('crypto');
-const { ipcMain, clipboard } = require('electron');
+const fs = require('fs');
+const { ipcMain, clipboard, dialog, BrowserWindow } = require('electron');
 const yaml = require('js-yaml');
 const shell = require('./shell');
 
@@ -286,6 +287,27 @@ function registerTools({ copySecret }) {
     if (!t) throw new Error('Nothing to copy');
     clipboard.writeText(t);
     return { success: true };
+  }));
+  // One document: what is on the clipboard now, for a new area (read when the button is pressed, not before)
+  ipcMain.handle('tools-paste', () => call(() => {
+    const t = text(clipboard.readText());
+    if (!t.trim()) throw new Error('The clipboard has no text');
+    return { text: t };
+  }));
+  // One document: the document to a file the user chooses (the name and the kind are only a first suggestion)
+  ipcMain.handle('tools-save-text', (_, value, name, ext) => call(async () => {
+    const t = text(value);
+    if (!t) throw new Error('Nothing to save');
+    const kind = ext === 'md' ? 'md' : 'txt';
+    const base = String(name || 'document').replace(/[^\w.-]+/g, '-').replace(/^[-.]+|[-.]+$/g, '').slice(0, 80) || 'document';
+    const win = BrowserWindow.getFocusedWindow();
+    const picked = await dialog.showSaveDialog(win || undefined, {
+      defaultPath: `${base}.${kind}`,
+      filters: [{ name: kind === 'md' ? 'Markdown' : 'Text', extensions: [kind] }, { name: 'All files', extensions: ['*'] }],
+    });
+    if (picked.canceled || !picked.filePath) return { canceled: true };
+    await fs.promises.writeFile(picked.filePath, t, 'utf8');
+    return { path: picked.filePath };
   }));
   // a password made here: left out of the clipboard history and cleared after a while, as the Vault does
   ipcMain.handle('tools-copy-secret', (_, value) => call(() => {

@@ -13627,25 +13627,246 @@ strong.api-code-file {
 }
 .ap-bar {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 8px 10px;
-  padding: 8px 14px;
-}
-.ap-bar .log-search-box {
-  flex: 1 1 220px;
-}
-.ap-select {
-  width: 185px;
-  flex-shrink: 0;
-}
-.ap-bar-sub {
-  padding-top: 0;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--border);
 }
-.ap-count {
-  flex: 1;
-  min-width: 0;
+/* every filter in one line: it only wraps when the window is too narrow for them */
+.ap-bar {
+  flex-wrap: wrap;
+  gap: 8px 6px;
+}
+.ap-bar .log-search-box {
+  flex: 1 1 100px;
+  min-width: 100px;
+}
+.ap-select {
+  width: 152px;
+  flex-shrink: 0;
+}
+#apGroup {
+  width: 112px;
+}
+.ap-sep {
+  align-self: stretch;
+  width: 1px;
+  margin: 2px 2px;
+  background: var(--border);
+}
+.ap-order {
+  flex-shrink: 0;
+  align-self: stretch;
+  padding: 4px 8px;
+}
+.ap-order svg {
+  width: 15px;
+  height: 15px;
+}
+/* the date and the period: a button that turns blue while it narrows, with a cross to clear it; the stale ones, amber */
+.ap-pill {
+  display: inline-flex;
+  align-items: stretch;
+  align-self: stretch;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--btn-bg);
+  box-shadow: var(--shadow);
+  font-size: var(--fs-small);
+}
+.ap-pill button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ap-pill button:first-child {
+  border-radius: calc(var(--radius-sm) - 1px) 0 0 calc(var(--radius-sm) - 1px);
+}
+.ap-pill button:last-child {
+  border-radius: 0 calc(var(--radius-sm) - 1px) calc(var(--radius-sm) - 1px) 0;
+}
+.ap-pill button:only-child,
+.ap-pill button:first-child:last-child {
+  border-radius: calc(var(--radius-sm) - 1px);
+}
+.ap-pill svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--text-muted);
+}
+.ap-pill .ap-caret {
+  width: 12px;
+  height: 12px;
+  margin-left: -2px;
+}
+.ap-pill .ap-pill-x {
+  padding: 4px 6px;
+  border-left: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+}
+.ap-pill button:hover {
+  background: var(--bg-hover);
+}
+.ap-pill.act {
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+  color: var(--accent);
+}
+.ap-pill.act button,
+.ap-pill.act svg {
+  color: var(--accent);
+}
+.ap-pill.act .ap-pill-main {
+  font-weight: 600;
+}
+.ap-pill.stale.act {
+  border-color: color-mix(in srgb, var(--yellow) 45%, transparent);
+  background: color-mix(in srgb, var(--yellow) 14%, var(--bg));
+}
+.ap-pill.stale.act button,
+.ap-pill.stale.act svg {
+  color: var(--yellow);
+}
+/* the view: the icon and its name (only the icon where the line has no room for the names) */
+.ap-view .seg-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.ap-view svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.ap-short {
+  display: none;
+}
+/* where the line has no room for names: the views and the stale ones keep an icon (and a number), the period an icon while off */
+@media (max-width: 1260px) {
+  .ap-bar .ap-lbl,
+  .ap-pill:not(.act) #apWhenText {
+    display: none;
+  }
+  .ap-bar .ap-short {
+    display: inline;
+  }
+  .ap-bar .seg-btn {
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+  .ap-sep {
+    display: none;
+  }
+  .ap-select {
+    width: 144px;
+  }
+  #apGroup {
+    width: 100px;
+  }
+}
+/* with the stale ones on there is one more button: the views keep only their icons until the window is wide */
+@media (max-width: 1480px) {
+  .ap-bar:has(#apStale:not(.hidden)) .ap-view .ap-lbl {
+    display: none;
+  }
+  .ap-bar:has(#apStale:not(.hidden)) .ap-view .seg-btn {
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+}
+/* the panel of the date and the period: under its button, over the page */
+.ap-pop {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  width: 400px;
+  max-width: calc(100vw - 16px);
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+}
+.ap-pop-label {
+  color: var(--text-dim);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.ap-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ap-chip {
+  padding: 3px 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--fs-small);
+  cursor: pointer;
+}
+.ap-chip:hover {
+  background: var(--bg-hover);
+}
+.ap-chip[aria-pressed='true'] {
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+  color: var(--accent);
+  font-weight: 600;
+}
+.ap-pop-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+.ap-pop-sep {
+  align-self: stretch;
+  border-top: 1px solid var(--border);
+}
+.ap-pop-foot {
+  display: flex;
+  align-self: stretch;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text-dim);
+  font-size: var(--fs-caption);
+}
+.ap-num {
+  width: 64px;
+}
+.ap-day {
+  width: 128px;
+}
+.ap-pop .input.ap-on {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: 0 0 0 2px var(--accent-ring);
 }
 .ap-progress {
   height: 3px;
@@ -16091,6 +16312,285 @@ textarea:not(.tool-area, .bru-code-edit)::placeholder {
   flex: none;
   margin: 10px 0 0;
 }
+/* Recipes: the files of this list, to open, and where they are */
+.ls-recipes {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+}
+.ls-recipes-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: var(--fs-body);
+}
+.ls-recipes-sub {
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+.ls-recipes-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ls-recipe-file {
+  padding: 2px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  cursor: pointer;
+}
+.ls-recipe-file:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.ls-recipe-file.microservice {
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.ls-recipe-file:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.ls-recipes-note {
+  margin: 8px 0;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+}
+.ls-recipes-note.error {
+  color: var(--red);
+}
+.ls-recipes-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+/* A recipe in a window of its own: its files, Read or Source, and the file read as a page */
+.ls-recipe-file.on {
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+/* in this window the file of the microservice is not marked unless it is the one open: two blue ones look like two open */
+.lsr-card .ls-recipe-file.microservice:not(.on) {
+  border-color: var(--border);
+  color: var(--text);
+  font-weight: 400;
+}
+.lsr-card {
+  width: min(940px, 94vw);
+  max-width: none;
+  height: min(88vh, 900px);
+  display: flex;
+  flex-direction: column;
+}
+.lsr-path {
+  flex: none;
+  margin: -6px 0 10px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  overflow-wrap: anywhere;
+}
+.lsr-card .ls-recipes-files {
+  flex: none;
+}
+.lsr-tools {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 8px;
+}
+.lsr-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px 18px 18px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--fs-body);
+  line-height: 1.55;
+  user-select: text;
+}
+.lsr-body:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.lsr-card .settings-actions {
+  flex: none;
+  margin-top: 12px;
+}
+.lsr-h {
+  margin: 18px 0 6px;
+  font-weight: 600;
+}
+.lsr-h:first-child {
+  margin-top: 0;
+}
+.lsr-h1 {
+  font-size: 18px;
+}
+.lsr-h2 {
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  font-size: 15px;
+}
+.lsr-h3 {
+  color: var(--accent);
+  font-size: var(--fs-reading);
+}
+.lsr-h4 {
+  font-size: var(--fs-body);
+}
+.lsr-p {
+  margin: 6px 0;
+}
+.lsr-li {
+  display: flex;
+  gap: 8px;
+  margin: 3px 0;
+}
+.lsr-mark {
+  flex: none;
+  min-width: 14px;
+  color: var(--text-muted);
+}
+.lsr-li-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.lsr-hr {
+  margin: 16px 0;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+.lsr-quote {
+  margin: 8px 0;
+  padding: 7px 12px;
+  border-left: 3px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+/* what is for the person who starts it by hand: apart, and dimmer than what an assistant follows */
+.lsr-user {
+  margin-top: 8px;
+  padding: 4px 14px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+}
+.lsr-tablewrap {
+  margin: 8px 0;
+  overflow-x: auto;
+}
+.lsr-table {
+  border-collapse: collapse;
+  font-size: var(--fs-small);
+}
+.lsr-table th,
+.lsr-table td {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.lsr-table th {
+  background: var(--bg-surface);
+  font-weight: 600;
+}
+.lsr-codebox {
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+}
+.lsr-codebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 30px;
+  padding: 2px 6px 0 12px;
+}
+.lsr-lang {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+}
+/* the icons that copy: the whole recipe, and one block (it turns into a tick for a moment) */
+.lsr-iconbtn {
+  padding: 4px 8px;
+}
+.lsr-iconbtn svg,
+.lsr-copy svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.lsr-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.lsr-copy:hover,
+.lsr-copy:focus-visible {
+  border-color: var(--border);
+  background: var(--bg);
+  color: var(--text);
+}
+.lsr-copy:focus-visible,
+.lsr-iconbtn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.lsr-copy.done,
+.lsr-iconbtn.done {
+  color: var(--green);
+}
+.lsr-pre,
+.lsr-source {
+  margin: 0;
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.lsr-pre {
+  padding-top: 0;
+}
+.lsr-inline {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
 .ls-card .settings-actions {
   flex: none;
   margin-top: 12px;
@@ -16380,6 +16880,78 @@ textarea:not(.tool-area, .bru-code-edit)::placeholder {
 }
 
 /* Tools: the list by what they do, a line between the groups */
+/* One document: the areas to paste in, and the document they make */
+.doc-areas {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.doc-area {
+  padding: 8px 10px 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+}
+.doc-area-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.doc-badge {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+  color: var(--accent);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+}
+.doc-area-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.doc-kind {
+  flex: none;
+  width: auto;
+  max-width: 150px;
+}
+.doc-icon {
+  flex: none;
+  padding: 3px 9px;
+  line-height: 1.2;
+}
+.doc-icon:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.doc-icon.doc-sure {
+  border-color: color-mix(in srgb, var(--red) 55%, var(--border));
+  color: var(--red);
+  font-weight: 600;
+}
+.doc-text {
+  min-height: 90px;
+  background: var(--bg-input);
+}
+.doc-meta {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+}
+.doc-title {
+  flex: 1 1 240px;
+  min-width: 160px;
+  font-family: inherit;
+}
+.doc-status {
+  margin-left: auto;
+}
 .tool-group + .tool-group {
   margin-top: 6px;
   padding-top: 4px;

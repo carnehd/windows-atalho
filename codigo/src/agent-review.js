@@ -46,6 +46,9 @@ const DEFAULT_SKILL = fs.readFileSync(path.join(__dirname, '..', 'skills', 'pr-r
 
 // The pr-review of earlier versions of the app (by their sha1), replaced by the one above when left as they were
 const OLD_DEFAULTS = ['90a1212b85560b9057de664807bfd506f231b2fc', 'a119425c283d49fe61db84a1065d47d436678231'];
+// the local-setup skill as the app wrote it before the recipes (1.6.22, 1.7.0): a copy still like one of these is the app's own,
+// so it takes the new one; a copy the user changed is kept
+const OLD_LOCAL_SETUP = ['05d34ab68bae9618eab1c28f019b4dbe6b46103a', 'f67d0f23dbb49bec2884572b468cae7a1d27c690'];
 
 // The form of the answer: the agent is held to it, so the app can show each finding at its file and line.
 const ANSWER_SCHEMA = {
@@ -104,7 +107,7 @@ class Skills {
   // pr-review, local-setup and console-fix are put there the first time (and again if one was deleted, or if it is still one the app
   // wrote before and the app has a newer one): the user's changes to them are kept
   ensureDefault() {
-    for (const [name, text, old] of [['pr-review', DEFAULT_SKILL, OLD_DEFAULTS], ['local-setup', LOCAL_SETUP_SKILL, []], ['console-fix', CONSOLE_FIX_SKILL, []]]) {
+    for (const [name, text, old] of [['pr-review', DEFAULT_SKILL, OLD_DEFAULTS], ['local-setup', LOCAL_SETUP_SKILL, OLD_LOCAL_SETUP], ['console-fix', CONSOLE_FIX_SKILL, []]]) {
       const file = this.file(name);
       if (fs.existsSync(file)) {
         const now = fs.readFileSync(file, 'utf8');

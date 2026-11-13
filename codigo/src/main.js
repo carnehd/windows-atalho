@@ -617,7 +617,7 @@ app.whenReady().then(() => {
     loadContainer: (repoPath) => store.get('mavenContainer', {})[pathKey(String(repoPath))],
   });
   // consola-agente: a conversation with Claude CLI in a project folder, and what it does as it does it
-  registerAgentConsole({ getWindow: () => mainWindow, isKnownRepo, withDialog });
+  registerAgentConsole({ getWindow: () => mainWindow, isKnownRepo, withDialog, dataDir: DATA_DIR });
   registerUpdates({ getWindow: () => mainWindow });
   maven = registerMaven({
     isKnownRepo,

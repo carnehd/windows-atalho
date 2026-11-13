@@ -1,7 +1,7 @@
 {
   "name": "quickdeck",
   "productName": "QuickDeck",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "description": "Git, logs, containers and the other tools of a microservice, in a popup for Windows",
   "main": "src/main.js",
   "scripts": {

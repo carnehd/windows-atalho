@@ -10,7 +10,7 @@ const LS_SECRET_SHOWN = '••••••••';
 
 // repo, folder: the microservice shown. setup: the answer kept for it. states: how each one is now, by id. open: those
 // unfolded. busy: those starting or stopping now. said: what each one last said, by id: { text, error }.
-const ls = { repo: null, folder: '', setup: null, states: {}, engine: null, info: null, running: false, progress: '', failure: '', open: new Set(), busy: new Set(), said: {}, runs: {}, showing: new Set(), timer: 0, all: false };
+const ls = { repo: null, folder: '', setup: null, recipes: null, states: {}, engine: null, info: null, running: false, progress: '', failure: '', open: new Set(), busy: new Set(), said: {}, runs: {}, showing: new Set(), timer: 0, all: false };
 
 const lsEl = (tag, cls = '', text = '') => {
   const el = document.createElement(tag);
@@ -55,10 +55,12 @@ function localSetupModal() {
         <p id="lsSummary" class="ls-summary hidden"></p>
         <div id="lsEngine" class="ls-engine hidden" role="status"></div>
         <div id="lsList" class="ls-list" role="list" aria-label="What it needs"></div>
+        <div id="lsRecipes" class="ls-recipes hidden"></div>
       </div>
       <p id="lsNote" class="me-hint ls-note hidden"></p>
       <div class="action-row settings-actions mv-actions">
         <button id="lsToEnv" class="btn" type="button"></button>
+        <button id="lsRecipesFolder" class="btn" type="button" title="Show the folder where all the recipes are, one file for each microservice and for each service">Recipes folder</button>
         <span class="mv-gap"></span>
         <button id="lsStopAll" class="btn hidden" type="button" title="Stop the containers of this list that are running: what they keep stays, and Start starts them again">Stop all</button>
         <button id="lsClose" class="btn" type="button">Close</button>
@@ -77,6 +79,7 @@ function localSetupModal() {
   $('#lsStartAll').addEventListener('click', startAllLocalSetup);
   $('#lsStopAll').addEventListener('click', stopAllLocalSetup);
   $('#lsToEnv').addEventListener('click', localSetupToEnv);
+  $('#lsRecipesFolder').addEventListener('click', openRecipesFolder);
   $('#lsEditSkill').addEventListener('click', async () => {
     const r = await window.agent.editSkill($('#lsSkill').value);
     if (r.error) toast(r.error, 'error');
@@ -117,7 +120,7 @@ function renderLocalSetupBtn() {
 async function openLocalSetup() {
   if (!mvnRepo) return;
   const modal = localSetupModal();
-  Object.assign(ls, { repo: mvnRepo, folder: mvnValuesDir || '', setup: null, states: {}, engine: null, running: false, progress: '', failure: '', open: new Set(), said: {}, runs: {}, showing: new Set(), busy: new Set() });
+  Object.assign(ls, { repo: mvnRepo, folder: mvnValuesDir || '', setup: null, recipes: null, states: {}, engine: null, running: false, progress: '', failure: '', open: new Set(), said: {}, runs: {}, showing: new Set(), busy: new Set() });
   modal.classList.remove('hidden');
   $('#mvnSetupBtn').setAttribute('aria-expanded', 'true');
   drawLocalSetup();
@@ -130,6 +133,7 @@ async function openLocalSetup() {
     return;
   }
   ls.setup = r.setup;
+  ls.recipes = r.recipes;
   ls.info = r.info;
   ls.running = r.running;
   ls.busy = new Set(r.starting || []);
@@ -178,7 +182,7 @@ function onLocalSetupEvent(e) {
     ls.progress = e.text;
     drawLocalSetupProgress();
   } else if (e.type === 'done') {
-    Object.assign(ls, { running: false, setup: e.setup, failure: '', states: {}, said: {}, runs: {}, open: new Set(), showing: new Set() });
+    Object.assign(ls, { running: false, setup: e.setup, recipes: e.recipes || null, failure: '', states: {}, said: {}, runs: {}, open: new Set(), showing: new Set() });
     drawLocalSetup();
     refreshLocalSetupStates();
   } else if (e.type === 'failed') {
@@ -426,7 +430,325 @@ function drawLocalSetup() {
     else if (!ls.setup.dependencies.length) list.appendChild(lsEl('p', 'ls-empty', 'The agent found nothing it needs on this computer.'));
     for (const d of ls.setup.dependencies) list.appendChild(lsRow(d));
   } else if (!ls.running) list.appendChild(lsFirstTime(found));
+  drawLocalSetupRecipes();
   drawLocalSetupFoot();
+}
+
+// -- Recipes: the answer as files, for an assistant (or you) to start the microservice and what it needs, later --
+
+function drawLocalSetupRecipes() {
+  const box = $('#lsRecipes');
+  if (!box) return;
+  const show = Boolean(ls.setup) && !ls.running;
+  box.classList.toggle('hidden', !show);
+  box.replaceChildren();
+  if (!show) return;
+  const r = ls.recipes;
+  const head = lsEl('div', 'ls-recipes-head');
+  head.append(lsEl('b', '', 'Recipes'), lsEl('span', 'ls-recipes-sub', 'to start it later, by an assistant or by you'));
+  box.append(head);
+  if (!r || r.error) {
+    box.append(lsEl('p', `ls-recipes-note${r && r.error ? ' error' : ''}`, r && r.error ? `The recipes could not be written: ${r.error}` : 'No recipes are written for this list yet.'));
+    box.append(lsBtn('Write recipes', 'Write a file for the microservice and one for each service it needs', writeLocalSetupRecipes));
+    return;
+  }
+  const files = lsEl('div', 'ls-recipes-files');
+  for (const f of r.files) {
+    const b = lsEl('button', `ls-recipe-file ${f.kind}`, f.rel.split('/').pop());
+    b.type = 'button';
+    b.disabled = !f.exists;
+    b.title = f.exists ? `Open ${f.rel}` : `${f.rel} is not written yet: press "Write again"`;
+    b.addEventListener('click', () => showLocalSetupRecipe(f.rel, b));
+    files.append(b);
+  }
+  box.append(files);
+  const note = r.hasMicroservice
+    ? 'The file of the microservice says which service files to follow, and in which order. A service that already runs is reused (the file says how to tell); the microservice itself always starts new. Each file has a part for you, to start it by hand.'
+    : 'This list is from before recipes had the microservice itself: Analyse again adds how it is built and started.';
+  box.append(lsEl('p', 'ls-recipes-note', note));
+  const acts = lsEl('div', 'ls-recipes-actions');
+  acts.append(
+    lsBtn('Open folder', r.dir, () => openLocalSetupRecipe('')),
+    lsBtn('Copy path', 'Copy the path of the folder: to give to an assistant', () => window.tools.copy(r.dir).then((x) => toast(x && x.error ? x.error : 'The path of the recipes was copied', x && x.error ? 'error' : 'success', { plain: true }))),
+    lsBtn('Write again', 'Write the files again from this list', writeLocalSetupRecipes)
+  );
+  box.append(acts);
+}
+
+// -- A recipe in a window of its own: the file read as a page (headings, lists, tables, code blocks), or as the text it is.
+// Built with text only, never HTML: what the file says is shown, whatever it says. --
+const lsr = { rel: '', text: '', file: '', view: 'read', opener: null };
+const LSR_COPY_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9.7a2.7 2.7 0 0 1 2.7-2.7h8.6a2.7 2.7 0 0 1 2.7 2.7v8.6a2.7 2.7 0 0 1-2.7 2.7h-8.6a2.7 2.7 0 0 1-2.7-2.7z"/><path d="M4 16.1a2 2 0 0 1-1-1.7v-10.4c0-1.1.9-2 2-2h10c.8 0 1.2.4 1.7 1"/></svg>';
+const LSR_DONE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l5 5l10-10"/></svg>';
+
+// Copies a text (the whole recipe, or one block) as a secret: out of the clipboard history, cleared after a while, because
+// the values in it are passwords made up for this computer all the same. The icon turns into a tick for a moment.
+async function lsrCopy(text, button, what) {
+  const r = await window.tools.copySecret(text).catch((e) => ({ error: e.message }));
+  toast(r.error || `${what} was copied (cleared from the clipboard in 30 seconds)`, r.error ? 'error' : 'success', { plain: true });
+  if (r.error || !button.isConnected) return;
+  button.innerHTML = LSR_DONE_ICON;
+  button.classList.add('done');
+  setTimeout(() => {
+    if (!button.isConnected) return;
+    button.innerHTML = LSR_COPY_ICON;
+    button.classList.remove('done');
+  }, 1500);
+}
+
+// `code` and **bold** in a line; a link to a place of the same file is only its words
+function lsrInline(parent, text) {
+  const rx = /(`+)([^`]+?)\1|\*\*([^*]+)\*\*|\[([^\]]+)\]\(#[^)]*\)/g;
+  let last = 0;
+  for (let m = rx.exec(text); m; m = rx.exec(text)) {
+    if (m.index > last) parent.append(text.slice(last, m.index));
+    if (m[2] !== undefined) parent.append(lsEl('code', 'lsr-inline', m[2]));
+    else if (m[3] !== undefined) parent.append(lsEl('strong', '', m[3]));
+    else parent.append(m[4]);
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) parent.append(text.slice(last));
+}
+
+// The Markdown of a recipe, as far as the recipes use it: headings, paragraphs, lists, a quote, a rule, a table, a code block.
+// What follows the notice "For the user only" goes in a box of its own, dimmed.
+function lsrRender(text, into) {
+  into.replaceChildren();
+  let zone = into;
+  const lines = String(text).replace(/\r\n?/g, '\n').split('\n');
+  let para = null;
+  const flush = () => {
+    if (!para) return;
+    const p = lsEl('p', 'lsr-p');
+    lsrInline(p, para.join(' '));
+    zone.appendChild(p);
+    para = null;
+  };
+  const cells = (l) => l.trim().replace(/^\|/, '').replace(/\|\s*$/, '').split(/(?<!\\)\|/).map((c) => c.replace(/\\\|/g, '|').trim());
+  for (let i = 0; i < lines.length;) {
+    const line = lines[i];
+    if (/^\s*<!--.*-->\s*$/.test(line)) { // a comment on a line of its own (the markers of the blocks): not shown
+      i += 1;
+      continue;
+    }
+    const fence = /^(`{3,})\s*([\w+-]*)\s*$/.exec(line);
+    if (fence) {
+      flush();
+      const body = [];
+      const close = new RegExp(`^\`{${fence[1].length},}\\s*$`);
+      for (i += 1; i < lines.length && !close.test(lines[i]); i += 1) body.push(lines[i]);
+      i += 1;
+      const box = lsEl('div', 'lsr-codebox');
+      const code = body.join('\n');
+      // above the code, not over it: what kind of code it is, and the icon that copies it
+      const bar = lsEl('div', 'lsr-codebar');
+      bar.append(lsEl('span', 'lsr-lang', fence[2] || ''));
+      const copy = lsEl('button', 'lsr-copy');
+      copy.type = 'button';
+      copy.innerHTML = LSR_COPY_ICON;
+      copy.title = 'Copy this block';
+      copy.setAttribute('aria-label', 'Copy this block');
+      copy.addEventListener('click', () => lsrCopy(code, copy, 'The block'));
+      bar.append(copy);
+      box.append(bar, lsEl('pre', 'lsr-pre', code));
+      zone.appendChild(box);
+      continue;
+    }
+    if (!line.trim()) {
+      flush();
+      i += 1;
+      continue;
+    }
+    const heading = /^(#{1,4})\s+(.*)$/.exec(line);
+    if (heading) {
+      flush();
+      const h = lsEl('div', `lsr-h lsr-h${heading[1].length}`);
+      lsrInline(h, heading[2]);
+      zone.appendChild(h);
+      i += 1;
+      continue;
+    }
+    if (/^-{3,}\s*$/.test(line)) {
+      flush();
+      zone.appendChild(lsEl('hr', 'lsr-hr'));
+      i += 1;
+      continue;
+    }
+    if (/^>\s?/.test(line)) {
+      flush();
+      const said = [];
+      for (; i < lines.length && /^>\s?/.test(lines[i]); i += 1) said.push(lines[i].replace(/^>\s?/, ''));
+      const quote = lsEl('div', 'lsr-quote');
+      lsrInline(quote, said.join(' '));
+      zone.appendChild(quote);
+      if (/^\*\*For the user only\./.test(said[0] || '')) {
+        zone = lsEl('div', 'lsr-user');
+        into.appendChild(zone);
+      }
+      continue;
+    }
+    if (/^\|/.test(line) && lines[i + 1] && /^\|[\s:|-]+\|?\s*$/.test(lines[i + 1])) {
+      flush();
+      const head = cells(line);
+      const rows = [];
+      for (i += 2; i < lines.length && /^\|/.test(lines[i]); i += 1) rows.push(cells(lines[i]));
+      const table = lsEl('table', 'lsr-table');
+      const tr = lsEl('tr');
+      for (const c of head) {
+        const th = lsEl('th');
+        lsrInline(th, c);
+        tr.appendChild(th);
+      }
+      table.appendChild(lsEl('thead')).appendChild(tr);
+      const tbody = table.appendChild(lsEl('tbody'));
+      for (const r of rows) {
+        const row = tbody.appendChild(lsEl('tr'));
+        for (const c of r) lsrInline(row.appendChild(lsEl('td')), c);
+      }
+      const wrap = lsEl('div', 'lsr-tablewrap');
+      wrap.appendChild(table);
+      zone.appendChild(wrap);
+      continue;
+    }
+    const item = /^(\s*)([-*]|\d+\.)\s+(.*)$/.exec(line);
+    if (item) {
+      flush();
+      const li = lsEl('div', 'lsr-li');
+      li.style.paddingLeft = `${Math.floor(item[1].length / 3) * 18}px`;
+      li.append(lsEl('span', 'lsr-mark', /^[-*]$/.test(item[2]) ? '•' : item[2]));
+      const body = lsEl('span', 'lsr-li-text');
+      lsrInline(body, item[3]);
+      li.append(body);
+      zone.appendChild(li);
+      i += 1;
+      continue;
+    }
+    (para = para || []).push(line.trim());
+    i += 1;
+  }
+  flush();
+}
+
+function lsRecipeModal() {
+  let modal = $('#lsRecipeModal');
+  if (modal) return modal;
+  modal = document.createElement('div');
+  modal.id = 'lsRecipeModal';
+  modal.className = 'settings-overlay hidden';
+  modal.innerHTML = `
+    <div class="settings-card lsr-card" role="dialog" aria-modal="true" aria-labelledby="lsrTitle">
+      <h3 id="lsrTitle">Recipe</h3>
+      <p id="lsrPath" class="mv-sub lsr-path"></p>
+      <div id="lsrFiles" class="ls-recipes-files"></div>
+      <div class="lsr-tools">
+        <div id="lsrView" class="seg" role="group" aria-label="How to show it">
+          <button class="seg-btn" type="button" data-view="read" aria-pressed="true" title="As a page: headings, lists, tables, code">Read</button>
+          <button class="seg-btn" type="button" data-view="source" aria-pressed="false" title="The text of the file, as it is">Source</button>
+        </div>
+        <span id="lsrMeta" class="ls-meta"></span>
+        <span class="mv-gap"></span>
+        <button id="lsrCopy" class="btn btn-sm lsr-iconbtn" type="button" aria-label="Copy the whole recipe" title="Copy the whole recipe (it has the values, so it is cleared from the clipboard after a while)">${LSR_COPY_ICON}</button>
+        <button id="lsrOpen" class="btn btn-sm" type="button" title="Open the file in the app of your system">Open in editor</button>
+      </div>
+      <div id="lsrBody" class="lsr-body" tabindex="0"></div>
+      <div class="action-row settings-actions">
+        <span class="mv-gap"></span>
+        <button id="lsrClose" class="btn" type="button">Close</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      closeLocalSetupRecipe();
+    }
+  });
+  modal.addEventListener('mousedown', (e) => {
+    if (e.target === modal) closeLocalSetupRecipe();
+  });
+  $('#lsrClose').addEventListener('click', closeLocalSetupRecipe);
+  $('#lsrOpen').addEventListener('click', () => openLocalSetupRecipe(lsr.rel));
+  $('#lsrCopy').addEventListener('click', (e) => lsrCopy(lsr.text, e.currentTarget, 'The recipe'));
+  $$('#lsrView .seg-btn').forEach((b) => b.addEventListener('click', () => {
+    lsr.view = b.dataset.view;
+    drawLocalSetupRecipe();
+  }));
+  return modal;
+}
+
+function drawLocalSetupRecipe() {
+  const file = ls.recipes && ls.recipes.files.find((f) => f.rel === lsr.rel);
+  $('#lsrTitle').textContent = `Recipe: ${file ? file.name : lsr.rel.split('/').pop()}`;
+  $('#lsrPath').textContent = lsr.file;
+  const files = $('#lsrFiles');
+  files.replaceChildren();
+  for (const f of ls.recipes ? ls.recipes.files : []) {
+    const b = lsEl('button', `ls-recipe-file ${f.kind}${f.rel === lsr.rel ? ' on' : ''}`, f.rel.split('/').pop());
+    b.type = 'button';
+    b.disabled = !f.exists;
+    b.setAttribute('aria-pressed', String(f.rel === lsr.rel));
+    b.title = f.exists ? f.rel : `${f.rel} is not written yet`;
+    b.addEventListener('click', () => f.rel !== lsr.rel && showLocalSetupRecipe(f.rel));
+    files.append(b);
+  }
+  $$('#lsrView .seg-btn').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === lsr.view)));
+  $('#lsrMeta').textContent = `${lsr.text.replace(/\n$/, '').split('\n').length} lines`;
+  const body = $('#lsrBody');
+  if (lsr.view === 'source') body.replaceChildren(lsEl('pre', 'lsr-source', lsr.text));
+  else lsrRender(lsr.text, body);
+  body.scrollTop = 0;
+}
+
+async function showLocalSetupRecipe(rel, opener) {
+  const r = await window.localSetup.readRecipe(ls.repo, ls.folder, rel).catch((e) => ({ error: e.message }));
+  if (r.error) {
+    toast(r.error, 'error');
+    return;
+  }
+  const modal = lsRecipeModal();
+  Object.assign(lsr, { rel: r.rel, text: r.text, file: r.file, opener: opener || lsr.opener });
+  // the window behind is out of reach while this one is open (Tab stays inside it)
+  const behind = $('#lsModal');
+  if (behind) behind.inert = true;
+  modal.classList.remove('hidden');
+  drawLocalSetupRecipe();
+  $('#lsrBody').focus();
+}
+
+function closeLocalSetupRecipe() {
+  const modal = $('#lsRecipeModal');
+  if (!modal || modal.classList.contains('hidden')) return;
+  modal.classList.add('hidden');
+  const behind = $('#lsModal');
+  if (behind) behind.inert = false;
+  // the focus goes back to the file it was opened from, if it is still there
+  const back = lsr.opener && lsr.opener.isConnected ? lsr.opener : document.querySelector('#lsRecipes .ls-recipe-file:not(:disabled)');
+  if (back) back.focus();
+}
+
+// The folder with all the recipes, whatever microservice is open (or none is analysed yet).
+async function openRecipesFolder() {
+  const r = await window.localSetup.recipesFolder().catch((e) => ({ error: e.message }));
+  if (r && r.error) toast(r.error, 'error');
+  else if (r && r.empty) toast('No recipes are written yet: Analyse a microservice, and its recipes are written here', 'info', { plain: true });
+}
+
+async function openLocalSetupRecipe(rel) {
+  const r = await window.localSetup.openRecipe(ls.repo, ls.folder, rel).catch((e) => ({ error: e.message }));
+  if (r && r.error) toast(r.error, 'error');
+}
+
+async function writeLocalSetupRecipes() {
+  const repo = ls.repo;
+  const r = await window.localSetup.recipes(repo, ls.folder).catch((e) => ({ error: e.message }));
+  if (repo !== ls.repo) return;
+  if (r.error) {
+    toast(r.error, 'error');
+    return;
+  }
+  ls.recipes = r;
+  drawLocalSetupRecipes();
+  toast(`${plural(r.files.length, 'recipe')} written`, 'success', { plain: true });
 }
 
 const lsWhen = (at) => {

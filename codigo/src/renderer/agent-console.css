@@ -107,6 +107,32 @@
   color: var(--red);
   border-color: var(--red);
 }
+/* the agent: the folder (its name, or what to do), the agents in it, and Reload */
+.ac-folder {
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ac-subagent {
+  min-width: 170px;
+  max-width: 260px;
+}
+.ac-iconbtn {
+  padding: 4px 8px;
+}
+.ac-iconbtn svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.ac-iconbtn.busy svg {
+  opacity: 0.4;
+}
 .ac-mode-hint {
   flex: 1;
   min-width: 0;
@@ -119,10 +145,9 @@
 
 .ac-main {
   flex: 1;
-  min-height: 0;
+  min-height: 160px;
   display: grid;
-  grid-template-columns: minmax(300px, 1fr) minmax(320px, 1.15fr);
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
 }
 .ac-pane {
   display: flex;
@@ -464,20 +489,53 @@
 .ac-compose {
   flex: none;
   display: flex;
-  align-items: flex-end;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-input);
+}
+.ac-compose:focus-within {
+  border-color: var(--accent);
+}
+.ac-chips {
+  display: flex;
+  align-items: center;
+  gap: 8px 14px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.ac-hints {
+  display: flex;
+  gap: 14px;
+  min-width: 0;
+}
+.ac-hints .ac-mode-hint {
+  flex: 0 1 auto;
+}
+.ac-hints .ac-mode-hint:empty {
+  display: none;
+}
+.ac-hints:empty,
+.ac-foot:empty {
+  display: none;
+}
+.ac-compose .ac-input {
+  padding: 4px 2px; /* .input (styles.css) gives a field its own side padding: the box has it */
 }
 .ac-input {
-  flex: 1;
   min-height: 44px;
   max-height: 220px;
   resize: none;
-  padding: 10px 12px;
+  border: 0;
+  background: transparent;
+  padding: 4px 2px;
   font-size: var(--fs-reading);
   line-height: 1.45;
   font-family: var(--font-ui);
 }
-.ac-send { height: 44px; padding: 0 18px; }
+.ac-send { height: 30px; padding: 0 16px; }
 .ac-foot {
   flex: none;
   min-height: 16px;
@@ -489,7 +547,184 @@
   text-overflow: ellipsis;
 }
 @media (max-width: 860px) {
-  .ac-main { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
   .ac-meta { display: none; }
   .ac-mode-hint { display: none; }
+}
+
+/* the logs of the microservices the arrancador started: the microservice and its file, and the end of the file above, following it */
+.ac-logrun {
+  min-width: 170px;
+  max-width: 240px;
+}
+.ac-logfile {
+  min-width: 150px;
+  max-width: 240px;
+}
+.ac-logtext {
+  padding: 6px 12px 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  user-select: text;
+  outline: none;
+}
+.ac-ll {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  min-height: 1.5em;
+}
+.ac-ll.err {
+  color: var(--red);
+}
+.ac-ll.warn {
+  color: var(--yellow);
+}
+.ac-ll.trace {
+  color: var(--text-muted);
+}
+.ac-ll.empty {
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-style: italic;
+}
+
+/* the Java processes the arrancador started: one row each, with Stop */
+.ac-dtab.ac-procbtn.live {
+  color: var(--ac-orange);
+}
+.ac-pr {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.ac-pr:last-child {
+  border-bottom: 0;
+}
+.ac-pr-name {
+  flex: none;
+  font-weight: 600;
+}
+.ac-pr-chip {
+  flex: none;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: var(--fs-caption);
+  color: var(--text-muted);
+}
+.ac-pr-chip.running {
+  color: var(--orange);
+  border-color: var(--orange);
+}
+.ac-pr-meta {
+  flex: none;
+  font-size: var(--fs-small);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ac-pr-cmd {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ac-pr .btn {
+  flex: none;
+}
+.ac-pr .btn.danger {
+  color: var(--red);
+  border-color: var(--red);
+}
+
+/* the drawer under the box to write at: the timeline, the logs and the processes, one tab each; closed until a tab is chosen */
+.ac-drawer {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  overflow: hidden;
+}
+.ac-dtabs {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px 0 4px;
+}
+.ac-drawer.open .ac-dtabs {
+  border-bottom: 1px solid var(--border);
+}
+.ac-dtab {
+  margin-bottom: -1px;
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  font: inherit;
+  font-size: var(--fs-small);
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ac-dtab:hover {
+  color: var(--text);
+}
+.ac-dtab.on {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+.ac-dtab.ac-procbtn.live:hover {
+  color: var(--ac-orange);
+}
+#acDrawerToggle svg {
+  transition: transform var(--dur-fast, 0.12s);
+}
+.ac-drawer.open #acDrawerToggle svg {
+  transform: rotate(180deg);
+}
+.ac-dbody {
+  height: clamp(170px, 30vh, 290px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.ac-dbody.hidden,
+.ac-panel.hidden {
+  display: none;
+}
+.ac-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ac-ptool {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.ac-ptool .btn {
+  font-weight: 400;
+}
+.ac-ptool .ac-all {
+  margin-left: 0;
+}
+.ac-phint {
+  flex: none;
+  display: flex;
+  padding: 4px 12px 0;
 }

@@ -5,10 +5,14 @@
 // (control_request / control_response, as the Agent SDK speaks to it).
 // One session at a time. The process stays open between messages. If it ends, the next message starts it again with
 // --resume and the session's id.
-const { ipcMain, dialog, app } = require('electron');
-const { spawn } = require('child_process');
+const { ipcMain, dialog, app, shell: electronShell } = require('electron');
+const { spawn, execFile } = require('child_process');
 const fs = require('fs');
+const path = require('path');
 const shell = require('./shell');
+const consoleAgents = require('./console-agents');
+const agentLogs = require('./agent-logs');
+const agentProcs = require('./agent-procs');
 const agents = require('./agent-review');
 const { COPILOT_MODES, Translator, pickOption } = require('./acp');
 
@@ -21,6 +25,18 @@ const ARGS = ['-p', '--output-format', 'stream-json', '--input-format', 'stream-
 // set_permission_mode), the first thing after it starts and whenever the user changes them.
 const MODELS = ['', 'fable', 'opus', 'sonnet', 'haiku'];
 const MODES = ['default', 'acceptEdits', 'plan', 'dontAsk', 'auto', 'bypassPermissions'];
+// Copilot CLI takes its model when it starts (--model): the ones it knows are read from its own help (`copilot help config`,
+// which asks nobody), and these are what is used when that cannot be read (the list of 1.0.108).
+const COPILOT_MODELS_FALLBACK = [
+  'claude-sonnet-5.5', 'claude-sonnet-5', 'claude-fable-5.1', 'claude-fable-5',
+  'claude-opus-5.5', 'claude-opus-5', 'claude-opus-4.8', 'claude-opus-4.8-fast',
+  'claude-sonnet-4.6', 'claude-haiku-5.5', 'claude-haiku-4.5', 'gpt-6.1-sol',
+  'gpt-6.1-terra', 'gpt-6-sol', 'gpt-6-luna', 'gpt-6-astra',
+  'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.3-codex',
+  'mai-code-1.1-flash', 'gemini-4-argon', 'gemini-3.8-flash', 'grok-4.7',
+  'grok-4.6', 'kimi-k3',
+];
+const COPILOT_MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
 const MAX_MESSAGE = 100000;
 // what is kept of a session for a page that opens again: the oldest go first past this
 const MAX_KEPT = 50000;
@@ -59,7 +75,22 @@ function permissionAnswer(req, choice, answers) {
   return out;
 }
 
-function registerAgentConsole({ getWindow, isKnownRepo, withDialog }) {
+// The models in `copilot help config`: the lines "- "name"" under `model`, up to the blank line.
+function parseCopilotModels(text) {
+  const lines = String(text).split('\n');
+  const at = lines.findIndex((l) => /^\s*`model`:/.test(l));
+  if (at < 0) return [];
+  const found = [];
+  for (const line of lines.slice(at + 1)) {
+    const m = /^\s*-\s*"([^"]+)"\s*$/.exec(line);
+    if (m) {
+      if (COPILOT_MODEL_ID.test(m[1])) found.push(m[1]);
+    } else if (found.length) break;
+  }
+  return [...new Set(found)];
+}
+
+function registerAgentConsole({ getWindow, isKnownRepo, withDialog, dataDir }) {
   const picked = new Set(); // folders the user chose with the dialog, in this run of the app
   const s = {
     cwd: null,
@@ -79,7 +110,68 @@ function registerAgentConsole({ getWindow, isKnownRepo, withDialog }) {
     liveModel: '', // the model the CLI says it uses
     finished: false, // ended by the user: it is not taken up again
     controls: new Map(), // request_id -> { kind, value, prev } of a change asked and not answered yet
+    agentsDir: '', // the folder where the agents are (chosen by the user, kept in data/agent-console.json)
+    subagent: '', // the id of the agent chosen in that folder ('': the CLI's own)
+    overlay: null, // the temporary folder the session started with, that has that agent
   };
+
+  // The folder of the agents is the only thing kept of this page, in a file of its own.
+  const settingsFile = dataDir ? path.join(dataDir, 'agent-console.json') : null;
+  try {
+    const kept = settingsFile ? JSON.parse(fs.readFileSync(settingsFile, 'utf8')) : {};
+    if (kept && typeof kept.agentsDir === 'string') s.agentsDir = kept.agentsDir;
+  } catch {
+    // nothing kept yet
+  }
+  const keepSettings = () => {
+    if (!settingsFile) return;
+    try {
+      fs.writeFileSync(settingsFile, JSON.stringify({ agentsDir: s.agentsDir }, null, 2));
+    } catch {
+      // for this run only
+    }
+  };
+  // What the folder has now, for the page: no path of a file, only what a person chooses by.
+  const listAgents = () => {
+    if (!s.agentsDir) return { dir: '', agents: [], truncated: false };
+    let isDir = false;
+    try {
+      isDir = fs.statSync(s.agentsDir).isDirectory();
+    } catch {
+      isDir = false;
+    }
+    if (!isDir) return { dir: s.agentsDir, agents: [], truncated: false, error: 'A pasta já não existe' };
+    const { agents: found, truncated } = consoleAgents.scanAgents(s.agentsDir);
+    return { dir: s.agentsDir, truncated, agents: found.map(({ id, name, description, cli, skills }) => ({ id, name, description, cli, skills })) };
+  };
+  const dropOverlay = () => {
+    consoleAgents.removeOverlay(s.overlay);
+    s.overlay = null;
+  };
+
+  // The models Copilot CLI offers, read once for each version of it; those of its own help, else the fallback.
+  let modelsKept = null; // { key, promise }: what is asked once is shared by those who ask while it is on its way
+  async function copilotModels(again = false) {
+    const agent = await agents.findAgent('copilot', again);
+    if (!agent || !agent.found) return { models: COPILOT_MODELS_FALLBACK, source: 'fallback' };
+    const key = `${agent.file}|${agent.version || ''}`;
+    if (!again && modelsKept && modelsKept.key === key) return modelsKept.promise;
+    const promise = (async () => {
+      let models = [];
+      try {
+        const env = agents.agentEnv(await shell.loginShellEnv());
+        const text = await new Promise((resolve, reject) => {
+          execFile(agent.file, ['help', 'config'], { env, timeout: 15000, windowsHide: true, maxBuffer: 2 * 1024 * 1024, shell: /\.(cmd|bat)$/i.test(agent.file) }, (err, stdout) => (err && !stdout ? reject(err) : resolve(String(stdout))));
+        });
+        models = parseCopilotModels(text);
+      } catch {
+        models = [];
+      }
+      return models.length ? { models, source: 'cli' } : { models: COPILOT_MODELS_FALLBACK, source: 'fallback' };
+    })();
+    modelsKept = { key, promise };
+    return promise;
+  }
 
   const guard = (fn) => async (_, ...args) => {
     try {
@@ -108,7 +200,7 @@ function registerAgentConsole({ getWindow, isKnownRepo, withDialog }) {
     const win = getWindow();
     if (win && !win.isDestroyed()) win.webContents.send('agent-console-event', ev);
   };
-  const stateOf = () => ({ running: Boolean(s.child), agentId: s.agent, cwd: s.cwd, sessionId: s.sessionId, pending: [...s.pending.keys()], model: s.model, liveModel: s.liveModel, mode: s.mode, finished: s.finished });
+  const stateOf = () => ({ running: Boolean(s.child), agentId: s.agent, cwd: s.cwd, sessionId: s.sessionId, pending: [...s.pending.keys()], model: s.model, liveModel: s.liveModel, mode: s.mode, finished: s.finished, subagent: s.subagent, agentsDir: s.agentsDir });
 
   const write = (obj) => {
     if (!s.child || !s.child.stdin.writable) throw new Error('O Claude CLI não está a correr');
@@ -347,7 +439,7 @@ function registerAgentConsole({ getWindow, isKnownRepo, withDialog }) {
     }
     const modes = res.modes && Array.isArray(res.modes.availableModes) ? res.modes.availableModes : [];
     copilot.modes = Object.fromEntries(modes.map((x) => [String(x.id).split('#').pop(), x.id]));
-    copilot.tr = new Translator(s.sessionId, { cwd: s.cwd });
+    copilot.tr = new Translator(s.sessionId, { cwd: s.cwd, model: s.model });
     out(copilot.tr.init(s.mode));
     if (s.mode === 'plan') await copilotSetMode('plan').catch(() => {});
   }
@@ -361,7 +453,26 @@ function registerAgentConsole({ getWindow, isKnownRepo, withDialog }) {
     const base = agents.agentEnv(await shell.loginShellEnv());
     // session_state_changed events (running, idle, requires_action): the page knows when it works
     const env = isCopilot ? base : { ...base, CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: '1' };
-    const args = isCopilot ? ['--acp'] : [...ARGS, ...(s.sessionId ? ['--resume', s.sessionId] : [])];
+    // started as the agent chosen from the folder: a folder of its own with it (and its skills) as this CLI reads them, taken with
+    // --add-dir and --agent; made again each time the CLI starts, from what the file says now
+    let asAgent = [];
+    dropOverlay();
+    if (s.subagent) {
+      const found = consoleAgents.scanAgents(s.agentsDir).agents.find((a) => a.id === s.subagent && consoleAgents.fitsCli(a, isCopilot ? 'copilot' : 'claude'));
+      if (!found) throw new Error('O agente escolhido já não está na pasta: recarrega a lista e escolhe outro');
+      let made;
+      try {
+        made = consoleAgents.makeOverlay(found, isCopilot ? 'copilot' : 'claude', s.agentsDir);
+      } catch (e) {
+        throw new Error(`Não consegui preparar o agente ${found.name}: ${e.message}`);
+      }
+      s.overlay = made.dir;
+      // a path with a space, for a command of Windows that goes through cmd
+      const quoted = (v) => (/\s/.test(v) && /\.(cmd|bat)$/i.test(agent.file) ? `"${v}"` : v);
+      asAgent = made.args.map(quoted);
+      if (made.warnings.length) emit({ kind: 'state', state: 'agent-warning', warnings: made.warnings, ...stateOf() });
+    }
+    const args = isCopilot ? ['--acp', ...(s.model ? ['--model', s.model] : []), ...asAgent] : [...ARGS, ...(s.sessionId ? ['--resume', s.sessionId] : []), ...asAgent];
     const read = isCopilot ? takeAcp : take;
     let child;
     try {
@@ -444,7 +555,10 @@ function registerAgentConsole({ getWindow, isKnownRepo, withDialog }) {
     copilotReset();
     if (s.interrupt) clearTimeout(s.interrupt.timer);
     s.interrupt = null;
-    if (!child) return;
+    if (!child) {
+      dropOverlay();
+      return;
+    }
     // its input closed first: it ends its turn and stops; forced after a few seconds
     try {
       child.stdin.end();
@@ -454,6 +568,7 @@ function registerAgentConsole({ getWindow, isKnownRepo, withDialog }) {
     const closed = new Promise((resolve) => child.once('close', resolve));
     const late = new Promise((resolve) => setTimeout(() => resolve('late'), END_WAIT_MS));
     if (child.exitCode === null && child.signalCode === null && (await Promise.race([closed, late])) === 'late') await shell.killTree(child);
+    dropOverlay();
   }
 
   ipcMain.handle('agent-console-info', guard(async (again) => {
@@ -469,6 +584,56 @@ function registerAgentConsole({ getWindow, isKnownRepo, withDialog }) {
     };
   }));
 
+  // The agents in the folder chosen, read again each time it is asked (that is what Reload does).
+  ipcMain.handle('agent-console-agents', guard(() => listAgents()));
+
+  // The folder of the agents: the user chooses it, and it is kept for the next time.
+  ipcMain.handle('agent-console-agents-folder', guard(async () => {
+    const win = getWindow();
+    const res = await withDialog(() => dialog.showOpenDialog(win, { title: 'A pasta onde estão os agentes', defaultPath: s.agentsDir || undefined, properties: ['openDirectory'] }));
+    if (!res || res.canceled || !res.filePaths || !res.filePaths[0]) return { canceled: true, ...listAgents() };
+    s.agentsDir = res.filePaths[0];
+    keepSettings();
+    const listed = listAgents();
+    if (s.subagent && !listed.agents.some((a) => a.id === s.subagent && consoleAgents.fitsCli(a, s.agent))) s.subagent = '';
+    emit({ kind: 'state', state: 'choice', what: 'subagent', transient: true, ...stateOf() });
+    return listed;
+  }));
+
+  // The logs of the microservices the arrancador agent started (<tmp>/arranque-<name>/): the folders, the end of one file, and the
+  // folder opened in the file manager. Read only, and only there (agent-logs.js). GQ_ARRANQUE_BASE moves it in a test, not in the exe.
+  const logsBase = () => (!app.isPackaged && process.env.GQ_ARRANQUE_BASE) || agentLogs.defaultBase();
+  // The list also says what each process is now (agent-procs.js): running, another process has the number, stopped, or not known.
+  ipcMain.handle('agent-console-logs', guard(async () => {
+    const listed = agentLogs.listRuns(logsBase());
+    const entries = listed.runs.filter((r) => r.process).map((r) => ({ pid: r.process.pid, at: r.process.at }));
+    const seen = entries.length ? await agentProcs.inspect(entries) : new Map();
+    for (const r of listed.runs) {
+      if (!r.process) continue;
+      const i = seen.get(r.process.pid) || { state: 'unknown' };
+      r.process = { pid: r.process.pid, state: i.state, alive: i.state === 'running', command: i.command || '', startedMs: i.startedMs || 0, ports: i.ports || [] };
+    }
+    return listed;
+  }));
+  // Stops the process of one run: the number is read again from its .pid file here (the page only names the run), and is only touched
+  // if it is still the Java process the agent started. Asked first (SIGTERM), forced on request (SIGKILL).
+  ipcMain.handle('agent-console-proc-stop', guard(async (run, force) => {
+    const entry = agentLogs.pidEntry(logsBase(), String(run || ''));
+    if (!entry) throw new Error('Esse microserviço já não tem um processo registado: recarrega a lista');
+    return agentProcs.stop(entry, { force: force === true });
+  }));
+  ipcMain.handle('agent-console-log-read', guard((run, file) => agentLogs.readTail(logsBase(), String(run || ''), String(file || ''))));
+  ipcMain.handle('agent-console-logs-open', guard(async (run) => {
+    const dir = agentLogs.runDir(logsBase(), String(run || ''));
+    if (!dir) throw new Error('Esse microserviço já não tem pasta de logs: recarrega a lista');
+    const failed = await electronShell.openPath(dir);
+    if (failed) throw new Error(failed);
+    return { ok: true };
+  }));
+
+  // The models Copilot CLI offers (for the choice of the page).
+  ipcMain.handle('agent-console-models', guard((again) => copilotModels(Boolean(again))));
+
   // The agent (before the session starts), the model or the permission mode, for this session and the next: to the agent at
   // once when it is running.
   ipcMain.handle('agent-console-set', guard(async (kind, value) => {
@@ -479,14 +644,34 @@ function registerAgentConsole({ getWindow, isKnownRepo, withDialog }) {
       if (v !== s.agent) {
         s.agent = v;
         s.model = '';
+        s.subagent = ''; // the agents of one are not the agents of the other
         if (v === 'copilot' && !COPILOT_MODES.includes(s.mode)) s.mode = 'default';
       }
     } else if (kind === 'model') {
-      if (s.agent === 'copilot') throw new Error('O Copilot CLI escolhe o modelo sozinho');
-      if (!MODELS.includes(v)) throw new Error('Modelo desconhecido');
-      const prev = s.model;
-      s.model = v;
-      if (s.child && !s.finished) askChange('model', v, prev);
+      if (s.agent === 'copilot') {
+        // '' is the CLI's own choice, auto lets it pick; any other is one of the models it lists
+        const { models } = await copilotModels();
+        if (v && v !== 'auto' && !models.includes(v)) throw new Error('Modelo desconhecido');
+        if (v !== s.model) {
+          if (s.child && !s.finished) {
+            if (copilot.turn || s.pending.size || s.starting) throw new Error('Espera que o Copilot acabe o pedido antes de mudar de modelo');
+            s.model = v;
+            // Copilot CLI takes its model as it starts: it stops here, and the next message starts it again on the same session
+            await end();
+            emit({ kind: 'state', state: 'restart', what: 'model', value: v, ...stateOf() });
+          } else s.model = v;
+        }
+      } else {
+        if (!MODELS.includes(v)) throw new Error('Modelo desconhecido');
+        const prev = s.model;
+        s.model = v;
+        if (s.child && !s.finished) askChange('model', v, prev);
+      }
+    } else if (kind === 'subagent') {
+      // the agent is chosen before the session starts: it is how the CLI starts
+      if (s.cwd && !s.finished) throw new Error('Esta sessão já começou: carrega em Nova sessão para mudar de agente');
+      if (v && !listAgents().agents.some((a) => a.id === v && consoleAgents.fitsCli(a, s.agent))) throw new Error('Agente desconhecido nesta pasta: recarrega a lista');
+      s.subagent = v;
     } else if (kind === 'mode') {
       if (!(s.agent === 'copilot' ? COPILOT_MODES : MODES).includes(v)) throw new Error('Modo de permissões desconhecido');
       const prev = s.mode;
@@ -598,6 +783,7 @@ function registerAgentConsole({ getWindow, isKnownRepo, withDialog }) {
   }));
 
   app.on('before-quit', () => {
+    dropOverlay();
     if (!s.child) return;
     try {
       s.child.stdin.end();
@@ -608,4 +794,4 @@ function registerAgentConsole({ getWindow, isKnownRepo, withDialog }) {
   });
 }
 
-module.exports = { registerAgentConsole, sessionRules, permissionAnswer, ARGS, MODELS, MODES };
+module.exports = { registerAgentConsole, sessionRules, permissionAnswer, parseCopilotModels, ARGS, MODELS, MODES, COPILOT_MODELS_FALLBACK };

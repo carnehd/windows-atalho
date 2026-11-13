@@ -677,17 +677,53 @@
           <select id="apService" class="input ap-select" aria-label="Microservice" title="Only one microservice"></select>
           <div class="log-search-box">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0"/><path d="M21 21l-6 -6"/></svg>
-            <input id="apText" class="input" type="search" placeholder="Search: title, number, branch, author or label" spellcheck="false" aria-label="Search pull requests" />
+            <input id="apText" class="input" type="search" placeholder="Search pull requests" title="Searches the title, the number, the branches, the author and the labels" spellcheck="false" aria-label="Search pull requests" />
           </div>
           <button id="apGo" class="btn btn-sm btn-primary" type="button">Search</button>
-        </div>
-        <div class="ap-bar ap-bar-sub">
-          <span id="apCount" class="log-count ap-count"></span>
-          <div id="apViewSeg" class="seg" role="group" aria-label="How to list them">
-            <button class="seg-btn" type="button" data-view="repo" aria-pressed="true">By microservice</button>
-            <button class="seg-btn" type="button" data-view="date" aria-pressed="false" title="The ones that changed last come first">By date</button>
+          <span class="ap-sep" aria-hidden="true"></span>
+          <button id="apOrder" class="btn btn-sm btn-icon ap-order" type="button" data-way="newest" aria-label="Newest first" title="Newest first. Click for the oldest first"></button>
+          <span id="apWhen" class="ap-pill">
+            <button id="apWhenBtn" class="ap-pill-main" type="button" aria-haspopup="dialog" aria-expanded="false" title="The date, and the period it falls in">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12z"/><path d="M16 3v4"/><path d="M8 3v4"/><path d="M4 11h16"/></svg>
+              <span id="apWhenText">Any time</span>
+              <svg class="ap-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6l6 -6"/></svg>
+            </button>
+            <button id="apWhenClear" class="ap-pill-x hidden" type="button" aria-label="Clear the date and the period" title="Clear the date and the period"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6l-12 12"/><path d="M6 6l12 12"/></svg></button>
+          </span>
+          <span id="apStale" class="ap-pill stale act hidden">
+            <button id="apStaleBtn" class="ap-pill-main" type="button" aria-haspopup="dialog" title="Only the pull requests that nobody has changed for a while">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 7h11"/><path d="M6.5 17h11"/><path d="M6 20v-2a6 6 0 1 1 12 0v2a1 1 0 0 1 -1 1h-10a1 1 0 0 1 -1 -1z"/><path d="M6 4v2a6 6 0 1 0 12 0v-2a1 1 0 0 0 -1 -1h-10a1 1 0 0 0 -1 1z"/></svg>
+              <span id="apStaleText" class="ap-lbl">Stale 14+ days</span>
+              <span id="apStaleShort" class="ap-short">14d+</span>
+            </button>
+            <button id="apStaleClear" class="ap-pill-x" type="button" aria-label="Clear the stale filter" title="Clear the stale filter"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6l-12 12"/><path d="M6 6l12 12"/></svg></button>
+          </span>
+          <div id="apViewSeg" class="seg ap-view" role="group" aria-label="How to list them">
+            <button class="seg-btn" type="button" data-view="repo" aria-pressed="true" title="Under the name of each microservice"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2"/></svg><span class="ap-lbl">By microservice</span></button>
+            <button class="seg-btn" type="button" data-view="date" aria-pressed="false" title="One list, with the microservice on each"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11"/><path d="M9 12h11"/><path d="M9 18h11"/><path d="M5 6v.01"/><path d="M5 12v.01"/><path d="M5 18v.01"/></svg><span class="ap-lbl">List</span></button>
           </div>
           <button id="apGear" class="btn btn-sm btn-icon pr-agent-gear hidden" type="button" aria-haspopup="dialog" aria-label="The agent that analyses, and the skill it follows" title="The agent that analyses, and the skill it follows"></button>
+        </div>
+        <div id="apPop" class="ap-pop hidden" role="dialog" aria-label="Date and period">
+          <div class="ap-pop-label">Date</div>
+          <div id="apDateSeg" class="seg" role="group" aria-label="Which date">
+            <button class="seg-btn" type="button" data-date="updated" aria-pressed="true" title="When it was last changed, closed or merged">Last changed</button>
+            <button class="seg-btn" type="button" data-date="created" aria-pressed="false" title="When it was opened">Opened</button>
+          </div>
+          <div class="ap-pop-label">Period</div>
+          <div id="apChips" class="ap-chips" role="group" aria-label="Period">
+            <button class="ap-chip" type="button" data-period="today" aria-pressed="false">Today</button>
+            <button class="ap-chip" type="button" data-period="week" aria-pressed="false" title="Since Monday">This week</button>
+            <button class="ap-chip" type="button" data-period="7" aria-pressed="false">7 days</button>
+            <button class="ap-chip" type="button" data-period="30" aria-pressed="false">30 days</button>
+            <button class="ap-chip" type="button" data-period="90" aria-pressed="false">90 days</button>
+          </div>
+          <div class="ap-pop-row">Last <input id="apDays" class="input ap-num" type="number" min="1" max="3650" step="1" value="14" aria-label="Number of days" /> days</div>
+          <div class="ap-pop-row">From <input id="apFrom" class="input ap-day" type="date" aria-label="From" /> to <input id="apTo" class="input ap-day" type="date" aria-label="To" /></div>
+          <div class="ap-pop-sep"></div>
+          <div class="ap-pop-label">Stale</div>
+          <label class="ap-pop-row"><input id="apStaleOn" type="checkbox" /> Not changed for <input id="apStaleDays" class="input ap-num" type="number" min="1" max="3650" step="1" value="14" aria-label="Days without a change" /> days or more</label>
+          <div class="ap-pop-foot"><span>Narrows what Search brought: nothing is asked again</span><button id="apWhenReset" class="btn btn-sm" type="button">Clear</button></div>
         </div>
         <div id="apProgress" class="ap-progress hidden"><i></i></div>
         <div id="apList" class="log-list ap-list"></div>
@@ -781,23 +817,63 @@
               </div>
             </div>
           </section>
-          <section class="ac-pane ac-time-pane" aria-label="Linha do tempo">
-            <div class="ac-head">Linha do tempo<label class="ac-all" title="Mostra também os eventos que a linha do tempo esconde, com o seu JSON"><input id="acAll" type="checkbox"> Todos os eventos</label></div>
-            <div id="acTags" class="ac-tags hidden" role="group" aria-label="Filtrar a linha do tempo por tipo de evento"></div>
-            <div class="ac-scroll"><div id="acTimeline" class="ac-timeline" role="log"></div></div>
-          </section>
         </div>
-        <!-- the model and the permissions of the agent, for this conversation and the next (agent-console.js) -->
-        <div class="ac-options">
-          <label class="ac-opt" for="acModel"><span>Modelo</span><select id="acModel" class="input ac-select" aria-label="Modelo"></select></label>
-          <label class="ac-opt" for="acMode"><span>Permissões</span><select id="acMode" class="input ac-select" aria-label="Permissões"></select></label>
-          <span id="acModeHint" class="ac-mode-hint"></span>
-        </div>
+        <!-- the box to write at, with what the session starts as under it: the agent (the folder first, then the agents in it, and a
+             button to read the folder again), the model and the permissions (agent-console.js, console-agents.js) -->
         <div class="ac-compose">
           <textarea id="acInput" class="input ac-input" rows="2" spellcheck="false" placeholder="Escreve ao Claude… (Enter envia, Shift+Enter muda de linha)" aria-label="Mensagem para o Claude"></textarea>
-          <button id="acSend" class="btn btn-primary ac-send" type="button" disabled>Enviar</button>
+          <div class="ac-chips">
+            <span class="ac-opt">
+              <span>Agente</span>
+              <button id="acAgentsFolder" class="btn btn-sm ac-folder" type="button" aria-label="Pasta dos agentes" title="A pasta onde estão os agentes">Escolher a pasta...</button>
+              <select id="acSubagent" class="input ac-select ac-subagent" aria-label="Agente" disabled></select>
+              <button id="acAgentsReload" class="btn btn-sm ac-iconbtn" type="button" aria-label="Recarregar a lista de agentes" title="Ler outra vez a pasta" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8.1 8.1 0 0 0-15.5-2m-.5-4v4h4M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></svg></button>
+              <button id="acRecipesBtn" class="btn btn-sm" type="button" title="Mostra a pasta onde estão todas as receitas (uma por microserviço e por serviço): é a pasta que dás ao agente">Receitas</button>
+            </span>
+            <label class="ac-opt" for="acModel"><span>Modelo</span><select id="acModel" class="input ac-select" aria-label="Modelo"></select></label>
+            <label class="ac-opt" for="acMode"><span>Permissões</span><select id="acMode" class="input ac-select" aria-label="Permissões"></select></label>
+            <span class="ac-spacer"></span>
+            <button id="acSend" class="btn btn-primary ac-send" type="button" disabled>Enviar</button>
+          </div>
+          <div class="ac-hints"><span id="acAgentsHint" class="ac-mode-hint"></span><span id="acModeHint" class="ac-mode-hint"></span></div>
         </div>
         <div id="acFoot" class="ac-foot" aria-live="polite"></div>
+        <!-- the drawer: the timeline, the logs the arrancador agent left in <tmp>/arranque-<microservice>/ (agent-logs.js) and the Java
+             processes it started, with Stop (agent-procs.js). Closed until a tab is chosen; the tab of the processes says how many run -->
+        <section id="acDrawer" class="ac-drawer" aria-label="Linha do tempo, logs e processos">
+          <div class="ac-dtabs" role="tablist">
+            <button id="acTabTime" class="ac-dtab" role="tab" type="button" aria-selected="false">Linha do tempo</button>
+            <button id="acTabLogs" class="ac-dtab" role="tab" type="button" aria-selected="false">Logs</button>
+            <button id="acProcBtn" class="ac-dtab ac-procbtn" role="tab" type="button" aria-selected="false" title="Os processos Java que o agente arrancou, para os parar">Processos</button>
+            <span class="ac-spacer"></span>
+            <button id="acDrawerToggle" class="btn btn-sm ac-iconbtn" type="button" aria-label="Abrir a gaveta" title="Abrir ou fechar a gaveta"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button>
+          </div>
+          <div id="acDrawerBody" class="ac-dbody hidden">
+            <div id="acPanelTime" class="ac-panel hidden" role="tabpanel" aria-label="Linha do tempo">
+              <div class="ac-ptool"><span class="ac-spacer"></span><label class="ac-all" title="Mostra também os eventos que a linha do tempo esconde, com o seu JSON"><input id="acAll" type="checkbox"> Todos os eventos</label></div>
+              <div id="acTags" class="ac-tags hidden" role="group" aria-label="Filtrar a linha do tempo por tipo de evento"></div>
+              <div class="ac-scroll"><div id="acTimeline" class="ac-timeline" role="log"></div></div>
+            </div>
+            <div id="acPanelLogs" class="ac-panel hidden" role="tabpanel" aria-label="Logs dos microserviços">
+              <div class="ac-ptool">
+                <select id="acLogRun" class="input ac-select ac-logrun" aria-label="Microserviço dos logs" disabled></select>
+                <select id="acLogFile" class="input ac-select ac-logfile" aria-label="Ficheiro do log" disabled></select>
+                <button id="acLogReload" class="btn btn-sm ac-iconbtn" type="button" aria-label="Recarregar a lista de logs" title="Ler outra vez a pasta dos logs"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></button>
+                <span id="acLogMeta" class="ac-meta"></span>
+                <span class="ac-spacer"></span>
+                <label class="ac-all" title="Vai lendo o fim do ficheiro de 1,5 em 1,5 segundos"><input id="acLogFollow" type="checkbox" checked> Seguir</label>
+                <button id="acLogCopy" class="btn btn-sm" type="button" title="Copia o que está à vista (a área de transferência limpa-se em 30 segundos)">Copiar</button>
+                <button id="acLogOpen" class="btn btn-sm" type="button" title="Abre a pasta do microserviço no gestor de ficheiros">Abrir pasta</button>
+              </div>
+              <div class="ac-phint"><span id="acLogHint" class="ac-mode-hint"></span></div>
+              <div id="acLogScroll" class="ac-scroll"><div id="acLogText" class="ac-logtext" role="log" tabindex="0"></div></div>
+            </div>
+            <div id="acPanelProcs" class="ac-panel hidden" role="tabpanel" aria-label="Processos Java do agente">
+              <div class="ac-ptool"><span id="acProcMeta" class="ac-meta"></span><span class="ac-spacer"></span><button id="acProcStopAll" class="btn btn-sm" type="button" title="Pede a todos os que estão a correr que terminem">Parar todos</button></div>
+              <div class="ac-scroll"><div id="acProcList" class="ac-proclist"></div></div>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
 
